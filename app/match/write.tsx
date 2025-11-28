@@ -5,41 +5,25 @@ import { collection, addDoc, doc, getDoc } from 'firebase/firestore';
 import { auth, db } from '../../configs/firebaseConfig';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { FontAwesome5 } from '@expo/vector-icons'; // FontAwesome5로 변경하여 더 세련된 아이콘 사용
+import { FontAwesome5 } from '@expo/vector-icons';
 import tw from 'twrnc';
 
 const { width } = Dimensions.get('window');
 
-// 애니메이션 컨테이너
 const FadeInView = ({ children, delay = 0 }: { children: React.ReactNode, delay?: number }) => {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const translateY = useRef(new Animated.Value(20)).current;
 
   useEffect(() => {
     Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 600,
-        delay,
-        useNativeDriver: true,
-      }),
-      Animated.timing(translateY, {
-        toValue: 0,
-        duration: 600,
-        delay,
-        useNativeDriver: true,
-      })
+      Animated.timing(fadeAnim, { toValue: 1, duration: 600, delay, useNativeDriver: true }),
+      Animated.timing(translateY, { toValue: 0, duration: 600, delay, useNativeDriver: true })
     ]).start();
   }, []);
 
-  return (
-    <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY }], marginBottom: 32 }}>
-      {children}
-    </Animated.View>
-  );
+  return <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY }], marginBottom: 32 }}>{children}</Animated.View>;
 };
 
-// 선택 카드 컴포넌트 (재사용)
 const SelectCard = ({ label, subLabel, icon, selected, onPress }: { label: string, subLabel?: string, icon: string, selected: boolean, onPress: () => void }) => (
   <TouchableOpacity
     onPress={onPress}
@@ -61,16 +45,14 @@ export default function WriteMatchScreen() {
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
 
-  // 데이터 상태
   const [type, setType] = useState<'6man' | '9man' | null>(null);
   const [gender, setGender] = useState<'male' | 'female' | 'mixed' | null>(null);
   const [date, setDate] = useState(new Date());
   const [place, setPlace] = useState('');
   const [note, setNote] = useState('');
 
-  // 날짜 선택 상태
   const [showDateModal, setShowDateModal] = useState(false);
-  const [tempDate, setTempDate] = useState(new Date()); // 모달 내 임시 저장용
+  const [tempDate, setTempDate] = useState(new Date());
 
   const nextStep = (next: number) => {
     if (step < next) {
@@ -145,7 +127,6 @@ export default function WriteMatchScreen() {
 
   return (
     <SafeAreaView style={tw`flex-1 bg-[#F9FAFB]`}>
-      {/* Header */}
       <View style={tw`px-5 h-14 flex-row items-center justify-between bg-[#F9FAFB] z-10`}>
         <TouchableOpacity onPress={() => router.back()} style={tw`p-2 -ml-2 rounded-full active:bg-gray-200`}>
           <FontAwesome5 name="arrow-left" size={20} color="#191F28" />
@@ -163,16 +144,15 @@ export default function WriteMatchScreen() {
           contentContainerStyle={tw`px-6 pt-2 pb-32`}
           showsVerticalScrollIndicator={false}
         >
-          {/* Title Area */}
           <View style={tw`mb-8`}>
             <Text style={tw`text-3xl font-extrabold text-[#191F28] leading-tight`}>
               새로운 매칭을{'\n'}시작해볼까요?
             </Text>
           </View>
 
-          {/* Step 1: Type */}
+          {/* Step 1: Type (UX 라이팅 수정) */}
           <FadeInView>
-            <Text style={tw`text-lg font-bold text-[#333D4B] mb-3`}>1. 경기 방식</Text>
+            <Text style={tw`text-lg font-bold text-[#333D4B] mb-3`}>1. 몇 인제 경기를 원하시나요?</Text>
             <View style={tw`flex-row gap-3`}>
               <SelectCard 
                 label="6인제" 
@@ -191,10 +171,10 @@ export default function WriteMatchScreen() {
             </View>
           </FadeInView>
 
-          {/* Step 2: Gender */}
+          {/* Step 2: Gender (UX 라이팅 수정) */}
           {step >= 2 && (
             <FadeInView delay={100}>
-              <Text style={tw`text-lg font-bold text-[#333D4B] mb-3`}>2. 참가 선수</Text>
+              <Text style={tw`text-lg font-bold text-[#333D4B] mb-3`}>2. 어떤 성별의 경기를 원하시나요?</Text>
               <View style={tw`gap-3`}>
                 <TouchableOpacity
                     onPress={() => { setGender('mixed'); nextStep(3); }}
@@ -221,10 +201,10 @@ export default function WriteMatchScreen() {
           {/* Step 3: Date & Time */}
           {step >= 3 && (
             <FadeInView delay={100}>
-              <Text style={tw`text-lg font-bold text-[#333D4B] mb-3`}>3. 일시</Text>
+              <Text style={tw`text-lg font-bold text-[#333D4B] mb-3`}>3. 언제 모일까요?</Text>
               <TouchableOpacity 
                 onPress={() => {
-                    setTempDate(date); // 현재 설정된 날짜를 임시 날짜로 설정
+                    setTempDate(date);
                     setShowDateModal(true);
                 }}
                 style={tw`bg-white p-5 rounded-2xl border border-transparent shadow-sm active:bg-gray-50`}
@@ -240,10 +220,10 @@ export default function WriteMatchScreen() {
             </FadeInView>
           )}
 
-          {/* Step 4: Location */}
+          {/* Step 4: Location (UX 라이팅 및 힌트 수정) */}
           {step >= 4 && (
             <FadeInView delay={100}>
-              <Text style={tw`text-lg font-bold text-[#333D4B] mb-3`}>4. 장소</Text>
+              <Text style={tw`text-lg font-bold text-[#333D4B] mb-3`}>4. 어디서 할까요?</Text>
               <View style={tw`bg-white rounded-2xl border border-transparent shadow-sm overflow-hidden`}>
                   <TextInput
                     style={tw`p-5 text-lg text-[#191F28]`}
@@ -254,8 +234,11 @@ export default function WriteMatchScreen() {
                     returnKeyType="next"
                     onSubmitEditing={() => nextStep(5)}
                   />
-                  <View style={tw`px-5 pb-4`}>
-                      <Text style={tw`text-xs text-[#8B95A1]`}>* 상세 주소를 정확히 입력하면 매칭 확률이 올라가요.</Text>
+                  <View style={tw`px-5 pb-4 bg-gray-50`}>
+                      <Text style={tw`text-xs text-[#8B95A1] leading-5`}>
+                        * 상세주소를 입력하면 매칭 확률이 올라가요.{'\n'}
+                        위치를 쉽게 찾을 수 있게 정확히 알려주세요!
+                      </Text>
                   </View>
               </View>
             </FadeInView>
@@ -264,11 +247,11 @@ export default function WriteMatchScreen() {
           {/* Step 5: Note */}
           {step >= 5 && (
             <FadeInView delay={100}>
-              <Text style={tw`text-lg font-bold text-[#333D4B] mb-3`}>5. 추가 전달사항 (선택)</Text>
+              <Text style={tw`text-lg font-bold text-[#333D4B] mb-3`}>5. 전할 말이 있나요? (선택)</Text>
               <View style={tw`bg-white rounded-2xl border border-transparent shadow-sm mb-8`}>
                   <TextInput
                     style={tw`p-5 text-lg text-[#191F28] min-h-[100px]`}
-                    placeholder="ex. 주차비 지원 3대까지 가능합니다!"
+                    placeholder="주차 정보, 비용, 실력 등 하고 싶은 말을 자유롭게 적어주세요."
                     placeholderTextColor="#B0B8C1"
                     multiline
                     textAlignVertical="top"
@@ -293,7 +276,6 @@ export default function WriteMatchScreen() {
         </ScrollView>
       </KeyboardAvoidingView>
 
-      {/* iOS/Android 통합 커스텀 모달 날짜 피커 */}
       <Modal visible={showDateModal} transparent animationType="fade">
         <View style={tw`flex-1 justify-end bg-black/60`}>
             <View style={tw`bg-white rounded-t-3xl p-6 pb-10`}>
@@ -303,24 +285,21 @@ export default function WriteMatchScreen() {
                         <Text style={tw`text-[#8B95A1] font-bold`}>취소</Text>
                     </TouchableOpacity>
                 </View>
-                
-                {/* 날짜 피커 */}
                 <DateTimePicker
                     value={tempDate}
                     mode="datetime"
-                    display="spinner" // iOS 스타일 (Android에서도 스피너 형태로 동작 가능)
+                    display="spinner"
                     onChange={(e, d) => d && setTempDate(d)}
                     textColor="#191F28"
                     locale="ko-KR"
-                    minimumDate={new Date()} // 과거 날짜 선택 방지
+                    minimumDate={new Date()}
                     style={tw`h-48`}
                 />
-
                 <TouchableOpacity 
                     onPress={() => {
                         setDate(tempDate);
                         setShowDateModal(false);
-                        nextStep(4); // 시간 선택 완료 시 자동으로 다음 단계(장소)로
+                        nextStep(4);
                     }}
                     style={tw`mt-6 bg-[#3182F6] py-4 rounded-xl items-center`}
                 >

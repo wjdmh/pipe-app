@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, FlatList, ActivityIndicator, TouchableOpacity, Image } from 'react-native';
+import { View, Text, FlatList, ActivityIndicator, TouchableOpacity } from 'react-native';
 import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
 import { db } from '../../configs/firebaseConfig';
 import { useRouter } from 'expo-router';
@@ -18,7 +18,8 @@ export default function RankingScreen() {
         const list: any[] = [];
         snapshot.forEach(d => {
             const data = d.data();
-            if (data.stats && data.stats.points > 0) {
+            // 승점이 0점이어도 랭킹에는 나오도록 수정하거나, 정책에 따라 유지
+            if (data.stats && data.stats.points >= 0) {
                 list.push({ id: d.id, ...data });
             }
         });
@@ -55,6 +56,7 @@ export default function RankingScreen() {
                 <Text style={tw`text-sm text-[#8B95A1]`}>{item.affiliation}</Text>
             </View>
         </View>
+
         <View style={tw`items-end`}>
             <Text style={tw`text-[#3182F6] font-extrabold text-xl`}>{item.stats.points || 0}점</Text>
             <Text style={tw`text-xs text-[#8B95A1] font-medium`}>{item.stats.wins}승 {item.stats.losses}패</Text>
@@ -65,18 +67,26 @@ export default function RankingScreen() {
 
   return (
     <SafeAreaView style={tw`flex-1 bg-[#F2F4F6]`} edges={['top']}>
+      {/* Header */}
       <View style={tw`px-5 py-3 flex-row items-center bg-[#F2F4F6]`}>
-         <TouchableOpacity onPress={() => router.back()} style={tw`p-3 -ml-3 rounded-full`} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+         <TouchableOpacity 
+            onPress={() => router.back()} 
+            style={tw`p-3 -ml-3 rounded-full`}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+         >
              <FontAwesome5 name="arrow-left" size={20} color="#191F28" />
          </TouchableOpacity>
          <Text style={tw`text-xl font-extrabold text-[#191F28] ml-2`}>전체 순위</Text>
       </View>
+
+      {/* UX 라이팅 수정된 배너 */}
       <View style={tw`px-5 mt-2 mb-4`}>
           <View style={tw`bg-[#3182F6] p-5 rounded-[24px] shadow-md shadow-blue-200`}>
-              <Text style={tw`text-white font-bold text-lg mb-1`}>🔥 승점을 모아보세요</Text>
-              <Text style={tw`text-blue-100 text-sm`}>경기 승리 시 3점, 무승부/패배 시 1점</Text>
+              <Text style={tw`text-white font-bold text-lg mb-1`}>매칭을 잡고 랭킹을 올려보세요 🏐</Text>
+              <Text style={tw`text-blue-100 text-sm`}>경기 승리시 3점, 패배시 1점이 추가돼요.</Text>
           </View>
       </View>
+
       {loading ? <ActivityIndicator size="large" style={tw`mt-10`} color="#3182F6" /> : (
         <FlatList
           data={teams}
