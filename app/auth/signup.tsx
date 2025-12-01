@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { View, Text, TextInput, TouchableOpacity, Alert, ActivityIndicator, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
+import { createUserWithEmailAndPassword, updateProfile, deleteUser, User } from 'firebase/auth';
 import { doc, setDoc } from 'firebase/firestore';
 import { auth, db } from '../../configs/firebaseConfig';
 import tw from 'twrnc';
@@ -15,7 +15,7 @@ export default function SignupScreen() {
   const [loading, setLoading] = useState(false);
   const isMounted = useRef(true);
 
-  // 컴포넌트 마운트 상태 관리 (비동기 처리 중 언마운트 방지)
+  // 컴포넌트 마운트 상태 관리
   useEffect(() => {
     return () => { isMounted.current = false; };
   }, []);
@@ -48,44 +48,50 @@ export default function SignupScreen() {
       return;
     }
 
+    setLoading(true);
+    let createdUser: User | null = null;
+
     try {
-      setLoading(true);
-      
-      // 1. Firebase Auth 생성 (이 시점에 전역 Auth Listener가 동작하여 자동 이동될 수 있음)
+      // 1. Firebase Auth 생성
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-      const user = userCredential.user;
+      createdUser = userCredential.user;
 
-      // 2. 프로필 업데이트 (이름)
-      await updateProfile(user, { displayName: name });
+      try {
+        // 2. 프로필 업데이트 및 Firestore 저장 (원자적 처리를 위한 내부 블록)
+        await updateProfile(createdUser, { displayName: name });
 
-      // 3. Firestore에 사용자 추가 정보 저장
-      // (자동 이동과 데이터 저장 간의 경합을 최소화하기 위해 신속히 처리)
-      await setDoc(doc(db, 'users', user.uid), {
-        uid: user.uid,
-        email,
-        name,
-        phone,
-        gender,
-        role,
-        roleLabel: role === 'leader' ? '대표(주장)' : role === 'member' ? '팀원' : '기타',
-        createdAt: new Date(),
-      });
+        await setDoc(doc(db, 'users', createdUser.uid), {
+          uid: createdUser.uid,
+          email,
+          name,
+          phone,
+          gender,
+          role,
+          roleLabel: role === 'leader' ? '대표(주장)' : role === 'member' ? '팀원' : '기타',
+          createdAt: new Date(),
+        });
 
-      // 4. 완료 처리
-      // 이미 앱의 Auth Listener가 페이지를 이동시켰을 가능성이 높으므로
-      // 별도의 Alert나 router.replace를 호출하지 않고 로딩만 종료합니다.
-      // 필요하다면 가벼운 Toast 메시지 정도만 띄울 수 있으나, 
-      // 현재는 "두 번 이동" 오류 방지를 위해 아무것도 하지 않고 흐름을 맡깁니다.
+        // 3. 성공 시 완료 처리
+        // Auth Listener에 의해 자동 이동되거나, 여기서 명시적으로 이동할 수 있음.
+        // 현재 구조상 Auth Listener가 동작하므로 로딩만 끕니다.
+
+      } catch (dbError: any) {
+        // [Critical] DB 저장 실패 시 Auth 계정 롤백 (삭제)
+        console.error("DB Save Failed, Rolling back auth...", dbError);
+        await deleteUser(createdUser);
+        throw new Error('회원 정보 저장에 실패하여 가입이 취소되었습니다. 다시 시도해주세요.');
+      }
 
     } catch (error: any) {
-      // 에러가 발생했을 때만 Alert 표시
-      if (!isMounted.current) return; // 이미 화면이 넘어갔다면 무시
+      if (!isMounted.current) return;
 
       let msg = '회원가입 중 오류가 발생했습니다.';
       if (error.code === 'auth/email-already-in-use') msg = '이미 사용 중인 이메일입니다.';
-      if (error.code === 'auth/invalid-email') msg = '이메일 형식이 올바르지 않습니다.';
-      if (error.code === 'auth/weak-password') msg = '비밀번호는 6자 이상이어야 합니다.';
-      Alert.alert('오류', msg);
+      else if (error.code === 'auth/invalid-email') msg = '이메일 형식이 올바르지 않습니다.';
+      else if (error.code === 'auth/weak-password') msg = '비밀번호는 6자 이상이어야 합니다.';
+      else if (error.message) msg = error.message; // 롤백 메시지 등 커스텀 에러
+
+      Alert.alert('가입 실패', msg);
     } finally {
       if (isMounted.current) {
         setLoading(false);

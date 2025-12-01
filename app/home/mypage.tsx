@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, TextInput, ScrollView, Alert, ActivityIndicator, Modal, KeyboardAvoidingView, Platform } from 'react-native';
-import { signOut } from 'firebase/auth';
-import { doc, getDoc, collection, addDoc, updateDoc } from 'firebase/firestore';
+import { signOut, deleteUser } from 'firebase/auth'; // [Fix] deleteUser import
+import { doc, getDoc, collection, addDoc, updateDoc, deleteDoc } from 'firebase/firestore'; // [Fix] deleteDoc import
 import { auth, db } from '../../configs/firebaseConfig';
 import { useRouter } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
@@ -12,11 +12,9 @@ export default function MyPageScreen() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [userData, setUserData] = useState<any>(null);
   
-  // 문의 상태
   const [inquiryText, setInquiryText] = useState('');
   const [sending, setSending] = useState(false);
 
-  // 수정 모달 상태
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [newName, setNewName] = useState('');
   const [newPhone, setNewPhone] = useState('');
@@ -34,8 +32,8 @@ export default function MyPageScreen() {
         const snap = await getDoc(doc(db, "users", auth.currentUser.uid));
         if(snap.exists()) {
             setUserData(snap.data());
-            setNewName(snap.data().nickname || '');
-            setNewPhone(snap.data().phoneNumber || '');
+            setNewName(snap.data().nickname || snap.data().name || '');
+            setNewPhone(snap.data().phoneNumber || snap.data().phone || '');
         }
     }
   }
@@ -46,6 +44,46 @@ export default function MyPageScreen() {
         { text: '로그아웃', style: 'destructive', onPress: async () => {
             await signOut(auth);
             router.replace('/');
+        }}
+    ]);
+  };
+
+  // [Fix] 회원 탈퇴 및 팀 삭제 로직 추가
+  const handleWithdrawal = async () => {
+    Alert.alert('회원 탈퇴', '정말 탈퇴하시겠습니까?\n팀 대표인 경우 생성한 팀 데이터도 함께 삭제되며, 이는 복구할 수 없습니다.', [
+        { text: '취소', style: 'cancel' },
+        { text: '탈퇴하기', style: 'destructive', onPress: async () => {
+            const user = auth.currentUser;
+            if (!user) return;
+
+            try {
+                // 1. 내가 대표자로 있는 팀이 있다면 팀 삭제
+                if (userData?.teamId && userData?.role === 'leader') {
+                    // 실제 문서 삭제
+                    await deleteDoc(doc(db, "teams", userData.teamId));
+                    console.log("팀 문서 삭제 완료");
+                }
+
+                // 2. 유저 정보 문서 삭제
+                await deleteDoc(doc(db, "users", user.uid));
+                console.log("유저 문서 삭제 완료");
+
+                // 3. Firebase Auth 계정 영구 삭제
+                await deleteUser(user);
+                
+                Alert.alert('완료', '탈퇴가 완료되었습니다.');
+                router.replace('/');
+            } catch (e: any) {
+                console.error(e);
+                // 재로그인 필요 에러 처리
+                if (e.code === 'auth/requires-recent-login') {
+                    Alert.alert('인증 만료', '보안을 위해 로그아웃 후 다시 로그인하여 탈퇴를 진행해주세요.');
+                    await signOut(auth);
+                    router.replace('/');
+                } else {
+                    Alert.alert('오류', '탈퇴 처리 중 문제가 발생했습니다.');
+                }
+            }
         }}
     ]);
   };
@@ -77,9 +115,11 @@ export default function MyPageScreen() {
           if (auth.currentUser) {
               await updateDoc(doc(db, "users", auth.currentUser.uid), {
                   nickname: newName,
-                  phoneNumber: newPhone
+                  phoneNumber: newPhone,
+                  name: newName, // 동기화
+                  phone: newPhone
               });
-              setUserData({ ...userData, nickname: newName, phoneNumber: newPhone });
+              setUserData({ ...userData, nickname: newName, phoneNumber: newPhone, name: newName, phone: newPhone });
               Alert.alert('완료', '정보가 수정되었습니다.');
               setEditModalVisible(false);
           }
@@ -101,17 +141,16 @@ export default function MyPageScreen() {
                  <FontAwesome5 name="user" size={24} color="#3182F6" />
              </View>
              <View>
-                 {/* 이름(닉네임)을 메인으로 표시 */}
-                 <Text style={tw`font-bold text-xl text-[#191F28]`}>{userData?.nickname || '이름 없음'}</Text>
+                 <Text style={tw`font-bold text-xl text-[#191F28]`}>{userData?.nickname || userData?.name || '이름 없음'}</Text>
                  <Text style={tw`text-[#8B95A1] text-sm mt-0.5`}>{userData?.email}</Text>
-                 <Text style={tw`text-[#8B95A1] text-sm`}>{userData?.phoneNumber || '전화번호 없음'}</Text>
+                 <Text style={tw`text-[#8B95A1] text-sm`}>{userData?.phoneNumber || userData?.phone || '전화번호 없음'}</Text>
                  <Text style={tw`text-[#3182F6] text-xs font-bold mt-2`}>{isAdmin ? '관리자(Admin)' : '팀 대표자'}</Text>
              </View>
          </View>
          <TouchableOpacity 
             onPress={() => {
-                setNewName(userData?.nickname || '');
-                setNewPhone(userData?.phoneNumber || '');
+                setNewName(userData?.nickname || userData?.name || '');
+                setNewPhone(userData?.phoneNumber || userData?.phone || '');
                 setEditModalVisible(true);
             }}
             style={tw`bg-white py-3 rounded-xl border border-gray-200 items-center shadow-sm`}
@@ -157,16 +196,23 @@ export default function MyPageScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* 하단 링크 */}
+      {/* 하단 링크 및 탈퇴 */}
       <View style={tw`gap-3`}>
         <TouchableOpacity style={tw`flex-row justify-between items-center p-4 bg-white border-b border-gray-50`}>
             <Text style={tw`text-[#4E5968] font-medium`}>서비스 이용약관</Text>
             <FontAwesome5 name="chevron-right" size={12} color="#cbd5e1" />
         </TouchableOpacity>
-        <TouchableOpacity onPress={handleLogout} style={tw`flex-row justify-between items-center p-4 bg-red-50 rounded-2xl mt-4`}>
-            <Text style={tw`text-red-500 font-bold`}>로그아웃</Text>
-            <FontAwesome5 name="sign-out-alt" size={16} color="#ef4444" />
-        </TouchableOpacity>
+        
+        <View style={tw`flex-row gap-2 mt-4`}>
+            <TouchableOpacity onPress={handleLogout} style={tw`flex-1 flex-row justify-center items-center p-4 bg-gray-100 rounded-2xl`}>
+                <Text style={tw`text-gray-600 font-bold mr-2`}>로그아웃</Text>
+                <FontAwesome5 name="sign-out-alt" size={16} color="#4b5563" />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={handleWithdrawal} style={tw`flex-1 flex-row justify-center items-center p-4 bg-red-50 rounded-2xl`}>
+                <Text style={tw`text-red-500 font-bold mr-2`}>회원 탈퇴</Text>
+                <FontAwesome5 name="user-times" size={16} color="#ef4444" />
+            </TouchableOpacity>
+        </View>
       </View>
 
       {/* 정보 수정 모달 */}

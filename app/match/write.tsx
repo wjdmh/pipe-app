@@ -8,8 +8,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { FontAwesome5 } from '@expo/vector-icons';
 import tw from 'twrnc';
 
-const { width } = Dimensions.get('window');
-
 const FadeInView = ({ children, delay = 0 }: { children: React.ReactNode, delay?: number }) => {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const translateY = useRef(new Animated.Value(20)).current;
@@ -96,7 +94,8 @@ export default function WriteMatchScreen() {
       const teamDoc = await getDoc(doc(db, "teams", userData.teamId));
       const teamData = teamDoc.data();
 
-      const dbTimeStr = `${date.getMonth() + 1}/${date.getDate()} ${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
+      // [Date Format Fix] ISO 8601 포맷으로 통일하여 저장
+      const dbTimeStr = date.toISOString();
 
       await addDoc(collection(db, "matches"), {
         hostId: userData.teamId,
@@ -104,8 +103,8 @@ export default function WriteMatchScreen() {
         affiliation: teamData?.affiliation || '',
         type,
         gender,
-        time: dbTimeStr,
-        timestamp: date.toISOString(),
+        time: dbTimeStr, // 이제 ISO String이 저장됩니다.
+        timestamp: date.toISOString(), // (Deprecated 예정이나 호환성을 위해 유지)
         loc: place,
         note: note || '',
         status: 'recruiting',
@@ -150,7 +149,7 @@ export default function WriteMatchScreen() {
             </Text>
           </View>
 
-          {/* Step 1: Type (UX 라이팅 수정) */}
+          {/* Step 1: Type */}
           <FadeInView>
             <Text style={tw`text-lg font-bold text-[#333D4B] mb-3`}>1. 몇 인제 경기를 원하시나요?</Text>
             <View style={tw`flex-row gap-3`}>
@@ -171,7 +170,7 @@ export default function WriteMatchScreen() {
             </View>
           </FadeInView>
 
-          {/* Step 2: Gender (UX 라이팅 수정) */}
+          {/* Step 2: Gender */}
           {step >= 2 && (
             <FadeInView delay={100}>
               <Text style={tw`text-lg font-bold text-[#333D4B] mb-3`}>2. 어떤 성별의 경기를 원하시나요?</Text>
@@ -220,7 +219,7 @@ export default function WriteMatchScreen() {
             </FadeInView>
           )}
 
-          {/* Step 4: Location (UX 라이팅 및 힌트 수정) */}
+          {/* Step 4: Location */}
           {step >= 4 && (
             <FadeInView delay={100}>
               <Text style={tw`text-lg font-bold text-[#333D4B] mb-3`}>4. 어디서 할까요?</Text>

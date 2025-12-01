@@ -3,16 +3,14 @@ import { View, Text, TextInput, TouchableOpacity, Alert, ScrollView, ActivityInd
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { FontAwesome5 } from '@expo/vector-icons';
-import { collection, addDoc, serverTimestamp, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, query, where, getDocs, doc, getDoc, setDoc } from 'firebase/firestore'; // [Changed] updateDoc -> setDoc, deleteDoc 제거
 import { db, auth } from '../../configs/firebaseConfig';
 import tw from 'twrnc';
 import { KUSF_TEAMS } from '../home/ranking';
 
 const REGIONS = ["서울", "경기", "인천", "강원", "충북", "충남", "대전", "세종", "전북", "전남", "광주", "경북", "경남", "대구", "울산", "부산", "제주"];
 
-// 단계: 검색 -> 인증 -> 생성/수정(정보입력)
 type Step = 'SEARCH' | 'VERIFY' | 'INFO_FORM';
-
 const MASTER_CODE = "000000";
 
 export default function TeamRegister() {
@@ -20,30 +18,31 @@ export default function TeamRegister() {
   const [step, setStep] = useState<Step>('SEARCH');
   const [loading, setLoading] = useState(false);
   
-  // --- 사용자 정보 ---
   const [userInfo, setUserInfo] = useState<any>(null);
+  const [registeredKusfIds, setRegisteredKusfIds] = useState<string[]>([]);
 
-  // --- Search Step State ---
+  // Search Step State
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedGender, setSelectedGender] = useState<'male' | 'female'>('male');
-  const [targetTeam, setTargetTeam] = useState<any>(null); // 선택한 KUSF 팀 (없으면 null = 신규)
+  const [targetTeam, setTargetTeam] = useState<any>(null);
 
-  // --- Verify Step State ---
+  // Verify Step State
   const [email, setEmail] = useState('');
   const [inputCode, setInputCode] = useState('');
   const [generatedCode, setGeneratedCode] = useState('');
   const [isCodeSent, setIsCodeSent] = useState(false);
   const [emailSending, setEmailSending] = useState(false);
 
-  // --- Info Form Step State ---
+  // Info Form Step State
   const [teamName, setTeamName] = useState('');
   const [description, setDescription] = useState('');
-  const [career, setCareer] = useState(''); // 수상 경력
+  const [career, setCareer] = useState('');
   const [selectedRegion, setSelectedRegion] = useState('');
   const [showRegionModal, setShowRegionModal] = useState(false);
 
   useEffect(() => {
     fetchUserInfo();
+    fetchRegisteredTeams();
   }, []);
 
   const fetchUserInfo = async () => {
@@ -58,9 +57,21 @@ export default function TeamRegister() {
     }
   };
 
-  // ----------------------------------------------------------------
-  // [Step 1: Search] 팀 검색
-  // ----------------------------------------------------------------
+  const fetchRegisteredTeams = async () => {
+      try {
+          const q = query(collection(db, "teams"));
+          const snapshot = await getDocs(q);
+          const ids: string[] = [];
+          snapshot.forEach(doc => {
+              const data = doc.data();
+              if (data.kusfId) ids.push(data.kusfId);
+          });
+          setRegisteredKusfIds(ids);
+      } catch (e) {
+          console.error("팀 목록 로드 실패", e);
+      }
+  };
+
   const filteredTeams = KUSF_TEAMS.filter(team => {
     const isGenderMatch = team.gender === selectedGender;
     const isNameMatch = team.name.includes(searchQuery) || team.affiliation.includes(searchQuery);
@@ -68,43 +79,27 @@ export default function TeamRegister() {
   });
 
   const onSelectExistingTeam = async (kusfTeam: any) => {
-    setLoading(true);
-    // 중복 체크
-    const q = query(collection(db, 'teams'), where('kusfId', '==', kusfTeam.id));
-    const snapshot = await getDocs(q);
-    setLoading(false);
-
-    if (!snapshot.empty) {
-      Alert.alert('알림', '이미 앱에 등록된 팀입니다.');
-      return;
+    if (registeredKusfIds.includes(kusfTeam.id)) {
+        Alert.alert('알림', '이미 등록된 팀입니다. 다른 팀을 선택하거나 관리자에게 문의하세요.');
+        return;
     }
-
-    setTargetTeam(kusfTeam); // 기존 팀 정보 세팅
-    // 정보 입력 폼 초기값 설정
+    setTargetTeam(kusfTeam);
     setTeamName(kusfTeam.name);
-    setStep('VERIFY'); // 인증 단계로 이동
+    setStep('VERIFY');
   };
 
   const onCreateNewTeam = () => {
-    setTargetTeam(null); // 신규 팀
+    setTargetTeam(null);
     setTeamName('');
-    setStep('INFO_FORM'); // 신규는 인증 없이 정보 입력으로 (또는 인증 후 정보 입력? 질문에 따라 유동적이나 "메일 인증 다음 팀정보"라 했으므로 신규도 인증 필요하면 Flow 변경 가능. 여기선 신규는 바로 생성하도록 함)
+    setStep('INFO_FORM');
   };
   
-  // *사용자 요청*: "학교 메일 인증 다음 팀 정보" 
-  // 기존 KUSF 팀 -> 학교 인증 -> 팀 정보(경력/소개) 입력 -> 완료
-  // 신규 팀 -> (학교 인증을 원하면 로직 추가, 여기선 바로 정보 입력으로)
-
-  // ----------------------------------------------------------------
-  // [Step 2: Verify] 학교 메일 인증
-  // ----------------------------------------------------------------
   const sendVerificationCode = async () => {
     const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.(ac\.kr|edu)$/;
     if (!emailRegex.test(email)) {
       Alert.alert('인증 실패', '유효한 학교 이메일(.ac.kr / .edu)을 입력해주세요.');
       return;
     }
-    
     setEmailSending(true);
     try {
       await new Promise(resolve => setTimeout(resolve, 1500)); 
@@ -129,26 +124,22 @@ export default function TeamRegister() {
     setStep('INFO_FORM');
   };
 
-  // ----------------------------------------------------------------
-  // [Step 3: Info Form] 상세 정보 입력
-  // ----------------------------------------------------------------
   const submitTeam = async () => {
     if (!teamName || !selectedRegion) {
       Alert.alert('알림', '팀 이름과 활동 지역은 필수입니다.');
       return;
     }
 
-    // 최종 데이터 구성
     const teamData = {
       name: teamName,
-      affiliation: targetTeam ? targetTeam.affiliation : (userInfo?.affiliation || '미인증'), // 기존팀이면 해당학교, 아니면 유저정보 등
+      affiliation: targetTeam ? targetTeam.affiliation : (userInfo?.affiliation || '미인증'),
       region: selectedRegion,
       gender: selectedGender,
       description: description || '아직 등록된 팀 소개가 없습니다.',
-      career: career || '아직 등록된 수상 경력이 없습니다.', // 수상 경력
+      career: career || '아직 등록된 수상 경력이 없습니다.',
       kusfId: targetTeam ? targetTeam.id : null,
       initialStats: targetTeam ? targetTeam.stats : { wins: 0, losses: 0, points: 0, total: 0 },
-      verifiedEmail: targetTeam ? email : null, // 인증했다면 이메일 저장
+      verifiedEmail: targetTeam ? email : null,
     };
 
     await createTeamDoc(teamData);
@@ -158,30 +149,37 @@ export default function TeamRegister() {
     if (!auth.currentUser) return;
     setLoading(true);
     try {
-      await addDoc(collection(db, 'teams'), {
+      // 1. 팀 생성
+      const docRef = await addDoc(collection(db, 'teams'), {
         ...data,
         leaderId: auth.currentUser.uid,
         leaderName: userInfo?.name || auth.currentUser.displayName || '이름없음',
         leaderPhone: userInfo?.phone || '',
         members: [auth.currentUser.uid],
         createdAt: serverTimestamp(),
-        stats: data.initialStats
+        stats: data.initialStats,
+        isDeleted: false
       });
+
+      // 2. [CRITICAL FIX] 유저 정보 업데이트 (문서가 없으면 생성, 있으면 병합)
+      // updateDoc 대신 setDoc({ merge: true })를 사용하여 'No document to update' 에러 방지
+      await setDoc(doc(db, 'users', auth.currentUser.uid), {
+          teamId: docRef.id,
+          role: 'leader'
+      }, { merge: true });
+
       Alert.alert('성공', '팀 등록이 완료되었습니다!');
       router.replace('/home');
     } catch (error: any) {
-      Alert.alert('오류', error.message);
+      console.error("팀 생성 오류:", error);
+      Alert.alert('오류', `팀 생성 실패: ${error.message}`);
     } finally {
       setLoading(false);
     }
   };
 
-  // ----------------------------------------------------------------
-  // UI Render
-  // ----------------------------------------------------------------
   return (
     <SafeAreaView style={tw`flex-1 bg-white`}>
-      {/* Header */}
       <View style={tw`px-5 py-3 border-b border-gray-100 flex-row items-center`}>
         <TouchableOpacity onPress={() => {
             if (step === 'VERIFY') setStep('SEARCH');
@@ -196,14 +194,12 @@ export default function TeamRegister() {
       </View>
 
       <View style={tw`flex-1`}>
-        {/* [SEARCH] */}
         {step === 'SEARCH' && (
           <View style={tw`flex-1`}>
             <View style={tw`px-5 pt-4 pb-2 bg-white`}>
                <Text style={tw`text-2xl font-bold text-[#191F28] mb-1`}>소속 팀을 선택하세요</Text>
                <Text style={tw`text-gray-500 mb-4`}>KUSF 리그에 참여 중인 팀이라면 선택해주세요.</Text>
 
-               {/* 성별 탭 */}
                <View style={tw`flex-row bg-gray-100 p-1 rounded-xl mb-4`}>
                  <TouchableOpacity onPress={() => setSelectedGender('male')} style={tw`flex-1 py-2 rounded-lg items-center ${selectedGender === 'male' ? 'bg-white shadow-sm' : ''}`}>
                    <Text style={tw`font-bold ${selectedGender === 'male' ? 'text-[#3182F6]' : 'text-gray-400'}`}>남자부</Text>
@@ -213,7 +209,6 @@ export default function TeamRegister() {
                  </TouchableOpacity>
                </View>
 
-               {/* 검색창 */}
                <View style={tw`flex-row items-center bg-gray-50 px-4 rounded-xl border border-gray-200 mb-2`}>
                   <FontAwesome5 name="search" size={14} color="#8B95A1" />
                   <TextInput
@@ -229,24 +224,34 @@ export default function TeamRegister() {
               data={filteredTeams}
               keyExtractor={item => item.id}
               contentContainerStyle={tw`px-5 pb-32`}
-              renderItem={({item}) => (
-                <TouchableOpacity 
-                  onPress={() => onSelectExistingTeam(item)}
-                  style={tw`flex-row items-center p-4 mb-3 bg-white border border-gray-100 rounded-2xl shadow-sm`}
-                >
-                   <View style={tw`w-10 h-10 rounded-full bg-gray-50 items-center justify-center mr-3`}>
-                     <FontAwesome5 name={selectedGender === 'male' ? 'mars' : 'venus'} size={16} color={selectedGender === 'male' ? '#3182F6' : '#FF6B6B'} />
-                   </View>
-                   <View style={tw`flex-1`}>
-                     <Text style={tw`font-bold text-[#191F28]`}>{item.name}</Text>
-                     <Text style={tw`text-gray-500 text-xs`}>{item.affiliation}</Text>
-                   </View>
-                   <View style={tw`items-end`}>
-                      <Text style={tw`font-bold text-[#191F28]`}>{item.stats.points}점</Text>
-                      <Text style={tw`text-[10px] text-blue-500`}>선택</Text>
-                   </View>
-                </TouchableOpacity>
-              )}
+              renderItem={({item}) => {
+                const isRegistered = registeredKusfIds.includes(item.id);
+                return (
+                    <TouchableOpacity 
+                      onPress={() => onSelectExistingTeam(item)}
+                      disabled={isRegistered}
+                      style={tw`flex-row items-center p-4 mb-3 bg-white border ${isRegistered ? 'border-gray-200 bg-gray-50 opacity-60' : 'border-gray-100'} rounded-2xl shadow-sm`}
+                    >
+                       <View style={tw`w-10 h-10 rounded-full bg-gray-50 items-center justify-center mr-3`}>
+                         <FontAwesome5 name={selectedGender === 'male' ? 'mars' : 'venus'} size={16} color={selectedGender === 'male' ? '#3182F6' : '#FF6B6B'} />
+                       </View>
+                       <View style={tw`flex-1`}>
+                         <Text style={tw`font-bold text-[#191F28]`}>{item.name}</Text>
+                         <Text style={tw`text-gray-500 text-xs`}>{item.affiliation}</Text>
+                       </View>
+                       <View style={tw`items-end`}>
+                          {isRegistered ? (
+                              <Text style={tw`text-[10px] font-bold text-red-500`}>등록됨</Text>
+                          ) : (
+                              <>
+                                  <Text style={tw`font-bold text-[#191F28]`}>{item.stats.points}점</Text>
+                                  <Text style={tw`text-[10px] text-blue-500`}>선택</Text>
+                              </>
+                          )}
+                       </View>
+                    </TouchableOpacity>
+                );
+              }}
               ListEmptyComponent={
                 <View style={tw`py-10 items-center`}>
                   <Text style={tw`text-gray-400 mb-1`}>검색 결과가 없습니다.</Text>
@@ -262,7 +267,6 @@ export default function TeamRegister() {
           </View>
         )}
 
-        {/* [VERIFY] 학교 인증 */}
         {step === 'VERIFY' && targetTeam && (
           <ScrollView contentContainerStyle={tw`p-5`}>
             <Text style={tw`text-2xl font-bold text-[#191F28] mb-2`}>학교 인증</Text>
@@ -308,7 +312,6 @@ export default function TeamRegister() {
           </ScrollView>
         )}
 
-        {/* [INFO_FORM] 팀 정보 입력 (수상경력, 소개 등) */}
         {step === 'INFO_FORM' && (
           <ScrollView contentContainerStyle={tw`p-5`}>
             <Text style={tw`text-2xl font-bold text-[#191F28] mb-1`}>
@@ -318,14 +321,13 @@ export default function TeamRegister() {
               다른 팀에게 보여질 정보를 입력해주세요.
             </Text>
 
-            {/* 기본 정보 (이름, 지역) */}
             <Text style={tw`text-sm font-bold text-gray-500 mb-1 ml-1`}>팀 이름</Text>
             <TextInput 
               style={tw`bg-gray-50 p-4 rounded-xl mb-4 border border-gray-200`} 
               placeholder="팀 이름" 
               value={teamName} 
               onChangeText={setTeamName}
-              editable={!targetTeam} // 기존 팀 선택시 수정 불가할 수도 있음 (여기선 수정 불가로 둠)
+              editable={!targetTeam} 
             />
 
             <Text style={tw`text-sm font-bold text-gray-500 mb-1 ml-1`}>활동 지역</Text>
@@ -334,7 +336,6 @@ export default function TeamRegister() {
                <FontAwesome5 name="chevron-down" size={14} color="#aaa"/>
             </TouchableOpacity>
 
-            {/* 추가 정보 (수상 경력) - NEW */}
             <Text style={tw`text-sm font-bold text-gray-500 mb-1 ml-1`}>수상 경력 (선택)</Text>
             <TextInput 
               style={tw`bg-gray-50 p-4 rounded-xl mb-4 border border-gray-200 h-24`} 
@@ -345,7 +346,6 @@ export default function TeamRegister() {
             />
             <Text style={tw`text-xs text-gray-400 mb-4 ml-1`}>* 입력하지 않으면 '정보 없음'으로 표시됩니다.</Text>
 
-            {/* 팀 소개 */}
             <Text style={tw`text-sm font-bold text-gray-500 mb-1 ml-1`}>간단한 팀 소개 (선택)</Text>
             <TextInput 
               style={tw`bg-gray-50 p-4 rounded-xl mb-8 border border-gray-200 h-24`} 
@@ -359,7 +359,6 @@ export default function TeamRegister() {
               {loading ? <ActivityIndicator color="white"/> : <Text style={tw`text-white font-bold text-lg`}>팀 등록 완료</Text>}
             </TouchableOpacity>
 
-            {/* 지역 모달 */}
             <Modal visible={showRegionModal} transparent animationType="fade">
                 <View style={tw`flex-1 bg-black/50 justify-center p-5`}>
                     <View style={tw`bg-white rounded-2xl max-h-[70%]`}>

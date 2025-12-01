@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, Alert, ActivityIndicator, StatusBar } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { doc, getDoc, updateDoc, deleteDoc, arrayUnion, arrayRemove, addDoc, collection } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, arrayUnion, arrayRemove, addDoc, collection } from 'firebase/firestore';
 import { auth, db } from '../../configs/firebaseConfig';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -30,6 +30,7 @@ type MatchDetail = {
   status: string;
   applicants: string[];
   level?: string;
+  isDeleted?: boolean;
 };
 
 export default function MatchDetailScreen() {
@@ -55,7 +56,12 @@ export default function MatchDetailScreen() {
       if (typeof id === 'string') {
         const matchDoc = await getDoc(doc(db, "matches", id));
         if (matchDoc.exists()) {
-          setMatch({ id: matchDoc.id, ...matchDoc.data() } as MatchDetail);
+          const data = matchDoc.data();
+          if (data.status === 'deleted' || data.isDeleted === true) {
+             Alert.alert('알림', '삭제된 게시물입니다.', [{ text: '확인', onPress: () => router.back() }]);
+             return;
+          }
+          setMatch({ id: matchDoc.id, ...data } as MatchDetail);
         } else {
           Alert.alert('오류', '존재하지 않거나 삭제된 게시물입니다.');
           router.back();
@@ -86,7 +92,7 @@ export default function MatchDetailScreen() {
   };
 
   const handleDelete = async () => {
-    Alert.alert('삭제 확인', '정말 이 공고를 삭제하시겠습니까?', [
+    Alert.alert('삭제 확인', '정말 이 공고를 삭제하시겠습니까?\n(신청자들에게는 삭제된 공고로 표시됩니다)', [
       { text: '취소', style: 'cancel' },
       {
         text: '삭제',
@@ -95,9 +101,13 @@ export default function MatchDetailScreen() {
             if (!match?.id) return;
             setIsProcessing(true);
             try {
-                await deleteDoc(doc(db, "matches", match.id));
-                router.back();
-            } catch (e) { Alert.alert('오류', '삭제 실패'); } finally { setIsProcessing(false); }
+                await updateDoc(doc(db, "matches", match.id), {
+                    status: 'deleted',
+                    isDeleted: true,
+                    deletedAt: new Date().toISOString()
+                });
+                Alert.alert('삭제 완료', '게시물이 삭제되었습니다.', [{ text: '확인', onPress: () => router.back() }]);
+            } catch (e) { Alert.alert('오류', '삭제 처리에 실패했습니다.'); } finally { setIsProcessing(false); }
         }
       }
     ]);
@@ -145,6 +155,24 @@ export default function MatchDetailScreen() {
       ]);
   };
 
+  // [Date Format Helper]
+  const getFormattedDate = (timeStr: string) => {
+      const d = new Date(timeStr);
+      if (!isNaN(d.getTime()) && timeStr.includes('T')) {
+          const days = ['일', '월', '화', '수', '목', '금', '토'];
+          const month = d.getMonth() + 1;
+          const date = d.getDate();
+          const day = days[d.getDay()];
+          const hour = d.getHours();
+          const min = d.getMinutes();
+          const ampm = hour >= 12 ? '오후' : '오전';
+          const formatHour = hour % 12 || 12;
+          const formatMin = min > 0 ? `${min}분` : '';
+          return `${month}월 ${date}일 (${day}) ${ampm} ${formatHour}시 ${formatMin}`;
+      }
+      return timeStr; // Fallback
+  };
+
   if (loading) return <View style={tw`flex-1 justify-center items-center bg-[${COLORS.bg}]`}><ActivityIndicator /></View>;
   if (!match) return <View style={tw`flex-1 justify-center items-center`}><Text>정보 없음</Text></View>;
 
@@ -189,7 +217,7 @@ export default function MatchDetailScreen() {
                 </View>
                 <View style={tw`flex-1`}>
                     <Text style={tw`text-xs text-[${COLORS.textGray}] mb-1`}>일시</Text>
-                    <Text style={tw`text-lg font-bold text-[${COLORS.textMain}]`}>{match.time}</Text>
+                    <Text style={tw`text-lg font-bold text-[${COLORS.textMain}]`}>{getFormattedDate(match.time)}</Text>
                 </View>
             </View>
             <View style={tw`flex-row items-start`}>

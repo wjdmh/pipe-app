@@ -57,8 +57,12 @@ export default function EditMatchScreen() {
           setGender(data.gender);
           setPlace(data.loc);
           setNote(data.note);
-          if (data.timestamp) setDate(new Date(data.timestamp));
+          
+          // [Date Format Fix] ISO 문자열(time) 또는 timestamp를 Date 객체로 변환
+          const dateStr = data.time && !isNaN(new Date(data.time).getTime()) ? data.time : data.timestamp;
+          if (dateStr) setDate(new Date(dateStr));
           else setDate(new Date());
+          
           setStep(5);
         } else {
           Alert.alert('오류', '존재하지 않는 게시물입니다.');
@@ -84,8 +88,16 @@ export default function EditMatchScreen() {
     if (typeof id !== 'string') return;
     setSubmitting(true);
     try {
-      const dbTimeStr = `${date.getMonth() + 1}/${date.getDate()} ${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
-      await updateDoc(doc(db, "matches", id), { type, gender, time: dbTimeStr, timestamp: date.toISOString(), loc: place, note });
+      // [Date Format Fix] 수정 시에도 ISO 8601 포맷으로 저장
+      const dbTimeStr = date.toISOString();
+      await updateDoc(doc(db, "matches", id), { 
+          type, 
+          gender, 
+          time: dbTimeStr, 
+          timestamp: date.toISOString(), 
+          loc: place, 
+          note 
+      });
       Alert.alert('수정 완료', '공고가 수정되었습니다.', [{ text: '확인', onPress: () => router.back() }]);
     } catch (e) { Alert.alert('실패', '수정 중 오류가 발생했습니다.'); } finally { setSubmitting(false); }
   };

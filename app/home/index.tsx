@@ -6,7 +6,7 @@ import { db } from '../../configs/firebaseConfig';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import tw from 'twrnc';
-import { KUSF_TEAMS } from './ranking'; // ranking.tsx에서 데이터 import
+import { KUSF_TEAMS } from './ranking';
 
 // --- [Design System] ---
 const COLORS = {
@@ -34,11 +34,8 @@ const FilterChip = ({ label, active, onPress }: { label: string, active: boolean
   </TouchableOpacity>
 );
 
-// 랭킹 카드 (간략 버전)
 const RankingCard = ({ onPress, dbTeams }: { onPress: () => void, dbTeams: any[] }) => {
   const [tab, setTab] = useState<'male' | 'female'>('male');
-  
-  // 데이터 병합 및 정렬 (ranking.tsx와 동일 로직)
   const getTop3 = () => {
       let combined = [...KUSF_TEAMS].filter(t => (tab === 'male' ? t.gender !== 'female' : t.gender === 'female'));
       dbTeams.forEach(dbTeam => {
@@ -92,7 +89,7 @@ export default function HomeScreen() {
       setMatches(s.docs.map(d => ({ id: d.id, ...d.data() } as MatchData)));
       setLoading(false); setRefreshing(false);
     });
-    const qTeam = query(collection(db, "teams")); // 팀 데이터도 구독
+    const qTeam = query(collection(db, "teams"));
     const unsubTeam = onSnapshot(qTeam, (s) => {
         setDbTeams(s.docs.map(d => ({ id: d.id, ...d.data() })));
     });
@@ -112,8 +109,26 @@ export default function HomeScreen() {
   });
 
   const renderItem = ({ item }: { item: MatchData }) => {
-    const [datePart, timePart] = item.time.split(' ');
-    const formattedTime = timePart ? timePart.substring(0, 5) : '';
+    // [Date Format Logic] ISO String 호환 및 기존 문자열 호환
+    let displayDate = item.time;
+    let displayTime = '';
+    
+    // 1. ISO 포맷인지 확인 (Date 객체로 변환 가능한지)
+    const d = new Date(item.time);
+    if (!isNaN(d.getTime()) && item.time.includes('T')) {
+        const month = d.getMonth() + 1;
+        const date = d.getDate();
+        const hour = d.getHours().toString().padStart(2, '0');
+        const min = d.getMinutes().toString().padStart(2, '0');
+        displayDate = `${month}/${date}`;
+        displayTime = `${hour}:${min}`;
+    } else {
+        // 2. 기존 포맷 ("12/25 14:00") 처리
+        const parts = item.time.split(' ');
+        displayDate = parts[0] || item.time;
+        displayTime = parts[1] ? parts[1].substring(0, 5) : '';
+    }
+
     return (
       <AnimatedCard style={[tw`p-6 rounded-[24px] mb-4 shadow-sm`, { backgroundColor: COLORS.surface }]} onPress={() => router.push(`/match/${item.id}`)}>
         <View style={tw`flex-row items-center justify-between mb-4`}>
@@ -128,7 +143,7 @@ export default function HomeScreen() {
             <Text style={[tw`text-sm font-medium`, { color: COLORS.textCaption }]} numberOfLines={1}>{item.affiliation || '소속 미정'} {item.level ? `· ${item.level}급` : ''}</Text>
         </View>
         <View style={[tw`pt-4 border-t flex-row items-center`, { borderColor: COLORS.background }]}>
-            <View style={tw`flex-row items-center mr-6 flex-shrink-0`}><FontAwesome5 name="clock" size={13} color={COLORS.textSub} style={tw`mr-1.5`} /><Text style={[tw`text-sm font-bold`, { color: COLORS.textSub }]}>{datePart} <Text style={{ color: COLORS.primary }}>{formattedTime}</Text></Text></View>
+            <View style={tw`flex-row items-center mr-6 flex-shrink-0`}><FontAwesome5 name="clock" size={13} color={COLORS.textSub} style={tw`mr-1.5`} /><Text style={[tw`text-sm font-bold`, { color: COLORS.textSub }]}>{displayDate} <Text style={{ color: COLORS.primary }}>{displayTime}</Text></Text></View>
             <View style={tw`flex-row items-center flex-1 overflow-hidden`}><FontAwesome5 name="map-marker-alt" size={13} color={COLORS.textSub} style={tw`mr-1.5`} /><Text style={[tw`text-sm font-medium flex-1`, { color: COLORS.textSub }]} numberOfLines={1}>{item.loc}</Text></View>
         </View>
       </AnimatedCard>
