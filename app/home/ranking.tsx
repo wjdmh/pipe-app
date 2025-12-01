@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, FlatList, ActivityIndicator, TouchableOpacity } from 'react-native';
+import { View, Text, FlatList, TouchableOpacity } from 'react-native';
 import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
 import { db } from '../../configs/firebaseConfig';
 import { useRouter } from 'expo-router';
@@ -187,51 +187,62 @@ const COLORS = {
 export default function RankingScreen() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<'male' | 'female'>('male');
-  const [dbTeams, setDbTeams] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [rankingList, setRankingList] = useState<any[]>([]);
 
-  // DB에서 최신 랭킹 가져오기
   useEffect(() => {
-    const q = query(collection(db, "teams"), orderBy("stats.points", "desc"));
+    // 1. DB에서 모든 팀 데이터를 가져옴 (삭제된 팀도 포함하여 기록 유지)
+    const q = query(collection(db, "teams"));
     const unsubscribe = onSnapshot(q, (snapshot) => {
-        const list: any[] = [];
+        const dbTeams: any[] = [];
         snapshot.forEach(d => {
-            const data = d.data();
-            // DB에 등록된 팀 정보 수집
-            list.push({ id: d.id, ...data });
+            dbTeams.push({ ...d.data(), id: d.id }); // Firestore ID 포함
         });
-        setDbTeams(list);
-        setLoading(false);
+        mergeAndSortTeams(dbTeams);
     });
     return () => unsubscribe();
-  }, []);
+  }, [activeTab]);
 
-  // 화면에 보여줄 데이터 병합 (DB 팀 + KUSF 미등록 팀)
-  // 실제로는 DB 팀만 보여주는 것이 맞으나, 초기에는 KUSF 전체 리스트를 보여주되
-  // DB에 있는 팀은 DB 점수(업데이트된 점수)를, 없는 팀은 KUSF 초기 점수를 보여줌
-  const getRankingData = () => {
-    // 1. KUSF 전체 리스트 복사
-    let combined = [...KUSF_TEAMS].filter(t => 
-        activeTab === 'male' ? t.gender !== 'female' : t.gender === 'female'
-    );
+  const mergeAndSortTeams = (dbTeams: any[]) => {
+    // 1. 기본 KUSF 데이터 복사 (성별 필터링)
+    let baseList = [...KUSF_TEAMS].filter(t => t.gender === activeTab);
 
-    // 2. DB에 있는 팀 정보로 덮어쓰기 (앱 내 경기 결과 반영)
+    // 2. DB 데이터와 병합
     dbTeams.forEach(dbTeam => {
-        // kusfId가 일치하거나 이름이 일치하면 업데이트
-        const index = combined.findIndex(t => t.id === dbTeam.kusfId || t.name === dbTeam.name);
+        // 성별이 맞지 않으면 스킵
+        if (dbTeam.gender !== activeTab) return;
+
+        // KUSF 목록에 있는 팀인지 확인 (kusfId 또는 이름으로 매칭)
+        const index = baseList.findIndex(t => t.id === dbTeam.kusfId || t.name === dbTeam.name);
+
         if (index !== -1) {
-            combined[index] = { ...combined[index], ...dbTeam, stats: dbTeam.stats };
+            // [기존 팀 업데이트] DB의 최신 전적으로 덮어쓰기
+            baseList[index] = { 
+                ...baseList[index], 
+                ...dbTeam, 
+                stats: dbTeam.stats || baseList[index].stats // DB에 stats가 없으면 초기값 유지
+            };
         } else {
-            // KUSF 목록에 없는 신규 팀이라면 리스트에 추가 (성별 필터링 필요)
-            // 여기선 편의상 KUSF 리스트 위주로 보여줌
+            // [신규 팀 추가] KUSF 리스트에 없던 자체 생성 팀 추가
+            baseList.push({
+                id: dbTeam.id,
+                name: dbTeam.name,
+                affiliation: dbTeam.affiliation,
+                gender: dbTeam.gender,
+                stats: dbTeam.stats || { wins: 0, losses: 0, points: 0, total: 0 }
+            });
         }
     });
 
-    // 3. 승점 순 정렬
-    return combined.sort((a, b) => b.stats.points - a.stats.points);
+    // 3. 승점 순 정렬 (승점 -> 승리 수 -> 총 경기 수)
+    baseList.sort((a, b) => {
+        if (b.stats.points !== a.stats.points) return b.stats.points - a.stats.points;
+        if (b.stats.wins !== a.stats.wins) return b.stats.wins - a.stats.wins;
+        return b.stats.total - a.stats.total;
+    });
+
+    setRankingList(baseList);
   };
 
-  const data = getRankingData();
   const themeColor = activeTab === 'male' ? COLORS.male : COLORS.female;
 
   const renderRankItem = ({ item, index }: { item: any, index: number }) => {
@@ -239,10 +250,8 @@ export default function RankingScreen() {
     let rankColor = COLORS.textSub;
     let icon = null;
 
-    if (rank === 1) {
-        rankColor = '#FFD700';
-        icon = <FontAwesome5 name="crown" size={14} color="#FFD700" style={tw`mb-1`} />;
-    } else if (rank === 2) { rankColor = '#C0C0C0'; } 
+    if (rank === 1) { rankColor = '#FFD700'; icon = <FontAwesome5 name="crown" size={14} color="#FFD700" style={tw`mb-1`} />; }
+    else if (rank === 2) { rankColor = '#C0C0C0'; } 
     else if (rank === 3) { rankColor = '#CD7F32'; }
 
     return (
@@ -254,7 +263,11 @@ export default function RankingScreen() {
             </View>
             <View style={tw`flex-1`}>
                 <Text style={tw`font-bold text-lg text-[${COLORS.textMain}] mb-0.5`} numberOfLines={1}>{item.name}</Text>
-                <Text style={tw`text-sm text-[${COLORS.textCaption}]`}>{item.affiliation}</Text>
+                <View style={tw`flex-row items-center`}>
+                    <Text style={tw`text-sm text-[${COLORS.textCaption}] mr-2`}>{item.affiliation}</Text>
+                    {/* 삭제된 팀 표시 (옵션) */}
+                    {item.isDeleted && <View style={tw`bg-gray-200 px-1.5 rounded`}><Text style={tw`text-[10px] text-gray-500`}>해체됨</Text></View>}
+                </View>
             </View>
         </View>
         <View style={tw`items-end`}>
@@ -268,7 +281,7 @@ export default function RankingScreen() {
   return (
     <SafeAreaView style={[tw`flex-1`, { backgroundColor: COLORS.background }]} edges={['top']}>
       <View style={tw`px-5 py-3 flex-row items-center bg-[${COLORS.background}]`}>
-         <TouchableOpacity onPress={() => router.back()} style={tw`p-3 -ml-3 rounded-full`} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+         <TouchableOpacity onPress={() => router.back()} style={tw`p-3 -ml-3 rounded-full`}>
              <FontAwesome5 name="arrow-left" size={20} color={COLORS.textMain} />
          </TouchableOpacity>
          <Text style={tw`text-xl font-extrabold text-[${COLORS.textMain}] ml-2`}>전체 순위</Text>
@@ -283,19 +296,12 @@ export default function RankingScreen() {
                   <Text style={tw`font-bold ${activeTab === 'female' ? 'text-[#FF6B6B]' : 'text-[#8B95A1]'}`}>여자부</Text>
               </TouchableOpacity>
           </View>
-          <View style={[tw`p-5 rounded-[24px] shadow-md shadow-gray-200`, { backgroundColor: themeColor }]}>
-              <Text style={tw`text-white font-bold text-lg mb-1`}>매칭을 잡고 랭킹을 올려보세요 🏐</Text>
-              <Text style={tw`text-white/80 text-xs mb-3`}>경기 승리시 3점, 패배시 1점이 추가돼요.</Text>
-              <View style={tw`bg-black/20 self-start px-2 py-1 rounded`}>
-                  <Text style={tw`text-white/90 text-[10px] font-bold`}>2025 KUSF + 실시간 경기 반영</Text>
-              </View>
-          </View>
       </View>
 
       <FlatList
-        data={data}
+        data={rankingList}
         renderItem={renderRankItem}
-        keyExtractor={item => item.id}
+        keyExtractor={(item, index) => item.id ? item.id.toString() : index.toString()}
         contentContainerStyle={tw`px-5 pb-10`}
         showsVerticalScrollIndicator={false}
       />

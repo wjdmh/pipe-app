@@ -1,3 +1,4 @@
+// (기존 import 문 유지)
 import React, { useEffect, useState, useRef } from 'react';
 import { View, Text, FlatList, TouchableOpacity, ActivityIndicator, RefreshControl, StatusBar, Pressable, Animated } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -8,7 +9,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import tw from 'twrnc';
 import { KUSF_TEAMS } from './ranking';
 
-// --- [Design System] ---
+// ... (기존 COLORS, MatchData 타입, AnimatedCard, FilterChip 컴포넌트 유지) ...
 const COLORS = {
   background: '#F2F4F6', surface: '#FFFFFF', primary: '#3182F6', textMain: '#191F28', textSub: '#4E5968', textCaption: '#8B95A1',
   border: '#E5E8EB', badgeBlueBg: '#E8F3FF', badgeBlueText: '#1B64DA', badgeGrayBg: '#F2F4F6', badgeGrayText: '#4E5968',
@@ -34,16 +35,35 @@ const FilterChip = ({ label, active, onPress }: { label: string, active: boolean
   </TouchableOpacity>
 );
 
+// [Fix] 랭킹 카드: 모든 팀(자체생성 포함) 병합 로직 적용
 const RankingCard = ({ onPress, dbTeams }: { onPress: () => void, dbTeams: any[] }) => {
   const [tab, setTab] = useState<'male' | 'female'>('male');
+  
   const getTop3 = () => {
       let combined = [...KUSF_TEAMS].filter(t => (tab === 'male' ? t.gender !== 'female' : t.gender === 'female'));
+      
       dbTeams.forEach(dbTeam => {
+          if (dbTeam.gender && dbTeam.gender !== tab) return;
+
           const index = combined.findIndex(t => t.id === dbTeam.kusfId || t.name === dbTeam.name);
-          if (index !== -1) combined[index] = { ...combined[index], ...dbTeam, stats: dbTeam.stats };
+          if (index !== -1) {
+              combined[index] = { ...combined[index], ...dbTeam, stats: dbTeam.stats || combined[index].stats };
+          } else {
+              // 자체 생성 팀도 랭킹에 포함
+              combined.push({
+                  id: dbTeam.id,
+                  name: dbTeam.name,
+                  affiliation: dbTeam.affiliation,
+                  gender: dbTeam.gender,
+                  stats: dbTeam.stats || { wins: 0, losses: 0, points: 0, total: 0 }
+              });
+          }
       });
+      
+      // 승점 순 정렬
       return combined.sort((a, b) => b.stats.points - a.stats.points).slice(0, 3);
   };
+  
   const top3 = getTop3();
 
   return (
@@ -60,7 +80,7 @@ const RankingCard = ({ onPress, dbTeams }: { onPress: () => void, dbTeams: any[]
             {top3.map((team, index) => {
                 const badgeColor = index === 0 ? '#FFD700' : index === 1 ? '#C0C0C0' : '#CD7F32';
                 return (
-                    <View key={team.id} style={tw`flex-row items-center justify-between`}>
+                    <View key={team.id || index} style={tw`flex-row items-center justify-between`}>
                         <View style={tw`flex-row items-center flex-1 mr-4`}>
                             <View style={[tw`w-7 h-7 items-center justify-center rounded-full mr-3`, { backgroundColor: index === 0 ? '#FFF9E5' : 'transparent' }]}><Text style={[tw`font-black text-base`, { color: badgeColor }]}>{index + 1}</Text></View>
                             <Text style={[tw`text-base font-bold flex-1`, { color: COLORS.textMain }]} numberOfLines={1} ellipsizeMode="tail">{team.name}</Text>
@@ -84,11 +104,19 @@ export default function HomeScreen() {
   const [dbTeams, setDbTeams] = useState<any[]>([]);
 
   const fetchData = () => {
+    // 모집 중인 경기만 가져오되, 삭제된(isDeleted) 것은 제외
     const qMatch = query(collection(db, "matches"), where("status", "==", "recruiting"), orderBy("createdAt", "desc"));
     const unsubMatch = onSnapshot(qMatch, (s) => {
-      setMatches(s.docs.map(d => ({ id: d.id, ...d.data() } as MatchData)));
+      const list: MatchData[] = [];
+      s.forEach(d => {
+          const data = d.data();
+          if (!data.isDeleted) list.push({ id: d.id, ...data } as MatchData);
+      });
+      setMatches(list);
       setLoading(false); setRefreshing(false);
     });
+    
+    // 팀 데이터 구독 (랭킹용)
     const qTeam = query(collection(db, "teams"));
     const unsubTeam = onSnapshot(qTeam, (s) => {
         setDbTeams(s.docs.map(d => ({ id: d.id, ...d.data() })));
@@ -109,11 +137,9 @@ export default function HomeScreen() {
   });
 
   const renderItem = ({ item }: { item: MatchData }) => {
-    // [Date Format Logic] ISO String 호환 및 기존 문자열 호환
     let displayDate = item.time;
     let displayTime = '';
     
-    // 1. ISO 포맷인지 확인 (Date 객체로 변환 가능한지)
     const d = new Date(item.time);
     if (!isNaN(d.getTime()) && item.time.includes('T')) {
         const month = d.getMonth() + 1;
@@ -123,7 +149,6 @@ export default function HomeScreen() {
         displayDate = `${month}/${date}`;
         displayTime = `${hour}:${min}`;
     } else {
-        // 2. 기존 포맷 ("12/25 14:00") 처리
         const parts = item.time.split(' ');
         displayDate = parts[0] || item.time;
         displayTime = parts[1] ? parts[1].substring(0, 5) : '';

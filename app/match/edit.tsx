@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { View, Text, TextInput, TouchableOpacity, ScrollView, Alert, ActivityIndicator, Platform, KeyboardAvoidingView, Animated, Dimensions, Modal } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { doc, getDoc, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, addDoc, collection } from 'firebase/firestore'; // [Fix] addDoc, collection 추가
 import { db } from '../../configs/firebaseConfig';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -42,6 +42,7 @@ export default function EditMatchScreen() {
   const [date, setDate] = useState(new Date());
   const [place, setPlace] = useState('');
   const [note, setNote] = useState('');
+  const [existingApplicants, setExistingApplicants] = useState<string[]>([]); // [New] 기존 신청자 목록 저장
 
   const [showDateModal, setShowDateModal] = useState(false);
   const [tempDate, setTempDate] = useState(new Date());
@@ -57,8 +58,8 @@ export default function EditMatchScreen() {
           setGender(data.gender);
           setPlace(data.loc);
           setNote(data.note);
+          setExistingApplicants(data.applicants || []); // 신청자 목록 저장
           
-          // [Date Format Fix] ISO 문자열(time) 또는 timestamp를 Date 객체로 변환
           const dateStr = data.time && !isNaN(new Date(data.time).getTime()) ? data.time : data.timestamp;
           if (dateStr) setDate(new Date(dateStr));
           else setDate(new Date());
@@ -83,12 +84,31 @@ export default function EditMatchScreen() {
   const formatDateKr = (d: Date) => `${d.getMonth() + 1}월 ${d.getDate()}일`;
   const formatTimeKr = (d: Date) => `${d.getHours() >= 12 ? '오후' : '오전'} ${d.getHours() % 12 || 12}시 ${d.getMinutes() > 0 ? `${d.getMinutes()}분` : ''}`;
 
+  // [New] 알림 전송 로직
+  const sendUpdateNotification = async (targetTeamIds: string[]) => {
+      for (const teamId of targetTeamIds) {
+          try {
+              const tSnap = await getDoc(doc(db, "teams", teamId));
+              if (tSnap.exists() && tSnap.data().captainId) {
+                  await addDoc(collection(db, "notifications"), {
+                      userId: tSnap.data().captainId,
+                      type: 'normal',
+                      title: '경기 정보 변경',
+                      message: '신청하신 경기의 정보(시간/장소 등)가 변경되었습니다. 확인해주세요.',
+                      link: `/match/${id}`,
+                      createdAt: new Date().toISOString(),
+                      isRead: false
+                  });
+              }
+          } catch (e) { console.error("알림 실패", e); }
+      }
+  };
+
   const handleUpdate = async () => {
     if (!type || !gender || !place) return Alert.alert('알림', '필수 정보를 입력해주세요.');
     if (typeof id !== 'string') return;
     setSubmitting(true);
     try {
-      // [Date Format Fix] 수정 시에도 ISO 8601 포맷으로 저장
       const dbTimeStr = date.toISOString();
       await updateDoc(doc(db, "matches", id), { 
           type, 
@@ -98,6 +118,12 @@ export default function EditMatchScreen() {
           loc: place, 
           note 
       });
+
+      // [New] 신청자가 있다면 알림 발송
+      if (existingApplicants.length > 0) {
+          await sendUpdateNotification(existingApplicants);
+      }
+
       Alert.alert('수정 완료', '공고가 수정되었습니다.', [{ text: '확인', onPress: () => router.back() }]);
     } catch (e) { Alert.alert('실패', '수정 중 오류가 발생했습니다.'); } finally { setSubmitting(false); }
   };
@@ -113,6 +139,7 @@ export default function EditMatchScreen() {
       </View>
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={tw`flex-1`}>
         <ScrollView ref={scrollViewRef} contentContainerStyle={tw`px-6 pt-2 pb-32`} showsVerticalScrollIndicator={false}>
+          {/* ... (UI 부분은 기존과 동일) ... */}
           <FadeInView>
             <Text style={tw`text-lg font-bold text-[#333D4B] mb-3`}>1. 경기 방식</Text>
             <View style={tw`flex-row gap-3`}>
