@@ -2,8 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { onAuthStateChanged } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
-import { auth, db } from '../configs/firebaseConfig';
+import { auth } from '../configs/firebaseConfig';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import tw from 'twrnc';
 
@@ -14,19 +13,9 @@ export default function Index() {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       if (currentUser) {
-        try {
-          const userDoc = await getDoc(doc(db, "users", currentUser.uid));
-          const userData = userDoc.data();
-
-          if (userData?.teamId) {
-            router.replace('/home');
-          } else {
-            router.replace('/team/register');
-          }
-        } catch (e) {
-          console.error("초기 로딩 에러", e);
-          setLoading(false);
-        }
+        // [수정됨] 팀 정보 확인 로직 제거 -> 무조건 홈으로 이동
+        // 홈 화면(index.tsx) 내부에서 팀 유무를 체크하여 Guest UI를 보여줍니다.
+        router.replace('/home');
       } else {
         setLoading(false);
       }

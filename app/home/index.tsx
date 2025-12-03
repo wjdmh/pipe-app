@@ -1,20 +1,16 @@
-// (기존 import 문 유지)
 import React, { useEffect, useState, useRef } from 'react';
 import { View, Text, FlatList, TouchableOpacity, ActivityIndicator, RefreshControl, StatusBar, Pressable, Animated } from 'react-native';
 import { useRouter } from 'expo-router';
-import { collection, query, orderBy, onSnapshot, where } from 'firebase/firestore';
-import { db } from '../../configs/firebaseConfig';
+import { collection, query, orderBy, onSnapshot, where, doc, getDoc } from 'firebase/firestore';
+import { auth, db } from '../../configs/firebaseConfig';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import tw from 'twrnc';
+import { COLORS, TYPOGRAPHY } from '../../configs/theme';
+import { Card } from '../../components/Card';
 import { KUSF_TEAMS } from './ranking';
 
-// ... (기존 COLORS, MatchData 타입, AnimatedCard, FilterChip 컴포넌트 유지) ...
-const COLORS = {
-  background: '#F2F4F6', surface: '#FFFFFF', primary: '#3182F6', textMain: '#191F28', textSub: '#4E5968', textCaption: '#8B95A1',
-  border: '#E5E8EB', badgeBlueBg: '#E8F3FF', badgeBlueText: '#1B64DA', badgeGrayBg: '#F2F4F6', badgeGrayText: '#4E5968',
-  male: '#3182F6', female: '#FF6B6B',
-};
+// --- [Components] 기존 컴포넌트 유지 및 스타일 적용 ---
 
 type MatchData = { id: string; team: string; affiliation?: string; type: '6man' | '9man'; gender: 'male' | 'female' | 'mixed'; time: string; loc: string; status: string; level?: string; };
 
@@ -35,7 +31,6 @@ const FilterChip = ({ label, active, onPress }: { label: string, active: boolean
   </TouchableOpacity>
 );
 
-// [Fix] 랭킹 카드: 모든 팀(자체생성 포함) 병합 로직 적용
 const RankingCard = ({ onPress, dbTeams }: { onPress: () => void, dbTeams: any[] }) => {
   const [tab, setTab] = useState<'male' | 'female'>('male');
   
@@ -49,7 +44,6 @@ const RankingCard = ({ onPress, dbTeams }: { onPress: () => void, dbTeams: any[]
           if (index !== -1) {
               combined[index] = { ...combined[index], ...dbTeam, stats: dbTeam.stats || combined[index].stats };
           } else {
-              // 자체 생성 팀도 랭킹에 포함
               combined.push({
                   id: dbTeam.id,
                   name: dbTeam.name,
@@ -60,7 +54,6 @@ const RankingCard = ({ onPress, dbTeams }: { onPress: () => void, dbTeams: any[]
           }
       });
       
-      // 승점 순 정렬
       return combined.sort((a, b) => b.stats.points - a.stats.points).slice(0, 3);
   };
   
@@ -73,8 +66,8 @@ const RankingCard = ({ onPress, dbTeams }: { onPress: () => void, dbTeams: any[]
             <FontAwesome5 name="chevron-right" size={14} color={COLORS.textCaption} style={tw`mt-1`} />
         </View>
         <View style={tw`flex-row bg-[#F2F4F6] p-1 rounded-xl mb-4 self-start`}>
-            <TouchableOpacity onPress={() => setTab('male')} style={tw`px-3 py-1.5 rounded-lg ${tab === 'male' ? 'bg-white shadow-sm' : ''}`}><Text style={[tw`text-xs font-bold`, { color: tab === 'male' ? COLORS.male : COLORS.textCaption }]}>남자부</Text></TouchableOpacity>
-            <TouchableOpacity onPress={() => setTab('female')} style={tw`px-3 py-1.5 rounded-lg ${tab === 'female' ? 'bg-white shadow-sm' : ''}`}><Text style={[tw`text-xs font-bold`, { color: tab === 'female' ? COLORS.female : COLORS.textCaption }]}>여자부</Text></TouchableOpacity>
+            <TouchableOpacity onPress={() => setTab('male')} style={tw`px-3 py-1.5 rounded-lg ${tab === 'male' ? 'bg-white shadow-sm' : ''}`}><Text style={[tw`text-xs font-bold`, { color: tab === 'male' ? COLORS.primary : COLORS.textCaption }]}>남자부</Text></TouchableOpacity>
+            <TouchableOpacity onPress={() => setTab('female')} style={tw`px-3 py-1.5 rounded-lg ${tab === 'female' ? 'bg-white shadow-sm' : ''}`}><Text style={[tw`text-xs font-bold`, { color: tab === 'female' ? '#FF6B6B' : COLORS.textCaption }]}>여자부</Text></TouchableOpacity>
         </View>
         <View style={tw`gap-4`}>
             {top3.map((team, index) => {
@@ -95,6 +88,8 @@ const RankingCard = ({ onPress, dbTeams }: { onPress: () => void, dbTeams: any[]
   );
 };
 
+// --- [Main Screen] ---
+
 export default function HomeScreen() {
   const router = useRouter();
   const [matches, setMatches] = useState<MatchData[]>([]);
@@ -102,9 +97,30 @@ export default function HomeScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [dbTeams, setDbTeams] = useState<any[]>([]);
+  
+  // Guest Mode State
+  const [userTeamId, setUserTeamId] = useState<string | null>(null);
+  const [userName, setUserName] = useState('');
 
+  // 1. 유저 정보 확인
+  useEffect(() => {
+    const checkUserTeam = async () => {
+      const user = auth.currentUser;
+      if (user) {
+        const uSnap = await getDoc(doc(db, "users", user.uid));
+        if (uSnap.exists()) {
+          const data = uSnap.data();
+          setUserTeamId(data.teamId || null);
+          setUserName(data.nickname || data.name || '회원');
+        }
+      }
+      setLoading(false);
+    };
+    checkUserTeam();
+  }, []);
+
+  // 2. 데이터 로드
   const fetchData = () => {
-    // 모집 중인 경기만 가져오되, 삭제된(isDeleted) 것은 제외
     const qMatch = query(collection(db, "matches"), where("status", "==", "recruiting"), orderBy("createdAt", "desc"));
     const unsubMatch = onSnapshot(qMatch, (s) => {
       const list: MatchData[] = [];
@@ -113,10 +129,10 @@ export default function HomeScreen() {
           if (!data.isDeleted) list.push({ id: d.id, ...data } as MatchData);
       });
       setMatches(list);
-      setLoading(false); setRefreshing(false);
+      if(!userTeamId) setLoading(false); // Guest일 경우 여기서 로딩 해제 가능
+      setRefreshing(false);
     });
     
-    // 팀 데이터 구독 (랭킹용)
     const qTeam = query(collection(db, "teams"));
     const unsubTeam = onSnapshot(qTeam, (s) => {
         setDbTeams(s.docs.map(d => ({ id: d.id, ...d.data() })));
@@ -124,7 +140,14 @@ export default function HomeScreen() {
     return () => { unsubMatch(); unsubTeam(); };
   };
 
-  useEffect(() => { const unsub = fetchData(); return () => { if(unsub) unsub(); }; }, []);
+  useEffect(() => {
+      // Guest라도 매칭 리스트는 볼 수 있게 하려면 fetchData를 항상 실행하거나,
+      // 정책상 팀이 있어야만 본다면 userTeamId 체크. 
+      // 여기서는 Guest도 데이터 로딩은 하되 렌더링을 분기하는 방식으로 구현.
+      const unsub = fetchData();
+      return () => { if(unsub) unsub(); };
+  }, []);
+
   const onRefresh = () => { setRefreshing(true); fetchData(); };
 
   const filteredMatches = matches.filter(m => {
@@ -158,8 +181,8 @@ export default function HomeScreen() {
       <AnimatedCard style={[tw`p-6 rounded-[24px] mb-4 shadow-sm`, { backgroundColor: COLORS.surface }]} onPress={() => router.push(`/match/${item.id}`)}>
         <View style={tw`flex-row items-center justify-between mb-4`}>
             <View style={tw`flex-row gap-2`}>
-                <View style={[tw`px-2.5 py-1.5 rounded-[8px]`, { backgroundColor: item.type === '6man' ? COLORS.badgeBlueBg : '#FFF5E6' }]}><Text style={[tw`text-xs font-bold`, { color: item.type === '6man' ? COLORS.badgeBlueText : '#FF8C00' }]}>{item.type === '6man' ? '6인제' : '9인제'}</Text></View>
-                <View style={[tw`px-2.5 py-1.5 rounded-[8px]`, { backgroundColor: COLORS.badgeGrayBg }]}><Text style={[tw`text-xs font-bold`, { color: COLORS.badgeGrayText }]}>{item.gender === 'male' ? '남자부' : item.gender === 'female' ? '여자부' : '혼성'}</Text></View>
+                <View style={[tw`px-2.5 py-1.5 rounded-[8px]`, { backgroundColor: item.type === '6man' ? '#E8F3FF' : '#FFF5E6' }]}><Text style={[tw`text-xs font-bold`, { color: item.type === '6man' ? '#1B64DA' : '#FF8C00' }]}>{item.type === '6man' ? '6인제' : '9인제'}</Text></View>
+                <View style={[tw`px-2.5 py-1.5 rounded-[8px]`, { backgroundColor: COLORS.background }]}><Text style={[tw`text-xs font-bold`, { color: COLORS.textSub }]}>{item.gender === 'male' ? '남자부' : item.gender === 'female' ? '여자부' : '혼성'}</Text></View>
             </View>
             <View style={[tw`px-2.5 py-1 rounded-full`, { backgroundColor: '#E6F8EB' }]}><Text style={[tw`text-xs font-bold text-[#26A96C]`]}>신청 가능</Text></View>
         </View>
@@ -175,6 +198,53 @@ export default function HomeScreen() {
     );
   };
 
+  if (loading) return <View style={tw`flex-1 justify-center items-center`}><ActivityIndicator size="large" color={COLORS.primary} /></View>;
+
+  // --- [Guest Mode View] ---
+  if (!userTeamId) {
+    return (
+      <SafeAreaView style={tw`flex-1 bg-[#F8FAFC] px-6 justify-center`}>
+        <StatusBar barStyle="dark-content" />
+        <View style={tw`mb-10`}>
+          <Text style={tw`text-4xl mb-2`}>👋</Text>
+          <Text style={tw`${TYPOGRAPHY.h1} mb-2`}>반가워요, {userName}님!</Text>
+          <Text style={tw`${TYPOGRAPHY.body2} leading-6`}>
+            아직 소속된 팀이 없으시네요.{'\n'}팀과 함께라면 배구가 더 즐거워요!
+          </Text>
+        </View>
+
+        <View style={tw`gap-4`}>
+          {/* Card 1: 팀 찾기 */}
+          <Card onPress={() => router.push('/team/register?mode=search')}>
+            <View style={tw`flex-row items-center`}>
+              <View style={tw`w-12 h-12 bg-indigo-50 rounded-full items-center justify-center mr-4`}>
+                <FontAwesome5 name="search" size={20} color={COLORS.primary} />
+              </View>
+              <View>
+                <Text style={tw`${TYPOGRAPHY.h3}`}>이미 활동 중인 팀이 있나요?</Text>
+                <Text style={tw`${TYPOGRAPHY.body2}`}>우리 팀 검색하고 합류하기</Text>
+              </View>
+            </View>
+          </Card>
+
+          {/* Card 2: 팀 만들기 */}
+          <Card onPress={() => router.push('/team/register?mode=create')} variant="primary">
+            <View style={tw`flex-row items-center`}>
+              <View style={tw`w-12 h-12 bg-white/20 rounded-full items-center justify-center mr-4`}>
+                <FontAwesome5 name="flag" size={18} color="white" />
+              </View>
+              <View>
+                <Text style={tw`text-lg font-bold text-white`}>새로운 팀을 만드나요?</Text>
+                <Text style={tw`text-sm text-indigo-100`}>팀을 등록하고 매칭 시작하기</Text>
+              </View>
+            </View>
+          </Card>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  // --- [Member Mode View] ---
   return (
     <SafeAreaView style={[tw`flex-1`, { backgroundColor: COLORS.background }]} edges={['top']}>
       <StatusBar barStyle="dark-content" backgroundColor={COLORS.background} />
@@ -182,7 +252,29 @@ export default function HomeScreen() {
         <View><Text style={[tw`text-sm font-bold mb-0.5`, { color: COLORS.textCaption }]}>오늘의 매칭</Text><Text style={[tw`text-[26px] font-extrabold`, { color: COLORS.textMain }]}>어떤 경기를 찾으세요?</Text></View>
         <TouchableOpacity onPress={() => router.push('/home/notification')} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} activeOpacity={0.7} style={[tw`p-2.5 rounded-full bg-white shadow-sm border border-gray-100`]}><FontAwesome5 name="bell" size={18} color={COLORS.textMain} /><View style={tw`absolute top-2 right-2.5 w-1.5 h-1.5 rounded-full bg-red-500`} /></TouchableOpacity>
       </View>
-      <FlatList data={filteredMatches} renderItem={renderItem} keyExtractor={item => item.id} contentContainerStyle={tw`px-5 pb-32 pt-4`} showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[COLORS.primary]} />} ListHeaderComponent={<><RankingCard onPress={() => router.push('/home/ranking')} dbTeams={dbTeams} /><View style={tw`mb-6`}><FlatList horizontal showsHorizontalScrollIndicator={false} data={[{ id: 'all', label: '전체' }, { id: '6man', label: '6인제' }, { id: '9man', label: '9인제' }, { id: 'mixed', label: '혼성' }, { id: 'male', label: '남자부' }, { id: 'female', label: '여자부' }]} keyExtractor={(item) => item.id} renderItem={({ item }) => <FilterChip label={item.label} active={filter === item.id} onPress={() => setFilter(item.id)} />} /></View></>} ListEmptyComponent={!loading ? <View style={tw`items-center justify-center py-20`}><View style={[tw`w-20 h-20 rounded-full items-center justify-center mb-6`, { backgroundColor: '#E5E8EB' }]}><FontAwesome5 name="search" size={32} color="#8B95A1" /></View><Text style={[tw`text-lg font-bold mb-2`, { color: COLORS.textMain }]}>아직 열린 경기가 없어요</Text><Text style={[tw`text-sm text-center leading-relaxed`, { color: COLORS.textCaption }]}>필터를 바꿔보거나,{'\n'}직접 매칭을 만들어보세요.</Text></View> : <View style={tw`py-20`}><ActivityIndicator size="large" color={COLORS.primary} /></View>} />
+      <FlatList 
+        data={filteredMatches} 
+        renderItem={renderItem} 
+        keyExtractor={item => item.id} 
+        contentContainerStyle={tw`px-5 pb-32 pt-4`} 
+        showsVerticalScrollIndicator={false} 
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[COLORS.primary]} />} 
+        ListHeaderComponent={
+            <>
+                <RankingCard onPress={() => router.push('/home/ranking')} dbTeams={dbTeams} />
+                <View style={tw`mb-6`}>
+                    <FlatList 
+                        horizontal 
+                        showsHorizontalScrollIndicator={false} 
+                        data={[{ id: 'all', label: '전체' }, { id: '6man', label: '6인제' }, { id: '9man', label: '9인제' }, { id: 'mixed', label: '혼성' }, { id: 'male', label: '남자부' }, { id: 'female', label: '여자부' }]} 
+                        keyExtractor={(item) => item.id} 
+                        renderItem={({ item }) => <FilterChip label={item.label} active={filter === item.id} onPress={() => setFilter(item.id)} />} 
+                    />
+                </View>
+            </>
+        } 
+        ListEmptyComponent={!loading ? <View style={tw`items-center justify-center py-20`}><View style={[tw`w-20 h-20 rounded-full items-center justify-center mb-6`, { backgroundColor: '#E5E8EB' }]}><FontAwesome5 name="search" size={32} color="#8B95A1" /></View><Text style={[tw`text-lg font-bold mb-2`, { color: COLORS.textMain }]}>아직 열린 경기가 없어요</Text><Text style={[tw`text-sm text-center leading-relaxed`, { color: COLORS.textCaption }]}>필터를 바꿔보거나,{'\n'}직접 매칭을 만들어보세요.</Text></View> : <View style={tw`py-20`}><ActivityIndicator size="large" color={COLORS.primary} /></View>} 
+      />
       <AnimatedCard onPress={() => router.push('/match/write')} style={[tw`absolute bottom-8 right-6 px-6 py-4 rounded-full flex-row items-center shadow-lg`, { backgroundColor: COLORS.primary, shadowColor: '#3182F6', shadowOpacity: 0.3, shadowRadius: 10, elevation: 6 }]}><FontAwesome5 name="pen" size={14} color="white" style={tw`mr-2`} /><Text style={tw`text-white font-bold text-base`}>매칭 만들기</Text></AnimatedCard>
     </SafeAreaView>
   );

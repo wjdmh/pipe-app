@@ -1,9 +1,8 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, Alert, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, Alert, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import { signInWithEmailAndPassword } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
-import { auth, db } from '../../configs/firebaseConfig';
+import { auth } from '../../configs/firebaseConfig';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import tw from 'twrnc';
 
@@ -14,22 +13,14 @@ export default function LoginScreen() {
   const [loading, setLoading] = useState(false);
 
   const handleLogin = async () => {
-    if (!email || !password) return; // 버튼 비활성화 로직과 연동
+    if (!email || !password) return;
 
     setLoading(true);
     try {
-      const userCredential = await signInWithEmailAndPassword(auth, email, password);
-      const user = userCredential.user;
-
-      const userDoc = await getDoc(doc(db, "users", user.uid));
-      const userData = userDoc.data();
-
-      if (userData?.teamId) {
-        router.replace('/home');
-      } else {
-        Alert.alert('반가워요!', '서비스 이용을 위해 팀 프로필을 먼저 등록해주세요.');
-        router.replace('/team/register');
-      }
+      await signInWithEmailAndPassword(auth, email, password);
+      // [수정됨] 유저 정보 조회 및 팀 ID 체크 로직 제거
+      // 로그인 성공 시 무조건 홈으로 이동 (팀이 없으면 Guest UI가 뜹니다)
+      router.replace('/home');
 
     } catch (error: any) {
       let msg = '아이디와 비밀번호를 확인해주세요.';
@@ -57,7 +48,6 @@ export default function LoginScreen() {
           </View>
 
           <View style={tw`gap-4`}>
-            {/* 이메일 입력 */}
             <TextInput
               style={tw`w-full bg-[#F2F4F6] p-4 rounded-xl text-lg text-[#333D4B]`}
               placeholder="이메일 (example@email.com)"
@@ -66,10 +56,9 @@ export default function LoginScreen() {
               keyboardType="email-address"
               value={email}
               onChangeText={setEmail}
-              autoFocus={true} // 자동 포커스
+              autoFocus={true}
             />
 
-            {/* 비밀번호 입력 */}
             <TextInput
               style={tw`w-full bg-[#F2F4F6] p-4 rounded-xl text-lg text-[#333D4B]`}
               placeholder="비밀번호"
@@ -85,7 +74,6 @@ export default function LoginScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Sticky CTA Button */}
         <View style={tw`p-4 border-t border-[#F2F4F6]`}>
             <TouchableOpacity
               onPress={handleLogin}
