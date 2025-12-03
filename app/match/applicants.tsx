@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, FlatList, Alert, ActivityIndicator } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { doc, getDoc, updateDoc, addDoc, collection } from 'firebase/firestore';
+import { doc, getDoc, addDoc, collection, runTransaction } from 'firebase/firestore';
 import { db } from '../../configs/firebaseConfig';
 import { FontAwesome } from '@expo/vector-icons';
 import tw from 'twrnc';
@@ -12,6 +12,7 @@ type TeamInfo = {
   level: string;
   affiliation: string;
   stats: { wins: number; total: number };
+  captainId: string; // 알림 전송을 위해 captainId 포함
 };
 
 export default function ApplicantManageScreen() {
@@ -29,81 +30,128 @@ export default function ApplicantManageScreen() {
     if (typeof matchId !== 'string') return;
     try {
       const matchSnap = await getDoc(doc(db, "matches", matchId));
-      if (!matchSnap.exists()) return;
+      if (!matchSnap.exists()) {
+        Alert.alert('오류', '존재하지 않는 게시글입니다.');
+        router.back();
+        return;
+      }
 
-      const applicantIds = matchSnap.data().applicants || [];
-      
+      const matchData = matchSnap.data();
+      // 이미 매칭된 게시글인 경우 알림 후 뒤로가기
+      if (matchData.status !== 'recruiting') {
+        Alert.alert('알림', '이미 마감된 모집입니다.');
+        router.back();
+        return;
+      }
+
+      const applicantIds = matchData.applicants || [];
       const teams: TeamInfo[] = [];
+      
+      // 신청 팀 정보 조회
       for (const teamId of applicantIds) {
         const teamSnap = await getDoc(doc(db, "teams", teamId));
         if (teamSnap.exists()) {
-          teams.push({ id: teamSnap.id, ...teamSnap.data() } as TeamInfo);
+          const tData = teamSnap.data();
+          teams.push({ 
+            id: teamSnap.id, 
+            name: tData.name,
+            level: tData.level,
+            affiliation: tData.affiliation,
+            stats: tData.stats,
+            captainId: tData.captainId
+          });
         }
       }
       setApplicants(teams);
     } catch (e) {
+      console.error(e);
       Alert.alert('오류', '신청자 목록을 불러오지 못했습니다.');
     } finally {
       setLoading(false);
     }
   };
 
-  const findCaptainUid = async (teamId: string) => {
-      try {
-        const tSnap = await getDoc(doc(db, "teams", teamId));
-        return tSnap.exists() ? tSnap.data().captainId : null;
-      } catch { return null; }
-  };
-
   const sendNotification = async (targetUid: string, type: string, title: string, msg: string) => {
+      if (!targetUid) return;
       try {
           await addDoc(collection(db, "notifications"), {
               userId: targetUid,
-              type, title, message: msg,
+              type, 
+              title, 
+              message: msg,
               link: `/home/locker`,
               createdAt: new Date().toISOString(),
               isRead: false
           });
-      } catch (e) { console.error("알림 전송 실패", e); }
+      } catch (e) { console.warn("알림 전송 실패 (Non-blocking):", e); }
   };
 
+  // [Critical Fix] 매칭 수락 트랜잭션 적용
   const handleAccept = async (team: TeamInfo) => {
     if (isProcessing) return;
     
-    Alert.alert('매칭 수락', `'${team.name}' 팀과 매칭을 확정하시겠습니까?`, [
+    Alert.alert('매칭 수락', `'${team.name}' 팀과 매칭을 확정하시겠습니까?\n확정 시 다른 신청자들은 자동 탈락 처리됩니다.`, [
       { text: '취소', style: 'cancel' },
       {
         text: '확정하기',
         onPress: async () => {
           if (typeof matchId !== 'string') return;
           setIsProcessing(true);
+
           try {
-            // 1. 매칭 상태 확정
-            await updateDoc(doc(db, "matches", matchId), {
-              status: 'matched',
-              guestId: team.id,
-              applicants: [] // 목록 비우기
+            await runTransaction(db, async (transaction) => {
+              const matchRef = doc(db, "matches", matchId);
+              const matchDoc = await transaction.get(matchRef);
+
+              if (!matchDoc.exists()) {
+                throw "존재하지 않는 게시글입니다.";
+              }
+
+              const data = matchDoc.data();
+              // [Check] 동시성 방어: 이미 다른 사람이 수락했는지 확인
+              if (data.status !== 'recruiting') {
+                throw "이미 마감된 경기입니다.";
+              }
+
+              // 상태 업데이트: matched로 변경 및 guestId 지정, 신청자 목록 초기화
+              transaction.update(matchRef, {
+                status: 'matched',
+                guestId: team.id,
+                applicants: [] // DB상 신청자 목록 비우기 (클린업)
+              });
             });
 
-            // 2. [UX Fix] 나머지 신청자(탈락자)에게 알림 발송
-            // 현재 화면의 applicants 목록에서 수락된 팀을 제외한 모두에게 발송
-            const rejectedTeams = applicants.filter(t => t.id !== team.id);
-            for (const rejected of rejectedTeams) {
-                const captainId = await findCaptainUid(rejected.id);
-                if (captainId) {
-                    await sendNotification(
-                        captainId,
-                        'normal',
-                        '매칭 마감 안내',
-                        `신청하신 경기가 '${team.name}' 팀과 매칭되어 마감되었습니다.`
-                    );
-                }
-            }
+            // --- 트랜잭션 성공 후 알림 발송 ---
+            
+            // 1. 수락된 팀에게 알림 (성공)
+            await sendNotification(
+                team.captainId,
+                'match_upcoming', // 아이콘 타입
+                '매칭 성사! 🎉',
+                `신청하신 경기가 매칭되었습니다! 상대 팀 연락처를 확인하세요.`
+            );
 
-            Alert.alert('매칭 성사', '매칭이 확정되었습니다! 연락처가 공개됩니다.');
+            // 2. 탈락한 팀들에게 알림 (실패)
+            const rejectedTeams = applicants.filter(t => t.id !== team.id);
+            const notifyPromises = rejectedTeams.map(rejected => 
+                sendNotification(
+                    rejected.captainId,
+                    'normal',
+                    '매칭 마감 안내',
+                    `아쉽게도 신청하신 경기가 다른 팀과 매칭되어 마감되었습니다.`
+                )
+            );
+            await Promise.all(notifyPromises);
+
+            Alert.alert('매칭 확정', '매칭이 성공적으로 성사되었습니다!');
             router.back(); // 라커룸으로 복귀
-          } catch (e) {
-            Alert.alert('오류', '수락 처리 중 문제가 발생했습니다.');
+
+          } catch (e: any) {
+            console.error("Match Accept Error:", e);
+            const errorMsg = typeof e === 'string' ? e : '수락 처리 중 오류가 발생했습니다.';
+            Alert.alert('오류', errorMsg);
+            // 상태가 변경되었을 수 있으므로 목록 새로고침
+            loadApplicants();
           } finally {
             setIsProcessing(false);
           }
@@ -112,42 +160,59 @@ export default function ApplicantManageScreen() {
     ]);
   };
 
-  if (loading) return <View style={tw`flex-1 justify-center items-center`}><ActivityIndicator /></View>;
+  if (loading) return <View style={tw`flex-1 justify-center items-center bg-white`}><ActivityIndicator color="#3182F6" /></View>;
 
   return (
     <View style={tw`flex-1 bg-white`}>
-      {isProcessing && <View style={tw`absolute inset-0 bg-black/20 z-50 justify-center items-center`}><ActivityIndicator /></View>}
+      {/* 로딩 오버레이 */}
+      {isProcessing && (
+        <View style={tw`absolute inset-0 bg-black/30 z-50 justify-center items-center`}>
+            <ActivityIndicator size="large" color="#ffffff" />
+            <Text style={tw`text-white font-bold mt-4`}>매칭 확정 중...</Text>
+        </View>
+      )}
+
       <View style={tw`px-6 pt-14 pb-4 border-b border-slate-100 flex-row items-center bg-white`}>
-        <TouchableOpacity onPress={() => router.back()} style={tw`mr-4`}>
+        <TouchableOpacity onPress={() => router.back()} style={tw`mr-4 p-1`}>
           <FontAwesome name="arrow-left" size={20} color="#64748b" />
         </TouchableOpacity>
-        <Text style={tw`text-lg font-bold text-slate-800`}>신청자 목록</Text>
+        <Text style={tw`text-lg font-bold text-slate-800`}>신청자 목록 ({applicants.length})</Text>
       </View>
 
       <FlatList
         data={applicants}
         keyExtractor={item => item.id}
-        contentContainerStyle={tw`p-6`}
-        ListEmptyComponent={<Text style={tw`text-center text-slate-400 mt-10`}>아직 신청한 팀이 없습니다.</Text>}
+        contentContainerStyle={tw`p-6 pb-20`}
+        ListEmptyComponent={
+            <View style={tw`items-center mt-20`}>
+                <FontAwesome name="inbox" size={48} color="#E2E8F0" />
+                <Text style={tw`text-center text-slate-400 mt-4`}>아직 신청한 팀이 없습니다.</Text>
+            </View>
+        }
         renderItem={({ item }) => (
           <View style={tw`bg-white p-5 rounded-2xl border border-slate-100 shadow-sm mb-4 flex-row justify-between items-center`}>
             <View>
-              <View style={tw`flex-row items-center mb-1`}>
+              <View style={tw`flex-row items-center mb-1.5`}>
                 <Text style={tw`font-bold text-lg text-slate-800 mr-2`}>{item.name}</Text>
                 <View style={tw`bg-slate-100 px-2 py-0.5 rounded text-xs`}>
                     <Text style={tw`text-slate-500 text-xs font-bold`}>{item.level}급</Text>
                 </View>
               </View>
               <Text style={tw`text-slate-500 text-sm mb-1`}>{item.affiliation}</Text>
-              <Text style={tw`text-indigo-500 text-xs font-bold`}>
-                {item.stats?.total > 0 ? `승률 ${Math.round((item.stats.wins/item.stats.total)*100)}%` : '전적 없음'}
-              </Text>
+              <View style={tw`flex-row items-center`}>
+                  <Text style={tw`text-xs text-slate-400 mr-2`}>전적</Text>
+                  <Text style={tw`text-indigo-500 text-xs font-bold`}>
+                    {item.stats?.total > 0 
+                        ? `${item.stats.wins}승 ${item.stats.total - item.stats.wins}패 (${Math.round((item.stats.wins/item.stats.total)*100)}%)` 
+                        : '기록 없음'}
+                  </Text>
+              </View>
             </View>
 
             <TouchableOpacity
               onPress={() => handleAccept(item)}
               disabled={isProcessing}
-              style={tw`bg-indigo-600 px-4 py-2 rounded-xl`}
+              style={tw`bg-indigo-600 px-5 py-2.5 rounded-xl shadow-sm active:scale-95`}
             >
               <Text style={tw`text-white font-bold text-sm`}>수락</Text>
             </TouchableOpacity>

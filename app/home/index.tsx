@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { View, Text, FlatList, TouchableOpacity, ActivityIndicator, RefreshControl, StatusBar, Pressable, Animated } from 'react-native';
+import { View, Text, FlatList, TouchableOpacity, ActivityIndicator, RefreshControl, StatusBar, Pressable, Animated, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
-import { collection, query, orderBy, onSnapshot, where, doc, getDoc } from 'firebase/firestore';
+import { collection, query, orderBy, where, limit, startAfter, getDocs, doc, getDoc, QueryDocumentSnapshot, DocumentData } from 'firebase/firestore';
 import { auth, db } from '../../configs/firebaseConfig';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -10,7 +10,28 @@ import { COLORS, TYPOGRAPHY } from '../../configs/theme';
 import { Card } from '../../components/Card';
 import { KUSF_TEAMS } from './ranking';
 
-type MatchData = { id: string; team: string; affiliation?: string; type: '6man' | '9man'; gender: 'male' | 'female' | 'mixed'; time: string; loc: string; status: string; level?: string; };
+// [Fix] 타입 정의 추가 (TypeScript 에러 방지)
+interface Team {
+  id: string;
+  name: string;
+  kusfId?: string;
+  affiliation: string;
+  gender: 'male' | 'female';
+  stats: { wins: number; losses: number; points: number; total: number };
+}
+
+type MatchData = { 
+  id: string; 
+  team: string; 
+  affiliation?: string; 
+  type: '6man' | '9man'; 
+  gender: 'male' | 'female' | 'mixed'; 
+  time: string; 
+  loc: string; 
+  status: string; 
+  level?: string; 
+  isDeleted?: boolean; // 삭제 여부 필드 추가
+};
 
 const AnimatedCard = ({ children, onPress, style }: { children: React.ReactNode, onPress: () => void, style?: any }) => {
   const scaleValue = useRef(new Animated.Value(1)).current;
@@ -29,33 +50,60 @@ const FilterChip = ({ label, active, onPress }: { label: string, active: boolean
   </TouchableOpacity>
 );
 
-const RankingCard = ({ onPress, dbTeams }: { onPress: () => void, dbTeams: any[] }) => {
-  const [tab, setTab] = useState<'male' | 'female'>('male');
-  
-  const getTop3 = () => {
-      let combined = [...KUSF_TEAMS].filter(t => (tab === 'male' ? t.gender !== 'female' : t.gender === 'female'));
-      
-      dbTeams.forEach(dbTeam => {
-          if (dbTeam.gender && dbTeam.gender !== tab) return;
+const RankingCard = ({ onPress }: { onPress: () => void }) => {
+  const [topTeams, setTopTeams] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [tab, setTab] = useState<'male'|'female'>('male'); // [New] 성별 탭 추가
 
-          const index = combined.findIndex(t => t.id === dbTeam.kusfId || t.name === dbTeam.name);
-          if (index !== -1) {
-              combined[index] = { ...combined[index], ...dbTeam, stats: dbTeam.stats || combined[index].stats };
-          } else {
-              combined.push({
-                  id: dbTeam.id,
-                  name: dbTeam.name,
-                  affiliation: dbTeam.affiliation,
-                  gender: dbTeam.gender,
-                  stats: dbTeam.stats || { wins: 0, losses: 0, points: 0, total: 0 }
+  useEffect(() => {
+      const fetchTopTeams = async () => {
+          try {
+              // [Correction] 정확한 순위 계산을 위해 limit 제거 (전체 로드 후 병합)
+              const q = query(collection(db, "teams"));
+              const snap = await getDocs(q);
+              
+              // DB 데이터를 Team 타입으로 캐스팅하여 가져옴
+              const dbTeams = snap.docs.map(d => ({ id: d.id, ...d.data() } as Team));
+              
+              // KUSF 데이터와 병합 로직
+              // 1. 현재 탭(성별)에 맞는 KUSF 데이터만 필터링
+              let combined = KUSF_TEAMS.filter(t => t.gender === tab);
+
+              dbTeams.forEach(dbTeam => {
+                  // 성별 불일치 시 스킵
+                  if(dbTeam.gender !== tab) return;
+
+                  const idx = combined.findIndex(t => t.id === dbTeam.kusfId || t.name === dbTeam.name);
+                  if (idx !== -1) {
+                      // 기존 KUSF 팀 정보 업데이트 (DB 정보가 최신)
+                      combined[idx] = { 
+                          ...combined[idx], 
+                          ...dbTeam, 
+                          stats: dbTeam.stats || combined[idx].stats 
+                      };
+                  } else {
+                      // KUSF 리스트에 없는 신규 팀 추가
+                      combined.push({
+                          id: dbTeam.id, 
+                          name: dbTeam.name, 
+                          affiliation: dbTeam.affiliation, 
+                          gender: dbTeam.gender, 
+                          stats: dbTeam.stats || { wins: 0, losses: 0, points: 0, total: 0 }
+                      });
+                  }
               });
+              
+              // 포인트 내림차순 정렬 후 상위 3개만 표시
+              const finalTop3 = combined.sort((a, b) => b.stats.points - a.stats.points).slice(0, 3);
+              setTopTeams(finalTop3);
+          } catch (e) {
+              console.error("Ranking Fetch Error:", e);
+          } finally {
+              setLoading(false);
           }
-      });
-      
-      return combined.sort((a, b) => b.stats.points - a.stats.points).slice(0, 3);
-  };
-  
-  const top3 = getTop3();
+      };
+      fetchTopTeams();
+  }, [tab]); // 탭 변경 시 재실행
 
   return (
     <AnimatedCard onPress={onPress} style={[tw`p-6 rounded-[24px] mb-8 shadow-sm`, { backgroundColor: COLORS.surface }]}>
@@ -63,12 +111,15 @@ const RankingCard = ({ onPress, dbTeams }: { onPress: () => void, dbTeams: any[]
             <View><Text style={[tw`text-xl font-extrabold mb-1`, { color: COLORS.textMain }]}>실시간 순위 🔥</Text><Text style={[tw`text-sm font-medium`, { color: COLORS.textSub }]}>매칭을 잡고 순위를 올려보세요!</Text></View>
             <FontAwesome5 name="chevron-right" size={14} color={COLORS.textCaption} style={tw`mt-1`} />
         </View>
+        
+        {/* 성별 탭 */}
         <View style={tw`flex-row bg-[#F2F4F6] p-1 rounded-xl mb-4 self-start`}>
             <TouchableOpacity onPress={() => setTab('male')} style={tw`px-3 py-1.5 rounded-lg ${tab === 'male' ? 'bg-white shadow-sm' : ''}`}><Text style={[tw`text-xs font-bold`, { color: tab === 'male' ? COLORS.primary : COLORS.textCaption }]}>남자부</Text></TouchableOpacity>
             <TouchableOpacity onPress={() => setTab('female')} style={tw`px-3 py-1.5 rounded-lg ${tab === 'female' ? 'bg-white shadow-sm' : ''}`}><Text style={[tw`text-xs font-bold`, { color: tab === 'female' ? '#FF6B6B' : COLORS.textCaption }]}>여자부</Text></TouchableOpacity>
         </View>
+
         <View style={tw`gap-4`}>
-            {top3.map((team, index) => {
+            {loading ? <ActivityIndicator color={COLORS.primary} /> : topTeams.map((team, index) => {
                 const badgeColor = index === 0 ? '#FFD700' : index === 1 ? '#C0C0C0' : '#CD7F32';
                 return (
                     <View key={team.id || index} style={tw`flex-row items-center justify-between`}>
@@ -88,13 +139,19 @@ const RankingCard = ({ onPress, dbTeams }: { onPress: () => void, dbTeams: any[]
 
 export default function HomeScreen() {
   const router = useRouter();
+  
+  // Data States
   const [matches, setMatches] = useState<MatchData[]>([]);
+  const [lastDoc, setLastDoc] = useState<QueryDocumentSnapshot<DocumentData> | null>(null);
+  const [hasMore, setHasMore] = useState(true);
+  
+  // UI States
   const [filter, setFilter] = useState('all');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [dbTeams, setDbTeams] = useState<any[]>([]);
+  const [loadingMore, setLoadingMore] = useState(false);
   
-  // Guest Mode State
+  // User Info
   const [userTeamId, setUserTeamId] = useState<string | null>(null);
   const [userName, setUserName] = useState('');
 
@@ -103,71 +160,116 @@ export default function HomeScreen() {
     const checkUserTeam = async () => {
       const user = auth.currentUser;
       if (user) {
-        const uSnap = await getDoc(doc(db, "users", user.uid));
-        if (uSnap.exists()) {
-          const data = uSnap.data();
-          setUserTeamId(data.teamId || null);
-          setUserName(data.nickname || data.name || '회원');
-        }
+        try {
+            const uSnap = await getDoc(doc(db, "users", user.uid));
+            if (uSnap.exists()) {
+              const data = uSnap.data();
+              setUserTeamId(data.teamId || null);
+              setUserName(data.nickname || data.name || '회원');
+            }
+        } catch(e) { console.log(e); }
       }
-      setLoading(false);
+      // 유저 정보 로드 후 매칭 데이터 로드 시작
+      fetchMatches(true);
     };
     checkUserTeam();
   }, []);
 
-  // 2. 데이터 로드
-  const fetchData = () => {
-    const qMatch = query(collection(db, "matches"), where("status", "==", "recruiting"), orderBy("createdAt", "desc"));
-    const unsubMatch = onSnapshot(qMatch, (s) => {
-      const list: MatchData[] = [];
-      s.forEach(d => {
-          const data = d.data();
-          if (!data.isDeleted) list.push({ id: d.id, ...data } as MatchData);
-      });
-      setMatches(list);
-      if(!userTeamId) setLoading(false); 
-      setRefreshing(false);
-    });
-    
-    const qTeam = query(collection(db, "teams"));
-    const unsubTeam = onSnapshot(qTeam, (s) => {
-        setDbTeams(s.docs.map(d => ({ id: d.id, ...d.data() })));
-    });
-    return () => { unsubMatch(); unsubTeam(); };
+  // 2. 필터 변경 시 데이터 리셋 및 재호출
+  useEffect(() => {
+      fetchMatches(true);
+  }, [filter]);
+
+  // [Core Logic] 매칭 데이터 페칭 (Pagination + Filtering)
+  const fetchMatches = async (isRefresh = false) => {
+      if (isRefresh) {
+          setLoading(true);
+          setLastDoc(null);
+      } else {
+          if (!hasMore || loadingMore) return;
+          setLoadingMore(true);
+      }
+
+      try {
+          let q = query(
+              collection(db, "matches"), 
+              where("status", "==", "recruiting"), 
+              orderBy("createdAt", "desc"),
+              limit(10)
+          );
+
+          // 필터 적용 (DB Query Level)
+          if (filter === '6man') q = query(q, where("type", "==", "6man"));
+          else if (filter === '9man') q = query(q, where("type", "==", "9man"));
+          else if (filter === 'mixed') q = query(q, where("gender", "==", "mixed"));
+          else if (filter === 'male') q = query(q, where("gender", "==", "male"));
+          else if (filter === 'female') q = query(q, where("gender", "==", "female"));
+
+          // 페이지네이션 커서 적용
+          if (!isRefresh && lastDoc) {
+              q = query(q, startAfter(lastDoc));
+          }
+
+          const snapshot = await getDocs(q);
+          const newMatches: MatchData[] = [];
+          
+          snapshot.forEach(d => {
+              const data = d.data();
+              if (!data.isDeleted) newMatches.push({ id: d.id, ...data } as MatchData);
+          });
+
+          // 상태 업데이트
+          if (isRefresh) {
+              setMatches(newMatches);
+          } else {
+              setMatches(prev => [...prev, ...newMatches]);
+          }
+
+          // 다음 페이지 존재 여부 확인
+          if (snapshot.docs.length < 10) setHasMore(false);
+          else {
+              setHasMore(true);
+              setLastDoc(snapshot.docs[snapshot.docs.length - 1]);
+          }
+
+      } catch (e: any) {
+          console.error("Match Fetch Error:", e);
+          if (e.message && e.message.includes("index")) {
+              Alert.alert("개발자 알림", "필터링을 위한 색인(Index)이 필요합니다. 콘솔 링크를 확인하세요.");
+          }
+      } finally {
+          setLoading(false);
+          setRefreshing(false);
+          setLoadingMore(false);
+      }
   };
 
-  useEffect(() => {
-      const unsub = fetchData();
-      return () => { if(unsub) unsub(); };
-  }, []);
-
-  const onRefresh = () => { setRefreshing(true); fetchData(); };
-
-  const filteredMatches = matches.filter(m => {
-    if (filter === 'all') return true;
-    if (['6man', '9man'].includes(filter)) return m.type === filter;
-    if (filter === 'mixed') return m.gender === 'mixed';
-    if (filter === 'male') return m.gender === 'male';
-    if (filter === 'female') return m.gender === 'female';
-    return true;
-  });
+  const onRefresh = () => {
+      setRefreshing(true);
+      fetchMatches(true);
+  };
 
   const renderItem = ({ item }: { item: MatchData }) => {
     let displayDate = item.time;
     let displayTime = '';
     
-    const d = new Date(item.time);
-    if (!isNaN(d.getTime()) && item.time.includes('T')) {
-        const month = d.getMonth() + 1;
-        const date = d.getDate();
-        const hour = d.getHours().toString().padStart(2, '0');
-        const min = d.getMinutes().toString().padStart(2, '0');
-        displayDate = `${month}/${date}`;
-        displayTime = `${hour}:${min}`;
-    } else {
-        const parts = item.time.split(' ');
-        displayDate = parts[0] || item.time;
-        displayTime = parts[1] ? parts[1].substring(0, 5) : '';
+    // 날짜 파싱 안전장치
+    try {
+        const d = new Date(item.time);
+        if (!isNaN(d.getTime()) && item.time.includes('T')) {
+            const month = d.getMonth() + 1;
+            const date = d.getDate();
+            const hour = d.getHours().toString().padStart(2, '0');
+            const min = d.getMinutes().toString().padStart(2, '0');
+            displayDate = `${month}/${date}`;
+            displayTime = `${hour}:${min}`;
+        } else {
+            const parts = item.time.split(' ');
+            displayDate = parts[0] || item.time;
+            displayTime = parts[1] ? parts[1].substring(0, 5) : '';
+        }
+    } catch(e) {
+        displayDate = item.time;
     }
 
     return (
@@ -191,10 +293,8 @@ export default function HomeScreen() {
     );
   };
 
-  if (loading) return <View style={tw`flex-1 justify-center items-center`}><ActivityIndicator size="large" color={COLORS.primary} /></View>;
-
   // --- [Guest Mode View] ---
-  if (!userTeamId) {
+  if (!loading && !userTeamId) {
     return (
       <SafeAreaView style={tw`flex-1 bg-[#F8FAFC] px-6 justify-center`}>
         <StatusBar barStyle="dark-content" />
@@ -207,7 +307,6 @@ export default function HomeScreen() {
         </View>
 
         <View style={tw`gap-4`}>
-          {/* Card 1: 팀 찾기 */}
           <Card onPress={() => router.push('/team/register?mode=search')}>
             <View style={tw`flex-row items-center`}>
               <View style={tw`w-12 h-12 bg-indigo-50 rounded-full items-center justify-center mr-4`}>
@@ -220,7 +319,6 @@ export default function HomeScreen() {
             </View>
           </Card>
 
-          {/* Card 2: 팀 만들기 */}
           <Card onPress={() => router.push('/team/register?mode=create')} variant="primary">
             <View style={tw`flex-row items-center`}>
               <View style={tw`w-12 h-12 bg-white/20 rounded-full items-center justify-center mr-4`}>
@@ -233,7 +331,6 @@ export default function HomeScreen() {
             </View>
           </Card>
 
-          {/* [New] 용병 찾기 카드 */}
           <Card onPress={() => router.push('/guest/list')}>
             <View style={tw`flex-row items-center`}>
               <View style={tw`w-12 h-12 bg-orange-50 rounded-full items-center justify-center mr-4`}>
@@ -258,18 +355,23 @@ export default function HomeScreen() {
         <View><Text style={[tw`text-sm font-bold mb-0.5`, { color: COLORS.textCaption }]}>오늘의 매칭</Text><Text style={[tw`text-[26px] font-extrabold`, { color: COLORS.textMain }]}>어떤 경기를 찾으세요?</Text></View>
         <TouchableOpacity onPress={() => router.push('/home/notification')} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} activeOpacity={0.7} style={[tw`p-2.5 rounded-full bg-white shadow-sm border border-gray-100`]}><FontAwesome5 name="bell" size={18} color={COLORS.textMain} /><View style={tw`absolute top-2 right-2.5 w-1.5 h-1.5 rounded-full bg-red-500`} /></TouchableOpacity>
       </View>
+      
       <FlatList 
-        data={filteredMatches} 
+        data={matches} 
         renderItem={renderItem} 
         keyExtractor={item => item.id} 
         contentContainerStyle={tw`px-5 pb-32 pt-4`} 
-        showsVerticalScrollIndicator={false} 
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[COLORS.primary]} />} 
+        showsVerticalScrollIndicator={false}
+        onEndReached={() => fetchMatches(false)}
+        onEndReachedThreshold={0.5}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[COLORS.primary]} />}
+        ListFooterComponent={loadingMore ? <ActivityIndicator style={tw`py-4`} color={COLORS.primary} /> : <View style={tw`h-8`} />}
         ListHeaderComponent={
             <>
-                <RankingCard onPress={() => router.push('/home/ranking')} dbTeams={dbTeams} />
+                {/* 랭킹 카드 */}
+                <RankingCard onPress={() => router.push('/home/ranking')} />
                 
-                {/* [New] 용병 모집/찾기 버튼 영역 */}
+                {/* 용병 버튼 영역 */}
                 <View style={tw`flex-row gap-3 mb-6`}>
                     <TouchableOpacity onPress={() => router.push('/guest/list')} style={tw`flex-1 bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex-row items-center`}>
                         <View style={tw`w-10 h-10 bg-orange-50 rounded-full items-center justify-center mr-3`}>
@@ -291,6 +393,7 @@ export default function HomeScreen() {
                     </TouchableOpacity>
                 </View>
 
+                {/* 필터 칩 */}
                 <View style={tw`mb-6`}>
                     <FlatList 
                         horizontal 

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, TextInput, ScrollView, Alert, ActivityIndicator, Modal, KeyboardAvoidingView, Platform } from 'react-native';
-import { signOut, deleteUser } from 'firebase/auth'; // [Fix] deleteUser import
-import { doc, getDoc, collection, addDoc, updateDoc, deleteDoc } from 'firebase/firestore'; // [Fix] deleteDoc import
+import { signOut, deleteUser } from 'firebase/auth'; 
+import { doc, getDoc, collection, addDoc, updateDoc, runTransaction } from 'firebase/firestore'; 
 import { auth, db } from '../../configs/firebaseConfig';
 import { useRouter } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
@@ -11,6 +11,7 @@ export default function MyPageScreen() {
   const router = useRouter();
   const [isAdmin, setIsAdmin] = useState(false);
   const [userData, setUserData] = useState<any>(null);
+  const [loadingUser, setLoadingUser] = useState(true);
   
   const [inquiryText, setInquiryText] = useState('');
   const [sending, setSending] = useState(false);
@@ -29,63 +30,93 @@ export default function MyPageScreen() {
 
   const fetchUser = async () => {
     if(auth.currentUser) {
-        const snap = await getDoc(doc(db, "users", auth.currentUser.uid));
-        if(snap.exists()) {
-            setUserData(snap.data());
-            setNewName(snap.data().nickname || snap.data().name || '');
-            setNewPhone(snap.data().phoneNumber || snap.data().phone || '');
-        }
+        try {
+            const snap = await getDoc(doc(db, "users", auth.currentUser.uid));
+            if(snap.exists()) {
+                setUserData(snap.data());
+                setNewName(snap.data().nickname || snap.data().name || '');
+                setNewPhone(snap.data().phoneNumber || snap.data().phone || '');
+            }
+        } catch (e) { console.error(e); }
+        finally { setLoadingUser(false); }
     }
   }
 
   const handleLogout = async () => {
     Alert.alert('로그아웃', '정말 로그아웃 하시겠습니까?', [
-        { text: '취소' },
+        { text: '취소', style: 'cancel' },
         { text: '로그아웃', style: 'destructive', onPress: async () => {
-            await signOut(auth);
-            router.replace('/');
+            try {
+                await signOut(auth);
+                router.replace('/');
+            } catch (e) { Alert.alert('오류', '로그아웃 실패'); }
         }}
     ]);
   };
 
-  // [Fix] 회원 탈퇴 및 팀 삭제 로직 추가
+  // [Critical Fix] 안전한 회원 탈퇴 로직 (Transaction + Auth Error Handling)
   const handleWithdrawal = async () => {
-    Alert.alert('회원 탈퇴', '정말 탈퇴하시겠습니까?\n팀 대표인 경우 생성한 팀 데이터도 함께 삭제되며, 이는 복구할 수 없습니다.', [
-        { text: '취소', style: 'cancel' },
-        { text: '탈퇴하기', style: 'destructive', onPress: async () => {
-            const user = auth.currentUser;
-            if (!user) return;
+    const user = auth.currentUser;
+    if (!user) return;
 
-            try {
-                // 1. 내가 대표자로 있는 팀이 있다면 팀 삭제
-                if (userData?.teamId && userData?.role === 'leader') {
-                    // 실제 문서 삭제
-                    await deleteDoc(doc(db, "teams", userData.teamId));
-                    console.log("팀 문서 삭제 완료");
-                }
+    Alert.alert(
+        '회원 탈퇴', 
+        '정말 탈퇴하시겠습니까?\n\n팀 대표인 경우 팀 데이터도 함께 삭제되며, 이는 절대 복구할 수 없습니다.', 
+        [
+            { text: '취소', style: 'cancel' },
+            { 
+                text: '탈퇴하기', 
+                style: 'destructive', 
+                onPress: async () => {
+                    try {
+                        // 1. Firestore 데이터 삭제 (트랜잭션으로 원자성 보장)
+                        await runTransaction(db, async (transaction) => {
+                            // 유저 데이터 확인
+                            const userRef = doc(db, "users", user.uid);
+                            const userSnap = await transaction.get(userRef);
+                            if (!userSnap.exists()) return; // 이미 삭제됨
 
-                // 2. 유저 정보 문서 삭제
-                await deleteDoc(doc(db, "users", user.uid));
-                console.log("유저 문서 삭제 완료");
+                            const uData = userSnap.data();
 
-                // 3. Firebase Auth 계정 영구 삭제
-                await deleteUser(user);
-                
-                Alert.alert('완료', '탈퇴가 완료되었습니다.');
-                router.replace('/');
-            } catch (e: any) {
-                console.error(e);
-                // 재로그인 필요 에러 처리
-                if (e.code === 'auth/requires-recent-login') {
-                    Alert.alert('인증 만료', '보안을 위해 로그아웃 후 다시 로그인하여 탈퇴를 진행해주세요.');
-                    await signOut(auth);
-                    router.replace('/');
-                } else {
-                    Alert.alert('오류', '탈퇴 처리 중 문제가 발생했습니다.');
+                            // 팀 대표라면 팀 데이터도 삭제
+                            if (uData.teamId && uData.role === 'leader') {
+                                const teamRef = doc(db, "teams", uData.teamId);
+                                transaction.delete(teamRef);
+                            }
+
+                            // 유저 데이터 삭제
+                            transaction.delete(userRef);
+                        });
+
+                        console.log("Firestore 데이터 삭제 완료 (Transaction Success)");
+
+                        // 2. Firebase Auth 계정 영구 삭제
+                        await deleteUser(user);
+                        
+                        Alert.alert('탈퇴 완료', '회원 탈퇴가 안전하게 처리되었습니다.');
+                        router.replace('/');
+
+                    } catch (e: any) {
+                        console.error("Withdrawal Error:", e);
+                        
+                        // [Auth Error] 재로그인 필요 시 처리
+                        if (e.code === 'auth/requires-recent-login') {
+                            Alert.alert(
+                                '보안 인증 필요', 
+                                '안전한 탈퇴를 위해 본인 확인이 필요합니다.\n로그아웃 후 다시 로그인하여 시도해주세요.',
+                                [{ text: '확인', onPress: async () => {
+                                    await signOut(auth);
+                                    router.replace('/');
+                                }}]
+                            );
+                        } else {
+                            Alert.alert('오류', '탈퇴 처리 중 문제가 발생했습니다.\n관리자에게 문의해주세요.');
+                        }
+                    }
                 }
             }
-        }}
-    ]);
+        ]
+    );
   };
 
   const handleSendInquiry = async () => {
@@ -114,12 +145,12 @@ export default function MyPageScreen() {
       try {
           if (auth.currentUser) {
               await updateDoc(doc(db, "users", auth.currentUser.uid), {
-                  nickname: newName,
-                  phoneNumber: newPhone,
-                  name: newName, // 동기화
-                  phone: newPhone
+                  name: newName,
+                  nickname: newName, // 동기화
+                  phone: newPhone,
+                  phoneNumber: newPhone // 동기화
               });
-              setUserData({ ...userData, nickname: newName, phoneNumber: newPhone, name: newName, phone: newPhone });
+              setUserData({ ...userData, name: newName, nickname: newName, phone: newPhone, phoneNumber: newPhone });
               Alert.alert('완료', '정보가 수정되었습니다.');
               setEditModalVisible(false);
           }
@@ -136,20 +167,24 @@ export default function MyPageScreen() {
       
       {/* 프로필 카드 */}
       <View style={tw`bg-[#F9FAFB] p-6 rounded-[24px] border border-gray-100 mb-6`}>
-         <View style={tw`flex-row items-center mb-4`}>
-             <View style={tw`w-14 h-14 bg-blue-50 rounded-full items-center justify-center mr-4`}>
-                 <FontAwesome5 name="user" size={24} color="#3182F6" />
+         {loadingUser ? <ActivityIndicator color="#4f46e5" /> : (
+             <View style={tw`flex-row items-center mb-4`}>
+                 <View style={tw`w-14 h-14 bg-blue-50 rounded-full items-center justify-center mr-4`}>
+                     <FontAwesome5 name="user" size={24} color="#3182F6" />
+                 </View>
+                 <View>
+                     <Text style={tw`font-bold text-xl text-[#191F28]`}>{userData?.name || '이름 없음'}</Text>
+                     <Text style={tw`text-[#8B95A1] text-sm mt-0.5`}>{userData?.email}</Text>
+                     <Text style={tw`text-[#8B95A1] text-sm`}>{userData?.phoneNumber || userData?.phone || '전화번호 없음'}</Text>
+                     <Text style={tw`text-[#3182F6] text-xs font-bold mt-2`}>
+                        {isAdmin ? '관리자(Admin)' : userData?.role === 'leader' ? '팀 대표자' : '일반 회원'}
+                     </Text>
+                 </View>
              </View>
-             <View>
-                 <Text style={tw`font-bold text-xl text-[#191F28]`}>{userData?.nickname || userData?.name || '이름 없음'}</Text>
-                 <Text style={tw`text-[#8B95A1] text-sm mt-0.5`}>{userData?.email}</Text>
-                 <Text style={tw`text-[#8B95A1] text-sm`}>{userData?.phoneNumber || userData?.phone || '전화번호 없음'}</Text>
-                 <Text style={tw`text-[#3182F6] text-xs font-bold mt-2`}>{isAdmin ? '관리자(Admin)' : '팀 대표자'}</Text>
-             </View>
-         </View>
+         )}
          <TouchableOpacity 
             onPress={() => {
-                setNewName(userData?.nickname || userData?.name || '');
+                setNewName(userData?.name || '');
                 setNewPhone(userData?.phoneNumber || userData?.phone || '');
                 setEditModalVisible(true);
             }}
@@ -198,11 +233,6 @@ export default function MyPageScreen() {
 
       {/* 하단 링크 및 탈퇴 */}
       <View style={tw`gap-3`}>
-        <TouchableOpacity style={tw`flex-row justify-between items-center p-4 bg-white border-b border-gray-50`}>
-            <Text style={tw`text-[#4E5968] font-medium`}>서비스 이용약관</Text>
-            <FontAwesome5 name="chevron-right" size={12} color="#cbd5e1" />
-        </TouchableOpacity>
-        
         <View style={tw`flex-row gap-2 mt-4`}>
             <TouchableOpacity onPress={handleLogout} style={tw`flex-1 flex-row justify-center items-center p-4 bg-gray-100 rounded-2xl`}>
                 <Text style={tw`text-gray-600 font-bold mr-2`}>로그아웃</Text>
