@@ -1,0 +1,153 @@
+import React, { useEffect, useState } from 'react';
+import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { FontAwesome5 } from '@expo/vector-icons';
+import { doc, getDoc } from 'firebase/firestore';
+import { db, auth } from '../../configs/firebaseConfig';
+import { useGuest, GuestPost } from '../../hooks/useGuest';
+import tw from 'twrnc';
+
+const POSITIONS = { 'L': '레프트', 'R': '라이트', 'C': '센터', 'S': '세터', 'Li': '리베로' };
+
+export default function GuestDetailScreen() {
+  const router = useRouter();
+  const { id } = useLocalSearchParams();
+  const { applyForGuest, cancelApplication, deletePost } = useGuest();
+  
+  const [post, setPost] = useState<GuestPost | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [isProcessing, setIsProcessing] = useState(false);
+
+  useEffect(() => { loadPost(); }, [id]);
+
+  const loadPost = async () => {
+    if (typeof id !== 'string') return;
+    try {
+        const snap = await getDoc(doc(db, "guest_posts", id));
+        if (snap.exists()) {
+            setPost({ id: snap.id, ...snap.data() } as GuestPost);
+        } else {
+            Alert.alert('알림', '삭제되거나 없는 게시글입니다.');
+            router.back();
+        }
+    } catch (e) { console.error(e); } finally { setLoading(false); }
+  };
+
+  const handleDelete = () => {
+      Alert.alert('삭제 확인', '정말 이 모집글을 삭제하시겠습니까?', [
+          { text: '취소', style: 'cancel' },
+          { text: '삭제', style: 'destructive', onPress: async () => {
+              if(!post) return;
+              const success = await deletePost(post.id);
+              if(success) { 
+                  Alert.alert('완료', '삭제되었습니다.'); 
+                  router.back(); 
+              }
+          }}
+      ]);
+  };
+
+  const handleAction = async () => {
+      if(!post) return;
+      setIsProcessing(true);
+      
+      // 이미 신청했으면 취소, 아니면 신청
+      if (isApplied) await cancelApplication(post.id);
+      else await applyForGuest(post);
+      
+      await loadPost(); // 상태 업데이트
+      setIsProcessing(false);
+  };
+
+  if (loading) return <View style={tw`flex-1 justify-center items-center`}><ActivityIndicator /></View>;
+  if (!post) return null;
+
+  const isMyPost = post.hostCaptainId === auth.currentUser?.uid;
+  const isApplied = post.applicants?.includes(auth.currentUser?.uid || '');
+  
+  // 날짜/시간 포맷팅
+  let dateStr = post.matchDate;
+  let timeStr = '';
+  if (post.matchDate.includes('T')) {
+      const d = new Date(post.matchDate);
+      dateStr = `${d.getMonth() + 1}월 ${d.getDate()}일`;
+      timeStr = `${d.getHours()}시`;
+  }
+
+  return (
+    <SafeAreaView style={tw`flex-1 bg-white`}>
+      <View style={tw`px-5 py-4 border-b border-gray-100 flex-row items-center justify-between`}>
+        <TouchableOpacity onPress={() => router.back()} style={tw`p-2 -ml-2`}>
+            <FontAwesome5 name="arrow-left" size={20} color="#191F28" />
+        </TouchableOpacity>
+        <Text style={tw`text-lg font-bold text-gray-900`}>모집 상세</Text>
+        <View style={tw`w-8`} />
+      </View>
+
+      <ScrollView contentContainerStyle={tw`p-6 pb-32`}>
+        <View style={tw`flex-row gap-2 mb-4`}>
+            <View style={tw`bg-indigo-50 px-3 py-1 rounded-lg`}>
+                <Text style={tw`text-indigo-600 font-bold text-xs`}>{post.gender === 'male' ? '남성' : post.gender === 'female' ? '여성' : '혼성'}</Text>
+            </View>
+            {post.positions.map(p => (
+                <View key={p} style={tw`bg-orange-50 px-3 py-1 rounded-lg`}>
+                    <Text style={tw`text-orange-600 font-bold text-xs`}>{POSITIONS[p as keyof typeof POSITIONS] || p}</Text>
+                </View>
+            ))}
+        </View>
+
+        <Text style={tw`text-2xl font-extrabold text-gray-900 mb-1`}>{post.hostTeamName}</Text>
+        <Text style={tw`text-gray-500 mb-6 font-bold`}>{post.status === 'recruiting' ? '현재 모집 중 🔥' : '마감된 글입니다'}</Text>
+
+        <View style={tw`bg-gray-50 p-5 rounded-2xl gap-4 mb-6`}>
+            <View style={tw`flex-row items-center`}>
+                <FontAwesome5 name="clock" size={16} color="#64748b" style={tw`w-8`} />
+                <Text style={tw`text-gray-700 font-bold text-base`}>{dateStr} {timeStr}</Text>
+            </View>
+            <View style={tw`flex-row items-center`}>
+                <FontAwesome5 name="map-marker-alt" size={16} color="#64748b" style={tw`w-8`} />
+                <Text style={tw`text-gray-700 font-bold text-base`}>{post.location}</Text>
+            </View>
+            <View style={tw`flex-row items-center`}>
+                <FontAwesome5 name="coins" size={16} color="#64748b" style={tw`w-8`} />
+                <Text style={tw`text-gray-700 font-bold text-base`}>
+                    {post.fee === '0' || post.fee === '무료' ? '참가비 없음' : `${post.fee}원`}
+                </Text>
+            </View>
+        </View>
+
+        <Text style={tw`text-lg font-bold text-gray-900 mb-2`}>상세 내용</Text>
+        <View style={tw`bg-white border border-gray-100 p-4 rounded-xl min-h-[100px]`}>
+            <Text style={tw`text-gray-600 leading-6`}>{post.description || '상세 내용이 없습니다.'}</Text>
+        </View>
+      </ScrollView>
+
+      {/* 하단 버튼 영역 */}
+      <View style={tw`absolute bottom-0 w-full bg-white px-5 pt-4 pb-8 border-t border-gray-100`}>
+        {isMyPost ? (
+            <View style={tw`flex-row gap-3`}>
+                {/* [Issue 1 Solution] 신청자 관리 페이지로 이동 */}
+                <TouchableOpacity onPress={() => router.push({ pathname: '/guest/applicants', params: { postId: post.id } })} style={tw`flex-1 bg-slate-800 py-4 rounded-xl items-center`}>
+                    <Text style={tw`text-white font-bold`}>신청자 확인 ({post.applicants?.length || 0})</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={handleDelete} style={tw`bg-red-50 px-5 rounded-xl items-center justify-center border border-red-100`}>
+                    <FontAwesome5 name="trash" size={18} color="#ef4444" />
+                </TouchableOpacity>
+            </View>
+        ) : (
+            <TouchableOpacity 
+                onPress={handleAction} 
+                disabled={isProcessing || post.status !== 'recruiting'}
+                style={tw`w-full py-4 rounded-xl items-center ${isApplied ? 'bg-gray-200' : post.status === 'recruiting' ? 'bg-indigo-600' : 'bg-gray-300'}`}
+            >
+                {isProcessing ? <ActivityIndicator color={isApplied ? 'gray' : 'white'} /> : 
+                <Text style={tw`font-bold text-lg ${isApplied ? 'text-gray-500' : 'text-white'}`}>
+                    {post.status !== 'recruiting' ? '모집 마감' : isApplied ? '신청 취소하기' : '용병 지원하기'}
+                </Text>}
+            </TouchableOpacity>
+        )}
+      </View>
+    </SafeAreaView>
+  );
+}

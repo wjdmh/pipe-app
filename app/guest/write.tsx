@@ -22,7 +22,11 @@ export default function GuestWriteScreen() {
   const [location, setLocation] = useState('');
   const [positions, setPositions] = useState<string[]>([]);
   const [gender, setGender] = useState<'male'|'female'|'mixed'>('mixed');
+  
+  // [Improved Fee UI] 회비 입력 개선
   const [fee, setFee] = useState('');
+  const [isFree, setIsFree] = useState(false);
+
   const [description, setDescription] = useState('');
 
   const togglePosition = (pos: string) => {
@@ -30,12 +34,28 @@ export default function GuestWriteScreen() {
     else setPositions([...positions, pos]);
   };
 
+  const handleFeeChange = (text: string) => {
+      // 숫자만 입력 가능하도록 필터링
+      const numericValue = text.replace(/[^0-9]/g, '');
+      setFee(numericValue);
+      setIsFree(false);
+  };
+
+  const toggleFree = () => {
+      if (!isFree) {
+          setFee('');
+          setIsFree(true);
+      } else {
+          setIsFree(false);
+      }
+  };
+
   const handleSubmit = async () => {
-    if (!location || positions.length === 0 || !fee) return Alert.alert('알림', '필수 정보를 입력해주세요.');
+    if (!location || positions.length === 0 || (!isFree && !fee)) return Alert.alert('알림', '필수 정보를 입력해주세요.');
     
     setLoading(true);
     try {
-      // 내 팀 정보 가져오기 (팀이 없으면 '개인 모집'으로 처리)
+      // 내 팀 정보 가져오기
       let teamId = 'individual';
       let teamName = '개인 모집';
 
@@ -61,7 +81,7 @@ export default function GuestWriteScreen() {
         location,
         positions,
         gender,
-        fee,
+        fee: isFree ? '0' : fee, // 무료면 '0', 아니면 입력된 숫자 문자열
         description
       });
 
@@ -84,7 +104,7 @@ export default function GuestWriteScreen() {
       </View>
 
       <ScrollView contentContainerStyle={tw`p-6 pb-20`}>
-        <Text style={tw`font-bold text-gray-500 mb-2`}>필요 포지션 (복수 선택 가능)</Text>
+        <Text style={tw`font-bold text-gray-500 mb-2`}>필요 포지션</Text>
         <View style={tw`flex-row flex-wrap gap-2 mb-6`}>
           {POSITIONS.map(pos => (
             <TouchableOpacity 
@@ -130,8 +150,24 @@ export default function GuestWriteScreen() {
         <Text style={tw`font-bold text-gray-500 mb-2`}>장소</Text>
         <TextInput style={tw`bg-gray-50 p-4 rounded-xl border border-gray-200 mb-6`} placeholder="예: 한신대학교 체육관" value={location} onChangeText={setLocation} />
 
-        <Text style={tw`font-bold text-gray-500 mb-2`}>회비</Text>
-        <TextInput style={tw`bg-gray-50 p-4 rounded-xl border border-gray-200 mb-6`} placeholder="예: 5,000원 / 무료" value={fee} onChangeText={setFee} />
+        {/* [Improved Fee UI] */}
+        <Text style={tw`font-bold text-gray-500 mb-2`}>참가비</Text>
+        <View style={tw`flex-row gap-2 mb-6`}>
+            <TextInput 
+                style={tw`flex-1 bg-gray-50 p-4 rounded-xl border ${isFree ? 'border-gray-200 bg-gray-100' : 'border-indigo-500 bg-white'}`} 
+                placeholder="금액 입력 (원)" 
+                keyboardType="number-pad"
+                value={isFree ? '' : fee} 
+                onChangeText={handleFeeChange}
+                editable={!isFree}
+            />
+            <TouchableOpacity 
+                onPress={toggleFree}
+                style={tw`px-5 rounded-xl border items-center justify-center ${isFree ? 'bg-indigo-600 border-indigo-600' : 'bg-white border-gray-200'}`}
+            >
+                <Text style={tw`font-bold ${isFree ? 'text-white' : 'text-gray-500'}`}>참가비 없음</Text>
+            </TouchableOpacity>
+        </View>
 
         <Text style={tw`font-bold text-gray-500 mb-2`}>상세 내용</Text>
         <TextInput style={tw`bg-gray-50 p-4 rounded-xl border border-gray-200 h-24 mb-8`} multiline placeholder="실력, 분위기 등 추가 정보를 입력하세요." value={description} onChangeText={setDescription} textAlignVertical="top" />

@@ -17,7 +17,8 @@ export default function GuestListScreen() {
   const filteredPosts = posts.filter(p => filterPos === 'all' || (p.positions && p.positions.includes(filterPos)));
 
   const renderItem = ({ item }: { item: GuestPost }) => {
-    const isApplied = item.applicants?.includes(auth.currentUser?.uid || '');
+    const applicants = item.applicants || [];
+    const isApplied = applicants.includes(auth.currentUser?.uid || '');
     const isMyPost = item.hostCaptainId === auth.currentUser?.uid;
     
     // 날짜 포맷팅
@@ -30,12 +31,15 @@ export default function GuestListScreen() {
     }
 
     return (
-      <View style={tw`bg-white p-5 rounded-2xl mb-4 border border-gray-100 shadow-sm`}>
+      <TouchableOpacity 
+        activeOpacity={0.9}
+        onPress={() => router.push(`/guest/${item.id}`)} // [Fix] 상세 페이지 이동 연결
+        style={tw`bg-white p-5 rounded-2xl mb-4 border border-gray-100 shadow-sm`}
+      >
         <View style={tw`flex-row justify-between items-start mb-3`}>
           <View>
             <View style={tw`flex-row items-center mb-1`}>
               <View style={tw`bg-indigo-50 px-2 py-1 rounded-lg mr-2`}>
-                {/* [Fix] item.targetGender -> item.gender 로 수정 */}
                 <Text style={tw`text-indigo-600 text-xs font-bold`}>{item.gender === 'male' ? '남성' : item.gender === 'female' ? '여성' : '무관'}</Text>
               </View>
               {item.positions && item.positions.map(pos => (
@@ -59,9 +63,19 @@ export default function GuestListScreen() {
         </View>
 
         <View style={tw`border-t border-gray-100 pt-3 flex-row justify-between items-center`}>
-          <Text style={tw`text-sm font-bold text-gray-500`}>회비: <Text style={tw`text-indigo-600`}>{item.fee}</Text></Text>
+          <Text style={tw`text-sm font-bold text-gray-500`}>
+             회비: <Text style={tw`text-indigo-600`}>{item.fee === '0' || item.fee === '무료' ? '무료' : `${item.fee}원`}</Text>
+          </Text>
           
-          {!isMyPost && (
+          {isMyPost ? (
+            <TouchableOpacity 
+              onPress={() => router.push({ pathname: '/guest/applicants', params: { postId: item.id } })}
+              style={tw`px-4 py-2 rounded-xl bg-slate-800 flex-row items-center`}
+            >
+              <FontAwesome5 name="users" size={12} color="white" style={tw`mr-2`} />
+              <Text style={tw`font-bold text-white text-xs`}>지원자 확인 ({applicants.length})</Text>
+            </TouchableOpacity>
+          ) : (
             <TouchableOpacity 
               onPress={() => isApplied ? cancelApplication(item.id) : applyForGuest(item)}
               style={tw`px-4 py-2 rounded-xl ${isApplied ? 'bg-gray-200' : 'bg-indigo-600'}`}
@@ -72,7 +86,7 @@ export default function GuestListScreen() {
             </TouchableOpacity>
           )}
         </View>
-      </View>
+      </TouchableOpacity>
     );
   };
 
