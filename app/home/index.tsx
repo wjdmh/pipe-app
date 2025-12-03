@@ -10,8 +10,6 @@ import { COLORS, TYPOGRAPHY } from '../../configs/theme';
 import { Card } from '../../components/Card';
 import { KUSF_TEAMS } from './ranking';
 
-// --- [Components] 기존 컴포넌트 유지 및 스타일 적용 ---
-
 type MatchData = { id: string; team: string; affiliation?: string; type: '6man' | '9man'; gender: 'male' | 'female' | 'mixed'; time: string; loc: string; status: string; level?: string; };
 
 const AnimatedCard = ({ children, onPress, style }: { children: React.ReactNode, onPress: () => void, style?: any }) => {
@@ -88,8 +86,6 @@ const RankingCard = ({ onPress, dbTeams }: { onPress: () => void, dbTeams: any[]
   );
 };
 
-// --- [Main Screen] ---
-
 export default function HomeScreen() {
   const router = useRouter();
   const [matches, setMatches] = useState<MatchData[]>([]);
@@ -129,7 +125,7 @@ export default function HomeScreen() {
           if (!data.isDeleted) list.push({ id: d.id, ...data } as MatchData);
       });
       setMatches(list);
-      if(!userTeamId) setLoading(false); // Guest일 경우 여기서 로딩 해제 가능
+      if(!userTeamId) setLoading(false); 
       setRefreshing(false);
     });
     
@@ -141,9 +137,6 @@ export default function HomeScreen() {
   };
 
   useEffect(() => {
-      // Guest라도 매칭 리스트는 볼 수 있게 하려면 fetchData를 항상 실행하거나,
-      // 정책상 팀이 있어야만 본다면 userTeamId 체크. 
-      // 여기서는 Guest도 데이터 로딩은 하되 렌더링을 분기하는 방식으로 구현.
       const unsub = fetchData();
       return () => { if(unsub) unsub(); };
   }, []);
@@ -239,6 +232,19 @@ export default function HomeScreen() {
               </View>
             </View>
           </Card>
+
+          {/* [New] 용병 찾기 카드 */}
+          <Card onPress={() => router.push('/guest/list')}>
+            <View style={tw`flex-row items-center`}>
+              <View style={tw`w-12 h-12 bg-orange-50 rounded-full items-center justify-center mr-4`}>
+                <FontAwesome5 name="running" size={20} color="#F97316" />
+              </View>
+              <View>
+                <Text style={tw`${TYPOGRAPHY.h3}`}>배구가 하고 싶으신가요?</Text>
+                <Text style={tw`${TYPOGRAPHY.body2}`}>용병으로 참여할 팀 찾기</Text>
+              </View>
+            </View>
+          </Card>
         </View>
       </SafeAreaView>
     );
@@ -262,6 +268,29 @@ export default function HomeScreen() {
         ListHeaderComponent={
             <>
                 <RankingCard onPress={() => router.push('/home/ranking')} dbTeams={dbTeams} />
+                
+                {/* [New] 용병 모집/찾기 버튼 영역 */}
+                <View style={tw`flex-row gap-3 mb-6`}>
+                    <TouchableOpacity onPress={() => router.push('/guest/list')} style={tw`flex-1 bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex-row items-center`}>
+                        <View style={tw`w-10 h-10 bg-orange-50 rounded-full items-center justify-center mr-3`}>
+                            <FontAwesome5 name="running" size={16} color="#F97316" />
+                        </View>
+                        <View>
+                            <Text style={tw`font-bold text-gray-900`}>용병 찾기</Text>
+                            <Text style={tw`text-xs text-gray-500`}>개인 참가</Text>
+                        </View>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => router.push('/guest/write')} style={tw`flex-1 bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex-row items-center`}>
+                        <View style={tw`w-10 h-10 bg-indigo-50 rounded-full items-center justify-center mr-3`}>
+                            <FontAwesome5 name="user-plus" size={16} color="#4F46E5" />
+                        </View>
+                        <View>
+                            <Text style={tw`font-bold text-gray-900`}>용병 모집</Text>
+                            <Text style={tw`text-xs text-gray-500`}>부족한 포지션</Text>
+                        </View>
+                    </TouchableOpacity>
+                </View>
+
                 <View style={tw`mb-6`}>
                     <FlatList 
                         horizontal 

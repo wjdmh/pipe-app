@@ -5,12 +5,16 @@ service cloud.firestore {
     function isAuthenticated() { return request.auth != null; }
     function isOwner(userId) { return isAuthenticated() && request.auth.uid == userId; }
     
-    // [New] 본인이 가입 신청(joinRequests 배열 추가)을 하는지 확인
-    // request.resource.data.joinRequests가 기존 resource.data.joinRequests에 본인 데이터를 추가한 형태인지 검증해야 완벽하지만,
-    // MVP 단계에서는 'joinRequests' 필드만 변경하는 경우 허용하는 것으로 간단화.
+    // [기존] 본인 가입 신청 허용 규칙
     function isSelfJoinRequest() {
        return isAuthenticated() 
               && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['joinRequests']);
+    }
+
+    // [New] 용병 신청 규칙 (신청자 목록 applicants 필드만 변경하는 경우 허용)
+    function isGuestApplication() {
+       return isAuthenticated() 
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['applicants']);
     }
 
     match /users/{userId} {
@@ -27,11 +31,19 @@ service cloud.firestore {
       allow delete: if isAuthenticated() && resource.data.captainId == request.auth.uid;
     }
 
-    // ... (Matches, Notifications 등 기존 규칙 동일) ...
     match /matches/{matchId} {
       allow read, create: if isAuthenticated();
       allow update: if isAuthenticated() && resource.data.status != 'finished'; 
-      allow delete: if isAuthenticated() && resource.data.hostId == request.auth.uid; // 간소화
+      allow delete: if isAuthenticated() && resource.data.hostId == request.auth.uid;
+    }
+    
+    // [New] 용병 모집 게시판 규칙 (새로 추가됨)
+    match /guest_posts/{postId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated(); // 로그인한 누구나 작성 가능
+      // 작성자 본인 수정 가능 OR 다른 사람은 신청(applicants 수정)만 가능
+      allow update: if isAuthenticated() && (resource.data.hostCaptainId == request.auth.uid || isGuestApplication());
+      allow delete: if isAuthenticated() && resource.data.hostCaptainId == request.auth.uid;
     }
     
     match /notifications/{id} { allow read, write: if isAuthenticated(); }
