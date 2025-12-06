@@ -5,6 +5,7 @@ import { doc, getDoc, addDoc, collection, runTransaction } from 'firebase/firest
 import { db } from '../../configs/firebaseConfig';
 import { FontAwesome } from '@expo/vector-icons';
 import tw from 'twrnc';
+import { sendPushNotification } from '../../utils/notificationHelper';
 
 type TeamInfo = {
   id: string;
@@ -71,9 +72,11 @@ export default function ApplicantManageScreen() {
     }
   };
 
+  // [Upgraded] DB 저장 + 푸시 발송 통합 함수
   const sendNotification = async (targetUid: string, type: string, title: string, msg: string) => {
       if (!targetUid) return;
       try {
+          // 1. Firestore 내 알림 센터 저장
           await addDoc(collection(db, "notifications"), {
               userId: targetUid,
               type, 
@@ -83,6 +86,15 @@ export default function ApplicantManageScreen() {
               createdAt: new Date().toISOString(),
               isRead: false
           });
+
+          // 2. 실제 푸시 알림 발송
+          const userSnap = await getDoc(doc(db, "users", targetUid));
+          if (userSnap.exists()) {
+              const token = userSnap.data().pushToken;
+              if (token) {
+                  await sendPushNotification(token, title, msg, { link: '/home/locker' });
+              }
+          }
       } catch (e) { console.warn("알림 전송 실패 (Non-blocking):", e); }
   };
 

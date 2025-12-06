@@ -6,6 +6,7 @@ import { auth, db } from '../../configs/firebaseConfig';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import tw from 'twrnc';
+import { sendPushNotification } from '../../utils/notificationHelper';
 
 const COLORS = {
   bg: '#F2F4F6',
@@ -81,6 +82,7 @@ export default function MatchDetailScreen() {
 
   const sendNotification = async (targetUid: string, type: string, title: string, msg: string) => {
       try {
+          // DB 알림
           await addDoc(collection(db, "notifications"), {
               userId: targetUid,
               type, title, message: msg,
@@ -88,6 +90,12 @@ export default function MatchDetailScreen() {
               createdAt: new Date().toISOString(),
               isRead: false
           });
+
+          // 푸시 알림 (New)
+          const userSnap = await getDoc(doc(db, "users", targetUid));
+          if (userSnap.exists() && userSnap.data().pushToken) {
+              await sendPushNotification(userSnap.data().pushToken, title, msg, { link: '/home/locker' });
+          }
       } catch (e) { console.error("알림 전송 실패", e); }
   };
 
@@ -155,7 +163,6 @@ export default function MatchDetailScreen() {
       ]);
   };
 
-  // [Date Format Helper]
   const getFormattedDate = (timeStr: string) => {
       const d = new Date(timeStr);
       if (!isNaN(d.getTime()) && timeStr.includes('T')) {
@@ -170,7 +177,7 @@ export default function MatchDetailScreen() {
           const formatMin = min > 0 ? `${min}분` : '';
           return `${month}월 ${date}일 (${day}) ${ampm} ${formatHour}시 ${formatMin}`;
       }
-      return timeStr; // Fallback
+      return timeStr;
   };
 
   if (loading) return <View style={tw`flex-1 justify-center items-center bg-[${COLORS.bg}]`}><ActivityIndicator /></View>;

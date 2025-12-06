@@ -2,25 +2,26 @@ import { useState, useEffect } from 'react';
 import { 
   collection, query, where, orderBy, onSnapshot, 
   addDoc, updateDoc, doc, arrayUnion, arrayRemove, 
-  getDoc, runTransaction, deleteDoc, serverTimestamp 
+  getDoc, runTransaction, deleteDoc 
 } from 'firebase/firestore';
 import { db, auth } from '../configs/firebaseConfig';
 import { Alert } from 'react-native';
+import { sendPushNotification } from '../utils/notificationHelper';
 
 export type GuestPost = {
   id: string;
   hostTeamId: string;
   hostTeamName: string;
   hostCaptainId: string;
-  matchDate: string; // ISO String
+  matchDate: string; 
   location: string;
-  positions: string[]; // ['L', 'S'] etc
+  positions: string[]; 
   gender: 'male' | 'female' | 'mixed';
-  fee: string; // "0" (무료) 또는 "5000" (금액)
+  fee: string; 
   description: string;
   status: 'recruiting' | 'closed';
-  applicants?: string[]; // 선택적 필드 (DB에 없을 수 있음 방지)
-  acceptedApplicantId?: string; // 수락된 용병 ID
+  applicants?: string[]; 
+  acceptedApplicantId?: string;
   createdAt: string;
 };
 
@@ -28,7 +29,7 @@ export const useGuest = () => {
   const [posts, setPosts] = useState<GuestPost[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // 1. 모집글 목록 조회 (실시간)
+  // 1. 모집글 목록 조회
   useEffect(() => {
     const q = query(
       collection(db, "guest_posts"),
@@ -40,11 +41,7 @@ export const useGuest = () => {
       const list: GuestPost[] = [];
       snapshot.forEach((doc) => {
         const data = doc.data();
-        list.push({ 
-            id: doc.id, 
-            ...data,
-            applicants: data.applicants || [] // 항상 배열임을 보장
-        } as GuestPost);
+        list.push({ id: doc.id, ...data, applicants: data.applicants || [] } as GuestPost);
       });
       setPosts(list);
       setLoading(false);
@@ -75,7 +72,7 @@ export const useGuest = () => {
     }
   };
 
-  // 3. 용병 신청 (Transaction 적용: 동시성 이슈 해결)
+  // 3. 용병 신청
   const applyForGuest = async (post: GuestPost) => {
     if (!auth.currentUser) return;
     const userUid = auth.currentUser.uid;
@@ -89,31 +86,15 @@ export const useGuest = () => {
       await runTransaction(db, async (transaction) => {
         const postRef = doc(db, "guest_posts", post.id);
         const postDoc = await transaction.get(postRef);
-
-        if (!postDoc.exists()) {
-          throw "존재하지 않는 게시글입니다.";
-        }
-
+        if (!postDoc.exists()) throw "존재하지 않는 게시글입니다.";
         const data = postDoc.data() as GuestPost;
+        if (data.status !== 'recruiting') throw "이미 마감된 모집입니다.";
+        if (data.applicants?.includes(userUid)) throw "이미 신청한 내역이 있습니다.";
 
-        // [Check 1] 모집 마감 여부 확인
-        if (data.status !== 'recruiting') {
-          throw "이미 마감된 모집입니다.";
-        }
-
-        // [Check 2] 중복 신청 여부 확인
-        const currentApplicants = data.applicants || [];
-        if (currentApplicants.includes(userUid)) {
-          throw "이미 신청한 내역이 있습니다.";
-        }
-
-        // [Update] 신청자 목록에 추가
-        transaction.update(postRef, {
-          applicants: arrayUnion(userUid)
-        });
+        transaction.update(postRef, { applicants: arrayUnion(userUid) });
       });
       
-      // [Notification] 호스트에게 알림 발송 (성공 여부 무관)
+      // 호스트에게 알림 발송 (DB + Push)
       try {
         await addDoc(collection(db, "notifications"), {
             userId: post.hostCaptainId,
@@ -123,6 +104,17 @@ export const useGuest = () => {
             createdAt: new Date().toISOString(),
             isRead: false
         });
+
+        // Push
+        const hostSnap = await getDoc(doc(db, "users", post.hostCaptainId));
+        if (hostSnap.exists() && hostSnap.data().pushToken) {
+            await sendPushNotification(
+                hostSnap.data().pushToken,
+                '용병 신청 도착!',
+                '새로운 용병 신청자가 있습니다.',
+                { link: `/guest/${post.id}` }
+            );
+        }
       } catch (notiErr) { console.log("Noti failed but ignore"); }
 
       Alert.alert('완료', '신청되었습니다! 호스트가 확인 후 연락할 것입니다.');
@@ -144,19 +136,15 @@ export const useGuest = () => {
     }
   };
 
-  // 5. 용병 수락 (Transaction 적용: 중복 수락 방지)
+  // 5. 용병 수락
   const acceptGuest = async (post: GuestPost, applicantUid: string) => {
       try {
           await runTransaction(db, async (transaction) => {
               const postRef = doc(db, "guest_posts", post.id);
               const postDoc = await transaction.get(postRef);
-              
               if (!postDoc.exists()) throw "게시글이 삭제되었습니다.";
               const data = postDoc.data();
-
-              if (data.status !== 'recruiting') {
-                  throw "이미 마감된 매칭입니다.";
-              }
+              if (data.status !== 'recruiting') throw "이미 마감된 매칭입니다.";
 
               transaction.update(postRef, {
                   status: 'closed',
@@ -164,7 +152,7 @@ export const useGuest = () => {
               });
           });
 
-          // [Notification] 수락된 용병에게 알림
+          // 용병에게 알림 발송 (DB + Push)
           await addDoc(collection(db, "notifications"), {
               userId: applicantUid,
               type: 'normal',
@@ -174,6 +162,17 @@ export const useGuest = () => {
               isRead: false
           });
 
+          // Push
+          const userSnap = await getDoc(doc(db, "users", applicantUid));
+          if (userSnap.exists() && userSnap.data().pushToken) {
+              await sendPushNotification(
+                  userSnap.data().pushToken,
+                  '용병 매칭 확정! 🎉',
+                  `'${post.hostTeamName}' 팀의 용병으로 확정되셨습니다.`,
+                  { link: '/home' }
+              );
+          }
+
           return true;
       } catch (e: any) {
           Alert.alert('수락 실패', typeof e === 'string' ? e : '오류가 발생했습니다.');
@@ -181,7 +180,7 @@ export const useGuest = () => {
       }
   };
 
-  // [New] 6. 게시글 삭제 (호스트용)
+  // 6. 게시글 삭제
   const deletePost = async (postId: string) => {
       try {
           await deleteDoc(doc(db, "guest_posts", postId));
