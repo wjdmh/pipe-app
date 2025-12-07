@@ -28,7 +28,7 @@ type MatchData = {
   createdAt: string;
 };
 
-const POSITIONS = ['OH', 'OP', 'MB', 'S', 'L']; // [Update] 포지션 표기 표준화
+const POSITIONS = ['OH', 'OP', 'MB', 'S', 'L'];
 const LEVELS = ['A', 'B', 'C', 'D', 'E'];
 
 export default function LockerScreen() {
@@ -146,7 +146,6 @@ export default function LockerScreen() {
     return () => { unsubHost(); unsubApply(); unsubConfirmed(); };
   }, [myTeamId]);
 
-  // [Atomic Join] 가입 승인 (트랜잭션)
   const handleApproveMember = async (req: JoinRequest) => {
       if (!isCaptain || !myTeamId) return;
       try {
@@ -188,7 +187,6 @@ export default function LockerScreen() {
       } catch(e) { Alert.alert('오류', '거절 실패'); }
   };
 
-  // [Atomic Kick] 멤버 방출 (트랜잭션)
   const handleKickMember = async (player: Player) => {
       if (!isCaptain || !myTeamId || !player.uid) return;
       Alert.alert('내보내기', '이 선수를 팀에서 내보낼까요?', [
@@ -223,7 +221,6 @@ export default function LockerScreen() {
       ]);
   };
 
-  // ✅ [Atomic Add] 수동 선수 추가 (arrayUnion 사용)
   const handleAddManualPlayer = async () => {
     if (!newPlayerName || !myTeamId) return;
     try {
@@ -236,7 +233,7 @@ export default function LockerScreen() {
     } catch (e) { Alert.alert('오류', '선수 등록 실패'); }
   };
 
-  // ✅ [Atomic Delete] 수동 선수 삭제 (트랜잭션 사용)
+  // ✅ [Critical Fix] 데이터 무결성을 보장하는 수동 선수 삭제
   const handleDeleteManualPlayer = async (pid: number) => {
     if (!myTeamId) return;
     try {
@@ -245,14 +242,21 @@ export default function LockerScreen() {
             const teamDoc = await transaction.get(teamRef);
             if (!teamDoc.exists()) throw "Team not found";
             
-            // 최신 로스터 가져와서 필터링
             const currentRoster = teamDoc.data().roster || [];
+            
+            // [Check] 삭제 대상 존재 여부 확인
+            const exists = currentRoster.some((p: any) => p.id === pid);
+            if (!exists) throw "이미 삭제된 선수입니다.";
+
             const updatedRoster = currentRoster.filter((p: any) => p.id !== pid);
             
             transaction.update(teamRef, { roster: updatedRoster });
         });
-    } catch (e) {
-        Alert.alert('오류', '삭제 실패');
+    } catch (e: any) {
+        // 무시해도 되는 에러(이미 삭제됨)가 아니라면 알림 표시
+        if (e !== "이미 삭제된 선수입니다.") {
+            Alert.alert('오류', '삭제 처리에 실패했습니다.');
+        }
     }
   };
 
@@ -315,7 +319,6 @@ export default function LockerScreen() {
       } catch (e) { Alert.alert('오류', '상대 정보를 불러올 수 없어요.'); }
   };
 
-  // [UX Writing] 결과 승인 알림 변경
   const handleApprove = (match: any) => {
     Alert.alert('경기 결과 확인', '상대 팀이 입력한 점수가 맞나요?', [
       { text: '점수가 달라요', style: 'destructive', onPress: () => disputeResult(match.id) },

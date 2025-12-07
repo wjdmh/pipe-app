@@ -2,51 +2,77 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    function isAuthenticated() { return request.auth != null; }
-    function isOwner(userId) { return isAuthenticated() && request.auth.uid == userId; }
+    // [기본] 로그인 여부 확인
+    function isAuthenticated() { 
+      return request.auth != null;
+    }
+
+    // [기본] 본인 소유 확인
+    function isOwner(userId) { 
+      return isAuthenticated() && request.auth.uid == userId;
+    }
     
-    // [기존] 본인 가입 신청 허용 규칙
+    // [보안 Critical] 관리자 권한 확인
+    // 배포 전 반드시 개발자 본인의 UID로 교체하십시오.
+    function isAdmin() {
+       return isAuthenticated() && request.auth.uid == "wjFBiG1UmoPZsqO6vjlCzyfpRzv2"; 
+    }
+    
+    // [무결성] 본인 가입 신청 허용 규칙 (기존 유지)
     function isSelfJoinRequest() {
        return isAuthenticated() 
               && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['joinRequests']);
     }
 
-    // [New] 용병 신청 규칙 (신청자 목록 applicants 필드만 변경하는 경우 허용)
+    // [무결성] 용병 신청 규칙 (기존 유지)
     function isGuestApplication() {
        return isAuthenticated() 
               && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['applicants']);
     }
 
+    // 1. 유저 컬렉션
     match /users/{userId} {
       allow read: if isAuthenticated();
       allow create: if isAuthenticated();
-      allow update, delete: if isOwner(userId);
+      // 본인 또는 관리자만 수정/삭제 가능
+      allow update, delete: if isOwner(userId) || isAdmin();
     }
 
+    // 2. 팀 컬렉션
     match /teams/{teamId} {
       allow read: if isAuthenticated();
       allow create: if isAuthenticated();
-      // 대표자는 모든 수정 가능 OR 일반 유저는 가입 신청만 가능
-      allow update: if isAuthenticated() && (resource.data.captainId == request.auth.uid || isSelfJoinRequest());
-      allow delete: if isAuthenticated() && resource.data.captainId == request.auth.uid;
+      // 대표자는 모든 수정 가능 OR 일반 유저는 가입 신청만 가능 OR 관리자
+      allow update: if isAuthenticated() && (resource.data.captainId == request.auth.uid || isSelfJoinRequest() || isAdmin());
+      // 대표자 또는 관리자만 삭제 가능
+      allow delete: if isAuthenticated() && (resource.data.captainId == request.auth.uid || isAdmin());
     }
 
+    // 3. 매치 컬렉션
     match /matches/{matchId} {
       allow read, create: if isAuthenticated();
-      allow update: if isAuthenticated() && resource.data.status != 'finished'; 
-      allow delete: if isAuthenticated() && resource.data.hostId == request.auth.uid;
+      // 종료되지 않은 경기만 수정 가능 (단, 관리자는 예외)
+      allow update: if isAuthenticated() && (resource.data.status != 'finished' || isAdmin()); 
+      // 호스트 또는 관리자만 삭제 가능
+      allow delete: if isAuthenticated() && (resource.data.hostId == request.auth.uid || isAdmin());
     }
     
-    // [New] 용병 모집 게시판 규칙 (새로 추가됨)
+    // 4. 용병 모집 게시판
     match /guest_posts/{postId} {
       allow read: if isAuthenticated();
-      allow create: if isAuthenticated(); // 로그인한 누구나 작성 가능
-      // 작성자 본인 수정 가능 OR 다른 사람은 신청(applicants 수정)만 가능
-      allow update: if isAuthenticated() && (resource.data.hostCaptainId == request.auth.uid || isGuestApplication());
-      allow delete: if isAuthenticated() && resource.data.hostCaptainId == request.auth.uid;
+      allow create: if isAuthenticated();
+      // 작성자 본인 수정 가능 OR 다른 사람은 신청만 가능 OR 관리자
+      allow update: if isAuthenticated() && (resource.data.hostCaptainId == request.auth.uid || isGuestApplication() || isAdmin());
+      // 작성자 또는 관리자만 삭제 가능
+      allow delete: if isAuthenticated() && (resource.data.hostCaptainId == request.auth.uid || isAdmin());
     }
     
-    match /notifications/{id} { allow read, write: if isAuthenticated(); }
-    match /inquiries/{id} { allow read, write: if isAuthenticated(); }
+    // 5. 알림 및 문의 (기존 유지)
+    match /notifications/{id} { 
+      allow read, write: if isAuthenticated();
+    }
+    match /inquiries/{id} { 
+      allow read, write: if isAuthenticated(); 
+    }
   }
 }

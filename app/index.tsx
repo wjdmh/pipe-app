@@ -35,21 +35,21 @@ export default function Index() {
   return (
     <SafeAreaView style={tw`flex-1 bg-indigo-600 justify-between px-6 pb-10 pt-20`}>
       <View>
-        <Text style={tw`text-indigo-200 text-lg font-bold mb-2`}>6인제 배구 매칭 플랫폼</Text>
+        <Text style={tw`text-indigo-200 text-lg font-bold mb-2`}>아마추어 배구 매칭의{'\n'}새로운 시작</Text>
         <Text style={tw`text-5xl font-extrabold text-white leading-tight`}>
-          배구 매칭,{'\n'}이제 파이프로{'\n'}시작해요.
+          배구인을 위한{'\n'}단 하나의 어플{'\n'}PIPE
         </Text>
       </View>
       
       <View style={tw`gap-4`}>
         <View style={tw`bg-indigo-500/30 p-4 rounded-2xl mb-2`}>
-            <Text style={tw`text-white text-center font-medium`}>⚡️ 우리 주변 팀과 빠르게 경기를 잡아요</Text>
+            <Text style={tw`text-white text-center font-medium`}>⚡️팀 단위 매치부터 게스트 모집까지</Text>
         </View>
         <TouchableOpacity 
           onPress={() => router.push('/auth/login')}
           style={tw`w-full bg-white py-5 rounded-2xl items-center shadow-lg active:scale-95`}
         >
-          <Text style={tw`text-indigo-600 font-bold text-lg`}>3초 만에 시작하기</Text>
+          <Text style={tw`text-indigo-600 font-bold text-lg`}>바로 시작하기</Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>

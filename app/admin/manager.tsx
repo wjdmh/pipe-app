@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, Alert, TextInput, ActivityIndicator, Modal, KeyboardAvoidingView, Platform } from 'react-native';
-import { collection, query, where, getDocs, updateDoc, doc, runTransaction, getDoc, orderBy } from 'firebase/firestore';
+import { collection, query, where, getDocs, updateDoc, doc, runTransaction, getDoc, orderBy, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../configs/firebaseConfig';
 import tw from 'twrnc';
 import { FontAwesome5 } from '@expo/vector-icons';
@@ -53,7 +53,7 @@ export default function AdminManager() {
       });
       setRecruitings(recList);
 
-      // 3. 모든 팀
+      // 3. 모든 팀 (삭제되지 않은)
       const qTeams = query(collection(db, "teams"), orderBy("name"));
       const teamSnap = await getDocs(qTeams);
       const teamList: any[] = [];
@@ -65,7 +65,7 @@ export default function AdminManager() {
 
     } catch (e) {
       console.error(e);
-      Alert.alert('오류', '데이터 로드 실패');
+      Alert.alert('오류', '데이터 로드 실패 (권한 문제일 수 있음)');
     } finally {
       setLoading(false);
     }
@@ -113,24 +113,52 @@ export default function AdminManager() {
                   const matchRef = doc(db, "matches", match.id);
                   const currentMatch = await transaction.get(matchRef);
                   if (!currentMatch.exists()) throw "Match not found";
+                  
+                  // 이미 종료된 경기는 재처리 방지
                   if (currentMatch.data().status === 'finished') throw "이미 처리된 경기입니다.";
 
                   const hostRef = doc(db, "teams", match.hostId);
                   const guestRef = doc(db, "teams", match.guestId);
                   const hDoc = await transaction.get(hostRef);
                   const gDoc = await transaction.get(guestRef);
-                  if(!hDoc.exists() || !gDoc.exists()) throw "Team Error";
+                  
+                  // 팀이 존재하지 않아도 경기는 종료 처리 (Soft Fail)
+                  
+                  if(hDoc.exists()) {
+                      const hStats = hDoc.data().stats || { wins: 0, losses: 0, points: 0, total: 0 };
+                      const isHostWin = hScore > gScore;
+                      const isDraw = hScore === gScore;
+                      const hPoints = isHostWin ? 3 : (isDraw ? 1 : 1); // 패배 1점
+                      
+                      transaction.update(hostRef, { 
+                          "stats.total": (hStats.total || 0) + 1, 
+                          "stats.wins": (hStats.wins || 0) + (isHostWin ? 1 : 0), 
+                          "stats.losses": (hStats.losses || 0) + (!isHostWin && !isDraw ? 1 : 0), 
+                          "stats.points": (hStats.points || 0) + hPoints,
+                          lastActiveAt: serverTimestamp() // 활동 기록 갱신
+                      });
+                  }
 
-                  const hStats = hDoc.data().stats || { wins: 0, losses: 0, points: 0, total: 0 };
-                  const gStats = gDoc.data().stats || { wins: 0, losses: 0, points: 0, total: 0 };
-                  const isHostWin = hScore > gScore;
-                  const isDraw = hScore === gScore;
-                  const hPoints = isHostWin ? 3 : 1;
-                  const gPoints = !isHostWin && !isDraw ? 3 : 1;
+                  if(gDoc.exists()) {
+                      const gStats = gDoc.data().stats || { wins: 0, losses: 0, points: 0, total: 0 };
+                      const isGuestWin = gScore > hScore;
+                      const isDraw = gScore === hScore;
+                      const gPoints = isGuestWin ? 3 : (isDraw ? 1 : 1);
 
-                  transaction.update(hostRef, { "stats.total": (hStats.total || 0) + 1, "stats.wins": (hStats.wins || 0) + (isHostWin ? 1 : 0), "stats.losses": (hStats.losses || 0) + (!isHostWin && !isDraw ? 1 : 0), "stats.points": (hStats.points || 0) + hPoints });
-                  transaction.update(guestRef, { "stats.total": (gStats.total || 0) + 1, "stats.wins": (gStats.wins || 0) + (!isHostWin && !isDraw ? 1 : 0), "stats.losses": (gStats.losses || 0) + (isHostWin ? 1 : 0), "stats.points": (gStats.points || 0) + gPoints });
-                  transaction.update(matchRef, { status: 'finished', result: { hostScore: hScore, guestScore: gScore, status: 'verified_by_admin' } });
+                      transaction.update(guestRef, { 
+                          "stats.total": (gStats.total || 0) + 1, 
+                          "stats.wins": (gStats.wins || 0) + (isGuestWin ? 1 : 0), 
+                          "stats.losses": (gStats.losses || 0) + (!isGuestWin && !isDraw ? 1 : 0), 
+                          "stats.points": (gStats.points || 0) + gPoints,
+                          lastActiveAt: serverTimestamp()
+                      });
+                  }
+
+                  transaction.update(matchRef, { 
+                      status: 'finished', 
+                      result: { hostScore: hScore, guestScore: gScore, status: 'verified_by_admin' },
+                      finishedAt: new Date().toISOString()
+                  });
               });
               Alert.alert('성공', '결과가 강제 반영되었습니다.');
               setSelectedDisputeId(null);
@@ -160,7 +188,7 @@ export default function AdminManager() {
           { text: '삭제', style: 'destructive', onPress: async () => {
               await updateDoc(doc(db, "matches", matchId), { status: 'deleted', isDeleted: true, deletedAt: new Date().toISOString() });
               loadData();
-              setEditMatchModalVisible(false); // 모달 닫기
+              setEditMatchModalVisible(false); 
           }}
       ]);
   };
@@ -215,7 +243,7 @@ export default function AdminManager() {
       } catch(e) { Alert.alert('오류', '수정 실패'); }
   };
 
-  // ✅ [수정됨] 안전한 팀 삭제 (연쇄 삭제 적용)
+  // [Critical] 안전한 팀 삭제 (연쇄 삭제)
   const deleteTeam = async () => {
     if (!selectedTeam) return;
     Alert.alert('팀 삭제 (Soft Delete)', `'${selectedTeam.name}' 팀을 삭제 처리하시겠습니까?\n소속된 모든 멤버는 자동으로 탈퇴(Guest) 처리됩니다.`, [
@@ -223,14 +251,13 @@ export default function AdminManager() {
       { text: '삭제', style: 'destructive', onPress: async () => {
           try {
               await runTransaction(db, async (transaction) => {
-                  // 1. 최신 팀 데이터 조회 (동시성 방어)
                   const teamRef = doc(db, "teams", selectedTeam.id);
                   const teamDoc = await transaction.get(teamRef);
                   
                   if (!teamDoc.exists()) throw "팀 데이터가 존재하지 않습니다.";
                   
                   const teamData = teamDoc.data();
-                  const memberIds = teamData.members || []; // 멤버 목록 가져오기
+                  const memberIds = teamData.members || []; 
 
                   // 2. 모든 멤버(대표 포함)의 소속 해제
                   memberIds.forEach((uid: string) => {
@@ -246,14 +273,15 @@ export default function AdminManager() {
                   transaction.update(teamRef, { 
                       isDeleted: true, 
                       deletedAt: new Date().toISOString(),
-                      captainId: null, // 대표자 정보도 제거
-                      members: []      // 멤버 리스트 초기화
+                      captainId: null, // 대표자 정보 제거
+                      members: [],     // 멤버 리스트 초기화
+                      roster: []       // 로스터 초기화
                   });
               });
 
               Alert.alert('완료', '팀과 소속 멤버가 모두 정리되었습니다.');
               setTeamModalVisible(false);
-              loadData(); // 목록 새로고침
+              loadData(); 
 
           } catch (e: any) { 
               console.error(e);
@@ -263,7 +291,6 @@ export default function AdminManager() {
     ]);
   };
 
-  // [Date Format Helper]
   const formatTimeSimple = (timeStr: string) => {
       if (!timeStr) return '-';
       const d = new Date(timeStr);

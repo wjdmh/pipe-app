@@ -3,7 +3,7 @@ import { View, Text, TextInput, TouchableOpacity, Alert, ScrollView, ActivityInd
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { FontAwesome5 } from '@expo/vector-icons';
-import { collection, addDoc, serverTimestamp, query, getDocs, doc, getDoc, setDoc, updateDoc, arrayUnion, runTransaction } from 'firebase/firestore';
+import { collection, query, getDocs, doc, getDoc, runTransaction, serverTimestamp } from 'firebase/firestore';
 import { db, auth } from '../../configs/firebaseConfig';
 import tw from 'twrnc';
 import { KUSF_TEAMS } from '../home/ranking';
@@ -43,21 +43,26 @@ export default function TeamRegister() {
 
   const fetchUserInfo = async () => {
     if (!auth.currentUser) return;
-    const uSnap = await getDoc(doc(db, 'users', auth.currentUser.uid));
-    if (uSnap.exists()) setUserInfo(uSnap.data());
+    try {
+        const uSnap = await getDoc(doc(db, 'users', auth.currentUser.uid));
+        if (uSnap.exists()) setUserInfo(uSnap.data());
+    } catch (e) { console.error("User Fetch Error", e); }
   };
 
   const fetchRegisteredTeams = async () => {
-      const q = query(collection(db, "teams"));
-      const snapshot = await getDocs(q);
-      const map: {[key: string]: any} = {};
-      snapshot.forEach(doc => {
-          const data = doc.data();
-          if (data.kusfId) map[data.kusfId] = { ...data, docId: doc.id };
-      });
-      setRegisteredTeamsMap(map);
+      try {
+        const q = query(collection(db, "teams"));
+        const snapshot = await getDocs(q);
+        const map: {[key: string]: any} = {};
+        snapshot.forEach(doc => {
+            const data = doc.data();
+            if (data.kusfId) map[data.kusfId] = { ...data, docId: doc.id };
+        });
+        setRegisteredTeamsMap(map);
+      } catch (e) { console.error("Teams Fetch Error", e); }
   };
 
+  // KUSF 팀 목록 필터링 (로컬 데이터 KUSF_TEAMS 활용)
   const filteredTeams = KUSF_TEAMS.filter(team => {
     return team.gender === selectedGender && (team.name.includes(searchQuery) || team.affiliation.includes(searchQuery));
   });
@@ -95,36 +100,47 @@ export default function TeamRegister() {
     setStep('VERIFY');
   };
 
-  // 가입 신청 로직
+  // [Atomic Operation] 가입 신청 로직 강화
   const sendJoinRequest = async (teamDocData: any) => {
       if (!auth.currentUser || !userInfo) return;
       setLoading(true);
       try {
-          const requestPayload = {
-              uid: auth.currentUser.uid,
-              name: userInfo.name || '이름없음',
-              position: userInfo.position || '포지션 미정',
-              requestedAt: new Date().toISOString()
-          };
+          await runTransaction(db, async (transaction) => {
+              const teamRef = doc(db, "teams", teamDocData.docId);
+              const teamSnap = await transaction.get(teamRef);
+              
+              if (!teamSnap.exists()) throw "팀이 존재하지 않습니다.";
+              
+              // 중복 신청 방지 체크
+              const currentRequests = teamSnap.data().joinRequests || [];
+              const isAlreadyRequested = currentRequests.some((req: any) => req.uid === auth.currentUser?.uid);
+              if (isAlreadyRequested) throw "이미 가입 신청을 보냈습니다.";
 
-          await updateDoc(doc(db, "teams", teamDocData.docId), {
-              joinRequests: arrayUnion(requestPayload)
+              const requestPayload = {
+                  uid: auth.currentUser!.uid,
+                  name: userInfo.name || '이름없음',
+                  position: userInfo.position || '포지션 미정',
+                  requestedAt: new Date().toISOString()
+              };
+
+              transaction.update(teamRef, {
+                  joinRequests: [...currentRequests, requestPayload]
+              });
           });
 
           Alert.alert('신청 완료', '가입 신청을 보냈습니다.\n대표자가 승인하면 팀원으로 등록됩니다.', [
               { text: '확인', onPress: () => router.replace('/home') }
           ]);
-      } catch (e) {
-          console.error(e);
-          Alert.alert('오류', '가입 신청 중 문제가 발생했습니다.');
+      } catch (e: any) {
+          Alert.alert('오류', typeof e === 'string' ? e : '가입 신청 중 문제가 발생했습니다.');
       } finally {
           setLoading(false);
       }
   };
 
-  // 인증 로직
+  // 인증 로직 (간소화됨 - 실제 구현 시 메일 API 연동 필요)
   const sendVerificationCode = async () => {
-      if (!email.includes('@')) return Alert.alert('오류', '이메일을 입력해주세요.');
+      if (!email.includes('@')) return Alert.alert('오류', '올바른 이메일 형식이 아닙니다.');
       setTimeout(() => {
           setGeneratedCode("000000"); 
           setIsCodeSent(true); 
@@ -137,7 +153,7 @@ export default function TeamRegister() {
       setStep('INFO_FORM');
   };
 
-  // ✅ [수정됨] 절대 안전한 팀 생성 (Atomic Transaction 적용)
+  // [Critical Logic] 절대 안전한 팀 생성 (Atomic Transaction)
   const submitTeam = async () => {
       if (!teamName || !selectedRegion) return Alert.alert('오류', '팀 이름과 지역은 필수입니다.');
       if (!auth.currentUser) return;
@@ -174,21 +190,29 @@ export default function TeamRegister() {
                 joinRequests: [],
                 kusfId: targetTeam ? targetTeam.id : null,
                 stats: targetTeam ? targetTeam.stats : { wins: 0, losses: 0, points: 0, total: 0 },
+                level: 'C', // 초기 레벨
                 createdAt: new Date().toISOString(),
+                // [Strategic Proposal] 유령 팀 방지를 위한 활동 시간 필드
+                lastActiveAt: serverTimestamp(),
                 isDeleted: false
             };
 
             let teamRef;
 
             if (isReclaiming && reclaimDocId) {
-                // [이어받기] 기존 문서 업데이트
+                // [이어받기] 기존 문서 업데이트 (Soft Delete 해제)
                 teamRef = doc(db, "teams", reclaimDocId);
                 const teamDoc = await transaction.get(teamRef);
                 if (!teamDoc.exists()) throw "이어받을 팀 정보를 찾을 수 없습니다.";
-                transaction.update(teamRef, teamPayload);
+                
+                transaction.update(teamRef, {
+                    ...teamPayload,
+                    isDeleted: false,
+                    deletedAt: null // 삭제 기록 초기화
+                });
             } else {
                 // [신규생성] 새 문서 생성
-                teamRef = doc(collection(db, "teams")); // ID 미리 생성
+                teamRef = doc(collection(db, "teams")); 
                 transaction.set(teamRef, teamPayload);
             }
 

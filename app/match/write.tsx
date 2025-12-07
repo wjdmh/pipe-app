@@ -15,7 +15,7 @@ import {
   LogBox
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { collection, addDoc, doc, getDoc } from 'firebase/firestore';
+import { collection, addDoc, doc, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from '../../configs/firebaseConfig';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -144,7 +144,7 @@ export default function WriteMatchScreen() {
     // 1. 입력값 검증 (Validation)
     if (!type) return Alert.alert('정보 입력', '경기 방식을 선택해주세요.');
     if (!gender) return Alert.alert('정보 입력', '성별을 선택해주세요.');
-    if (!place) return Alert.alert('정보 입력', '경기 장소를 입력해주세요.');
+    if (!place.trim()) return Alert.alert('정보 입력', '경기 장소를 입력해주세요.'); // [Fix] 공백 체크 추가
 
     setLoading(true);
     try {
@@ -172,6 +172,12 @@ export default function WriteMatchScreen() {
       if (!teamSnap.exists()) throw new Error('소속된 팀 정보를 찾을 수 없습니다.');
       const teamData = teamSnap.data();
 
+      // [Strategic Proposal] 팀 활동 시간 갱신 (유령 팀 방지)
+      // 매칭을 생성한다는 것은 팀이 활발히 활동 중이라는 증거입니다.
+      await updateDoc(teamRef, { 
+          lastActiveAt: serverTimestamp() 
+      });
+
       // 4. 데이터 쓰기
       const payload = {
         hostId: userData.teamId,
@@ -180,7 +186,7 @@ export default function WriteMatchScreen() {
         type,
         gender,
         time: date.toISOString(),
-        loc: place,
+        loc: place.trim(), // [Fix] 공백 제거
         note: note.trim(),
         status: 'recruiting',
         createdAt: new Date().toISOString(),

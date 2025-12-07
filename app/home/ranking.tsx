@@ -1,14 +1,25 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, FlatList, TouchableOpacity } from 'react-native';
-import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
+import { View, Text, FlatList, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { collection, query, orderBy, onSnapshot, limit } from 'firebase/firestore';
 import { db } from '../../configs/firebaseConfig';
 import { useRouter } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import tw from 'twrnc';
 
-// --- [Data] KUSF 전체 데이터 (2025 KUSF 팀별 점수 파일 반영) ---
-export const KUSF_TEAMS = [
+// [Fix] 팀 데이터 타입 정의 (isDeleted 속성 추가)
+interface TeamRankInfo {
+  id: string;
+  name: string;
+  affiliation: string;
+  gender: string;
+  stats: { wins: number; losses: number; points: number; total: number };
+  kusfId?: string;
+  isDeleted?: boolean;
+}
+
+// --- [Data] KUSF 전체 데이터 ---
+export const KUSF_TEAMS: TeamRankInfo[] = [
   // [남자부]
   { id: 'm1', name: '서울대학교 배구부', affiliation: '서울대학교', gender: 'male', stats: { wins: 8, losses: 1, points: 25, total: 9 } },
   { id: 'm2', name: '이리', affiliation: '대구가톨릭대', gender: 'male', stats: { wins: 7, losses: 2, points: 23, total: 9 } },
@@ -187,15 +198,20 @@ const COLORS = {
 export default function RankingScreen() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<'male' | 'female'>('male');
-  const [rankingList, setRankingList] = useState<any[]>([]);
+  const [rankingList, setRankingList] = useState<TeamRankInfo[]>([]);
 
   useEffect(() => {
-    // 1. DB에서 모든 팀 데이터를 가져옴 (삭제된 팀도 포함하여 기록 유지)
-    const q = query(collection(db, "teams"));
+    // 1. [Cost & Performance Fix] 상위 50개 팀만 가져오도록 제한
+    const q = query(
+        collection(db, "teams"), 
+        orderBy("stats.points", "desc"), 
+        limit(50)
+    );
+
     const unsubscribe = onSnapshot(q, (snapshot) => {
         const dbTeams: any[] = [];
         snapshot.forEach(d => {
-            dbTeams.push({ ...d.data(), id: d.id }); // Firestore ID 포함
+            dbTeams.push({ ...d.data(), id: d.id });
         });
         mergeAndSortTeams(dbTeams);
     });
@@ -203,15 +219,11 @@ export default function RankingScreen() {
   }, [activeTab]);
 
   const mergeAndSortTeams = (dbTeams: any[]) => {
-    // 1. 기본 KUSF 데이터 복사 (성별 필터링)
-    let baseList = [...KUSF_TEAMS].filter(t => t.gender === activeTab);
+    let baseList: TeamRankInfo[] = [...KUSF_TEAMS].filter(t => t.gender === activeTab);
 
-    // 2. DB 데이터와 병합
     dbTeams.forEach(dbTeam => {
-        // 성별이 맞지 않으면 스킵
         if (dbTeam.gender !== activeTab) return;
 
-        // KUSF 목록에 있는 팀인지 확인 (kusfId 또는 이름으로 매칭)
         const index = baseList.findIndex(t => t.id === dbTeam.kusfId || t.name === dbTeam.name);
 
         if (index !== -1) {
@@ -219,7 +231,7 @@ export default function RankingScreen() {
             baseList[index] = { 
                 ...baseList[index], 
                 ...dbTeam, 
-                stats: dbTeam.stats || baseList[index].stats // DB에 stats가 없으면 초기값 유지
+                stats: dbTeam.stats || baseList[index].stats 
             };
         } else {
             // [신규 팀 추가] KUSF 리스트에 없던 자체 생성 팀 추가
@@ -228,7 +240,8 @@ export default function RankingScreen() {
                 name: dbTeam.name,
                 affiliation: dbTeam.affiliation,
                 gender: dbTeam.gender,
-                stats: dbTeam.stats || { wins: 0, losses: 0, points: 0, total: 0 }
+                stats: dbTeam.stats || { wins: 0, losses: 0, points: 0, total: 0 },
+                isDeleted: dbTeam.isDeleted // 식제 여부 확인용
             });
         }
     });
@@ -245,7 +258,7 @@ export default function RankingScreen() {
 
   const themeColor = activeTab === 'male' ? COLORS.male : COLORS.female;
 
-  const renderRankItem = ({ item, index }: { item: any, index: number }) => {
+  const renderRankItem = ({ item, index }: { item: TeamRankInfo, index: number }) => {
     const rank = index + 1;
     let rankColor = COLORS.textSub;
     let icon = null;
@@ -265,7 +278,6 @@ export default function RankingScreen() {
                 <Text style={tw`font-bold text-lg text-[${COLORS.textMain}] mb-0.5`} numberOfLines={1}>{item.name}</Text>
                 <View style={tw`flex-row items-center`}>
                     <Text style={tw`text-sm text-[${COLORS.textCaption}] mr-2`}>{item.affiliation}</Text>
-                    {/* 삭제된 팀 표시 (옵션) */}
                     {item.isDeleted && <View style={tw`bg-gray-200 px-1.5 rounded`}><Text style={tw`text-[10px] text-gray-500`}>해체됨</Text></View>}
                 </View>
             </View>
