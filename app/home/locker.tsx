@@ -28,7 +28,7 @@ type MatchData = {
   createdAt: string;
 };
 
-const POSITIONS = ['L', 'OH', 'OP', 'MB', 'S', 'Li'];
+const POSITIONS = ['OH', 'OP', 'MB', 'S', 'L']; // [Update] 포지션 표기 표준화
 const LEVELS = ['A', 'B', 'C', 'D', 'E'];
 
 export default function LockerScreen() {
@@ -46,7 +46,7 @@ export default function LockerScreen() {
   const [confirmedList, setConfirmedList] = useState<MatchData[]>([]);
   
   const [newPlayerName, setNewPlayerName] = useState('');
-  const [newPlayerPos, setNewPlayerPos] = useState('L');
+  const [newPlayerPos, setNewPlayerPos] = useState('OH');
   const [showLevelModal, setShowLevelModal] = useState(false);
   const [teamDetailModalVisible, setTeamDetailModalVisible] = useState(false);
 
@@ -157,9 +157,9 @@ export default function LockerScreen() {
               const teamDoc = await transaction.get(teamRef);
               const userDoc = await transaction.get(userRef);
 
-              if (!teamDoc.exists()) throw "팀 데이터가 없습니다.";
-              if (!userDoc.exists()) throw "유저 데이터가 없습니다.";
-              if (userDoc.data().teamId) throw "이미 다른 팀에 소속된 유저입니다.";
+              if (!teamDoc.exists()) throw "팀 데이터가 없어요.";
+              if (!userDoc.exists()) throw "유저 데이터가 없어요.";
+              if (userDoc.data().teamId) throw "이미 다른 팀에 소속된 선수에요.";
 
               const newPlayer = { id: Date.now(), uid: req.uid, name: req.name, position: req.position };
 
@@ -175,9 +175,9 @@ export default function LockerScreen() {
                   updatedAt: new Date().toISOString()
               });
           });
-          Alert.alert('승인 완료', `${req.name}님이 팀원이 되었습니다.`);
+          Alert.alert('팀원 승인', `${req.name}님이 팀에 합류했어요!`);
       } catch (e: any) { 
-          Alert.alert('오류', typeof e === 'string' ? e : '승인 처리에 실패했습니다.'); 
+          Alert.alert('오류', typeof e === 'string' ? e : '승인 처리에 실패했어요.'); 
       }
   };
 
@@ -191,9 +191,9 @@ export default function LockerScreen() {
   // [Atomic Kick] 멤버 방출 (트랜잭션)
   const handleKickMember = async (player: Player) => {
       if (!isCaptain || !myTeamId || !player.uid) return;
-      Alert.alert('방출', '정말 방출하시겠습니까?', [
+      Alert.alert('내보내기', '이 선수를 팀에서 내보낼까요?', [
           { text: '취소' },
-          { text: '방출', style: 'destructive', onPress: async () => {
+          { text: '내보내기', style: 'destructive', onPress: async () => {
               try {
                   await runTransaction(db, async (transaction) => {
                       const teamRef = doc(db, "teams", myTeamId);
@@ -217,8 +217,8 @@ export default function LockerScreen() {
                           });
                       }
                   });
-                  Alert.alert('완료', '멤버를 방출했습니다.');
-              } catch (e) { Alert.alert('오류', '방출 처리에 실패했습니다.'); }
+                  Alert.alert('완료', '선수를 방출했어요.');
+              } catch (e) { Alert.alert('오류', '처리에 실패했습니다.'); }
           }}
       ]);
   };
@@ -228,12 +228,11 @@ export default function LockerScreen() {
     if (!newPlayerName || !myTeamId) return;
     try {
       const newPlayer = { id: Date.now(), name: newPlayerName, position: newPlayerPos };
-      // 기존 덮어쓰기 로직 제거 -> arrayUnion으로 안전하게 추가
       await updateDoc(doc(db, "teams", myTeamId), { 
           roster: arrayUnion(newPlayer)
       });
       setNewPlayerName('');
-      Alert.alert('성공', '선수가 등록되었습니다.');
+      Alert.alert('등록 완료', '선수가 추가되었어요.');
     } catch (e) { Alert.alert('오류', '선수 등록 실패'); }
   };
 
@@ -277,7 +276,7 @@ export default function LockerScreen() {
 
   const acceptMatch = async (guestTeamId: string) => {
     if (!selectedMatchId) return;
-    Alert.alert('매칭 수락', '이 팀과 경기를 확정하시겠습니까?', [
+    Alert.alert('매칭 확정', '이 팀과 경기를 진행할까요?', [
       { text: '취소' },
       { text: '확정', onPress: async () => {
           try {
@@ -287,11 +286,11 @@ export default function LockerScreen() {
                 applicants: [] 
             });
             const guestCaptainId = await findCaptainId(guestTeamId);
-            if (guestCaptainId) await sendNotification(guestCaptainId, 'match_upcoming', '매칭 성사!', '호스트가 매칭을 수락했습니다.');
+            if (guestCaptainId) await sendNotification(guestCaptainId, 'match_upcoming', '매칭 성사!', '호스트가 매칭을 수락했어요.');
             
             setApplicantModalVisible(false);
-            Alert.alert('완료', '매칭이 성사되었습니다!');
-          } catch (e) { Alert.alert('오류', '문제가 발생했습니다.'); }
+            Alert.alert('완료', '매칭이 성사되었어요!');
+          } catch (e) { Alert.alert('오류', '문제가 발생했어요.'); }
         } 
       }
     ]);
@@ -313,13 +312,14 @@ export default function LockerScreen() {
           }
           setSelectedMatchDetail({ match: match, opponentName: tData.name, opponentPhone: phone });
           setMatchDetailModalVisible(true);
-      } catch (e) { Alert.alert('오류', '상대 정보를 불러올 수 없습니다.'); }
+      } catch (e) { Alert.alert('오류', '상대 정보를 불러올 수 없어요.'); }
   };
 
+  // [UX Writing] 결과 승인 알림 변경
   const handleApprove = (match: any) => {
-    Alert.alert('결과 승인', '이 결과가 맞습니까?', [
-      { text: '이의 제기', style: 'destructive', onPress: () => disputeResult(match.id) },
-      { text: '승인', onPress: () => approveResult(match, myTeamId!) }
+    Alert.alert('경기 결과 확인', '상대 팀이 입력한 점수가 맞나요?', [
+      { text: '점수가 달라요', style: 'destructive', onPress: () => disputeResult(match.id) },
+      { text: '맞아요', onPress: () => approveResult(match, myTeamId!) }
     ]);
   };
 
@@ -342,8 +342,8 @@ export default function LockerScreen() {
       <Text style={tw`text-2xl font-extrabold text-[#191F28] mb-6 pt-4`}>라커룸</Text>
       
       <View style={tw`flex-row bg-[#F2F4F6] p-1 rounded-2xl mb-6`}>
-        <TouchableOpacity onPress={() => setActiveTab('team')} style={tw`flex-1 py-2 rounded-xl items-center ${activeTab === 'team' ? 'bg-white shadow-sm' : ''}`}><Text style={tw`font-bold ${activeTab === 'team' ? 'text-[#3182F6]' : 'text-gray-400'}`}>우리 팀</Text></TouchableOpacity>
-        <TouchableOpacity onPress={() => setActiveTab('matches')} style={tw`flex-1 py-2 rounded-xl items-center ${activeTab === 'matches' ? 'bg-white shadow-sm' : ''}`}><Text style={tw`font-bold ${activeTab === 'matches' ? 'text-[#3182F6]' : 'text-gray-400'}`}>경기 관리</Text></TouchableOpacity>
+        <TouchableOpacity onPress={() => setActiveTab('team')} style={tw`flex-1 py-2 rounded-xl items-center ${activeTab === 'team' ? 'bg-white shadow-sm' : ''}`}><Text style={tw`font-bold ${activeTab === 'team' ? 'text-[#3182F6]' : 'text-gray-400'}`}>내 팀</Text></TouchableOpacity>
+        <TouchableOpacity onPress={() => setActiveTab('matches')} style={tw`flex-1 py-2 rounded-xl items-center ${activeTab === 'matches' ? 'bg-white shadow-sm' : ''}`}><Text style={tw`font-bold ${activeTab === 'matches' ? 'text-[#3182F6]' : 'text-gray-400'}`}>매칭</Text></TouchableOpacity>
       </View>
 
       {activeTab === 'team' ? (
@@ -403,7 +403,7 @@ export default function LockerScreen() {
                     </View>
                     {isCaptain && player.uid !== auth.currentUser?.uid && (
                         <TouchableOpacity onPress={() => player.uid ? handleKickMember(player) : handleDeleteManualPlayer(player.id)} style={tw`bg-red-50 p-2 rounded-lg`}>
-                            <Text style={tw`text-red-500 text-xs font-bold`}>방출</Text>
+                            <Text style={tw`text-red-500 text-xs font-bold`}>내보내기</Text>
                         </TouchableOpacity>
                     )}
                 </View>
@@ -412,9 +412,9 @@ export default function LockerScreen() {
             {/* 4. 수동 선수 추가 */}
             {isCaptain && (
                 <View style={tw`bg-[#F9FAFB] p-4 rounded-[24px] mt-4`}>
-                    <Text style={tw`text-xs font-bold text-[#8B95A1] mb-2 ml-1`}>게스트/용병 수동 등록</Text>
+                    <Text style={tw`text-xs font-bold text-[#8B95A1] mb-2 ml-1`}>선수 및 게스트를 직접 등록할 수 있어요!</Text>
                     <View style={tw`flex-row gap-2`}>
-                        <TextInput style={tw`flex-1 bg-white p-3 rounded-xl border border-gray-200`} placeholder="이름" value={newPlayerName} onChangeText={setNewPlayerName}/>
+                        <TextInput style={tw`flex-1 bg-white p-3 rounded-xl border border-gray-200`} placeholder="이름 입력" value={newPlayerName} onChangeText={setNewPlayerName}/>
                         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={tw`flex-1`}>
                             {POSITIONS.map(pos => (
                                 <TouchableOpacity key={pos} onPress={() => setNewPlayerPos(pos)} style={tw`w-10 h-10 rounded-xl items-center justify-center mr-1 ${newPlayerPos === pos ? 'bg-[#3182F6]' : 'bg-white border border-gray-200'}`}>
@@ -423,7 +423,7 @@ export default function LockerScreen() {
                             ))}
                         </ScrollView>
                     </View>
-                    <TouchableOpacity onPress={handleAddManualPlayer} style={tw`mt-3 bg-[#333D4B] py-3 rounded-xl items-center`}><Text style={tw`text-white font-bold`}>추가하기</Text></TouchableOpacity>
+                    <TouchableOpacity onPress={handleAddManualPlayer} style={tw`mt-3 bg-[#333D4B] py-3 rounded-xl items-center`}><Text style={tw`text-white font-bold`}>추가</Text></TouchableOpacity>
                 </View>
             )}
         </ScrollView>
@@ -432,7 +432,7 @@ export default function LockerScreen() {
             {/* 1. 확정된 경기 */}
             <View style={tw`mb-8`}>
                 <Text style={tw`font-bold text-[#191F28] mb-3 border-l-4 border-green-500 pl-3`}>확정된 경기</Text>
-                {confirmedList.length === 0 && <Text style={tw`text-[#8B95A1] text-sm`}>진행 중인 경기가 없습니다.</Text>}
+                {confirmedList.length === 0 && <Text style={tw`text-[#8B95A1] text-sm`}>확정된 경기가 없어요.</Text>}
                 {confirmedList.map(m => {
                     const isDispute = m.status === 'dispute';
                     const waitingApproval = m.result?.status === 'waiting';
@@ -448,50 +448,50 @@ export default function LockerScreen() {
                             <Text style={tw`${TYPOGRAPHY.body2} mb-3`}>{m.loc}</Text>
                             
                             {isDispute ? (
-                                <View style={tw`bg-red-50 p-3 rounded-xl items-center`}><Text style={tw`text-red-500 font-bold`}>🚨 분쟁 조정 중</Text></View>
+                                <View style={tw`bg-red-50 p-3 rounded-xl items-center`}><Text style={tw`text-red-500 font-bold`}>🚨 점수 확인 중</Text></View>
                             ) : waitingApproval ? (
                                 iSubmitted ? (
-                                    <View style={tw`bg-orange-50 p-3 rounded-xl items-center`}><Text style={tw`text-orange-500 font-bold`}>승인 대기중...</Text></View>
+                                    <View style={tw`bg-orange-50 p-3 rounded-xl items-center`}><Text style={tw`text-orange-500 font-bold`}>상대팀의 수락을 대기중에요</Text></View>
                                 ) : (
-                                    <Button label="승인 요청 도착 (확인)" onPress={() => handleApprove(m)} isLoading={isProcessing} />
+                                    <Button label="결과 확인하기" onPress={() => handleApprove(m)} isLoading={isProcessing} />
                                 )
                             ) : m.status === 'finished' ? (
-                                <View style={tw`bg-gray-100 p-2 rounded-xl items-center`}><Text style={tw`text-gray-500 font-bold`}>경기 종료</Text></View>
+                                <View style={tw`bg-gray-100 p-2 rounded-xl items-center`}><Text style={tw`text-gray-500 font-bold`}>종료되었어요</Text></View>
                             ) : (
-                                <Button label="결과 입력 (승리 팀)" variant="secondary" onPress={() => { setSelectedMatchId(m.id); setResultModalVisible(true); }} />
+                                <Button label="결과 입력" variant="secondary" onPress={() => { setSelectedMatchId(m.id); setResultModalVisible(true); }} />
                             )}
                         </TouchableOpacity>
                     );
                 })}
             </View>
 
-            {/* 2. 내가 모집 중 */}
+            {/* 2. 모집 중 */}
             <View style={tw`mb-8`}>
-                <Text style={tw`font-bold text-[#191F28] mb-3 border-l-4 border-[#3182F6] pl-3`}>내가 모집 중</Text>
-                {hostingList.length === 0 && <Text style={tw`text-[#8B95A1] text-sm`}>모집 중인 경기가 없습니다.</Text>}
+                <Text style={tw`font-bold text-[#191F28] mb-3 border-l-4 border-[#3182F6] pl-3`}>모집 중</Text>
+                {hostingList.length === 0 && <Text style={tw`text-[#8B95A1] text-sm`}>모집 중인 경기가 없어요.</Text>}
                 {hostingList.map(m => (
                     <View key={m.id} style={tw`bg-white p-4 rounded-2xl border border-[#F2F4F6] shadow-sm mb-3`}>
                          <View style={tw`flex-row justify-between`}>
                             <View><Text style={tw`font-bold text-[#333D4B]`}>{m.time.includes('T')?m.time.split('T')[0]:m.time}</Text><Text style={tw`text-xs text-[#8B95A1]`}>{m.loc}</Text></View>
                             {m.applicants && m.applicants.length > 0 ? (
-                                <TouchableOpacity onPress={() => openApplicantModal(m.id, m.applicants)} style={tw`bg-[#3182F6] px-4 py-2 rounded-xl justify-center`}><Text style={tw`text-white font-bold text-xs`}>신청자 {m.applicants.length}명 보기</Text></TouchableOpacity>
+                                <TouchableOpacity onPress={() => openApplicantModal(m.id, m.applicants)} style={tw`bg-[#3182F6] px-4 py-2 rounded-xl justify-center`}><Text style={tw`text-white font-bold text-xs`}>신청자 보기 ({m.applicants.length}명)</Text></TouchableOpacity>
                             ) : (
-                                <View style={tw`bg-gray-100 px-4 py-2 rounded-xl justify-center`}><Text style={tw`text-[#8B95A1] font-bold text-xs`}>신청 대기중</Text></View>
+                                <View style={tw`bg-gray-100 px-4 py-2 rounded-xl justify-center`}><Text style={tw`text-[#8B95A1] font-bold text-xs`}>신청 대기</Text></View>
                             )}
                         </View>
                     </View>
                 ))}
             </View>
 
-            {/* 3. 내가 보낸 신청 */}
+            {/* 3. 보낸 신청 */}
             <View style={tw`mb-8`}>
-                <Text style={tw`font-bold text-[#191F28] mb-3 border-l-4 border-pink-500 pl-3`}>내가 보낸 신청</Text>
-                {applyingList.length === 0 && <Text style={tw`text-[#8B95A1] text-sm`}>신청한 경기가 없습니다.</Text>}
+                <Text style={tw`font-bold text-[#191F28] mb-3 border-l-4 border-pink-500 pl-3`}>지원한 경기</Text>
+                {applyingList.length === 0 && <Text style={tw`text-[#8B95A1] text-sm`}>지원한 경기가 없어요.</Text>}
                 {applyingList.map(m => (
                     <View key={m.id} style={tw`bg-white p-4 rounded-2xl border border-[#F2F4F6] shadow-sm mb-3`}>
                         <Text style={tw`font-bold text-[#333D4B]`}>{m.team}</Text>
                         <Text style={tw`text-xs text-[#8B95A1]`}>{m.time.includes('T')?m.time.split('T')[0]:m.time} | {m.loc}</Text>
-                        <Text style={tw`text-pink-500 font-bold text-xs mt-2`}>수락 대기중...</Text>
+                        <Text style={tw`text-pink-500 font-bold text-xs mt-2`}>수락 대기</Text>
                     </View>
                 ))}
             </View>
@@ -533,14 +533,14 @@ export default function LockerScreen() {
         <View style={tw`flex-1 justify-center items-center bg-black/50 px-6`}>
             <View style={tw`bg-white w-full rounded-3xl p-6`}>
                 <Text style={tw`${TYPOGRAPHY.h2} mb-2 text-center`}>경기 결과 입력</Text>
-                <Text style={tw`text-xs text-[#3182F6] font-bold mb-6 text-center`}>승리한 팀 기준으로 점수를 입력하세요</Text>
+                <Text style={tw`text-xs text-[#3182F6] font-bold mb-6 text-center`}>승리한 팀이 결과를 입력해주세요</Text>
                 <View style={tw`flex-row justify-between items-center mb-8`}>
                     <View style={tw`items-center`}><Text style={tw`font-bold text-[#3182F6] mb-2`}>우리 팀 (승)</Text><TextInput style={tw`w-20 h-20 bg-gray-100 rounded-2xl text-center text-3xl font-bold`} keyboardType="number-pad" value={myScoreInput} onChangeText={setMyScoreInput} /></View>
                     <Text style={tw`text-2xl font-bold text-gray-300`}>:</Text>
                     <View style={tw`items-center`}><Text style={tw`font-bold text-gray-500 mb-2`}>상대 팀 (패)</Text><TextInput style={tw`w-20 h-20 bg-gray-100 rounded-2xl text-center text-3xl font-bold`} keyboardType="number-pad" value={opScoreInput} onChangeText={setOpScoreInput} /></View>
                 </View>
                 <View style={tw`gap-3`}>
-                    <Button label="결과 전송" onPress={handleSubmitResult} isLoading={isProcessing} />
+                    <Button label="입력 완료" onPress={handleSubmitResult} isLoading={isProcessing} />
                     <Button label="취소" variant="ghost" onPress={() => setResultModalVisible(false)} />
                 </View>
             </View>
@@ -551,9 +551,9 @@ export default function LockerScreen() {
       <Modal visible={matchDetailModalVisible} transparent animationType="fade">
           <View style={tw`flex-1 justify-center items-center bg-black/60 px-6`}>
               <View style={tw`bg-white w-full rounded-2xl p-6`}>
-                  <Text style={tw`text-xl font-bold mb-4 text-[#191F28] text-center`}>경기 상세 정보</Text>
+                  <Text style={tw`text-xl font-bold mb-4 text-[#191F28] text-center`}>경기 상세</Text>
                   <View style={tw`mb-4 p-4 bg-[#F9FAFB] rounded-xl`}><Text style={tw`text-xs text-[#8B95A1] mb-1`}>상대 팀</Text><Text style={tw`text-lg font-bold text-[#3182F6]`}>{selectedMatchDetail?.opponentName}</Text></View>
-                  <View style={tw`mb-6 p-4 bg-[#F9FAFB] rounded-xl`}><Text style={tw`text-xs text-[#8B95A1] mb-1`}>대표자 연락처</Text><Text style={tw`text-lg font-bold text-[#191F28]`}>{selectedMatchDetail?.opponentPhone}</Text></View>
+                  <View style={tw`mb-6 p-4 bg-[#F9FAFB] rounded-xl`}><Text style={tw`text-xs text-[#8B95A1] mb-1`}>대표 연락처</Text><Text style={tw`text-lg font-bold text-[#191F28]`}>{selectedMatchDetail?.opponentPhone}</Text></View>
                   <View style={tw`mb-6`}><Text style={tw`text-xs text-[#8B95A1] mb-1 ml-1`}>장소</Text><Text style={tw`text-base font-medium text-[#333D4B] ml-1`}>{selectedMatchDetail?.match.loc}</Text></View>
                   <TouchableOpacity onPress={() => setMatchDetailModalVisible(false)} style={tw`bg-[#3182F6] py-3 rounded-xl items-center`}><Text style={tw`text-white font-bold`}>확인</Text></TouchableOpacity>
               </View>

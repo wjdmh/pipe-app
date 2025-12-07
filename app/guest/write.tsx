@@ -9,7 +9,7 @@ import { auth, db } from '../../configs/firebaseConfig';
 import { useGuest } from '../../hooks/useGuest';
 import tw from 'twrnc';
 
-const POSITIONS = ['L', 'R', 'C', 'S', 'Li'];
+const POSITIONS = ['OH', 'OP', 'MB', 'S', 'L'];
 
 export default function GuestWriteScreen() {
   const router = useRouter();
@@ -100,7 +100,7 @@ export default function GuestWriteScreen() {
     <SafeAreaView style={tw`flex-1 bg-white`}>
       <View style={tw`px-5 py-4 border-b border-gray-100 flex-row items-center`}>
         <TouchableOpacity onPress={() => router.back()}><FontAwesome5 name="arrow-left" size={20} color="#191F28" /></TouchableOpacity>
-        <Text style={tw`text-lg font-bold ml-4 text-gray-900`}>용병 모집하기</Text>
+        <Text style={tw`text-lg font-bold ml-4 text-gray-900`}>게스트 모집하기</Text>
       </View>
 
       <ScrollView contentContainerStyle={tw`p-6 pb-20`}>
@@ -148,7 +148,7 @@ export default function GuestWriteScreen() {
         )}
 
         <Text style={tw`font-bold text-gray-500 mb-2`}>장소</Text>
-        <TextInput style={tw`bg-gray-50 p-4 rounded-xl border border-gray-200 mb-6`} placeholder="예: 한신대학교 체육관" value={location} onChangeText={setLocation} />
+        <TextInput style={tw`bg-gray-50 p-4 rounded-xl border border-gray-200 mb-6`} placeholder="정확한 주소를 입력해주세요" value={location} onChangeText={setLocation} />
 
         {/* [Improved Fee UI] */}
         <Text style={tw`font-bold text-gray-500 mb-2`}>참가비</Text>

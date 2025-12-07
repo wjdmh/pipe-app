@@ -12,21 +12,21 @@ export const useMatchResult = () => {
     if (isProcessing) return false;
     
     if (isNaN(myScore) || isNaN(opScore)) {
-      Alert.alert('오류', '점수는 숫자여야 합니다.');
+      Alert.alert('점수 입력', '숫자만 입력할 수 있어요.');
       return false;
     }
     if (myScore < 0 || opScore < 0) {
-      Alert.alert('오류', '점수는 0점 이상이어야 합니다.');
+      Alert.alert('점수 입력', '0점 이상으로 입력해주세요.');
       return false;
     }
     
     // [Domain Rule] 배구는 무승부가 없음
     if (myScore === opScore) {
-        Alert.alert('규칙 오류', '배구는 무승부가 없습니다. 듀스 상황 등을 고려해 승부를 가려주세요.');
+        Alert.alert('점수 확인', '점수가 동점이에요. 듀스 룰을 확인해주세요.');
         return false;
     }
     if (myScore < opScore) {
-      Alert.alert('권한 제한', '승리한 팀만 결과를 입력할 수 있습니다.\n(패배한 팀은 상대의 입력을 기다려주세요)');
+      Alert.alert('결과 입력', '승리한 팀이 결과를 입력해주세요.');
       return false;
     }
 
@@ -59,8 +59,8 @@ export const useMatchResult = () => {
           await addDoc(collection(db, "notifications"), {
             userId: captainId,
             type: 'result_req',
-            title: '경기 결과 승인 요청',
-            message: `상대 팀이 입력한 결과: ${myScore} : ${opScore}\n맞다면 승인해주세요.`,
+            title: '경기 결과 확인',
+            message: `상대 팀이 ${myScore} : ${opScore}으로 입력했어요.\n결과가 맞는지 확인해주세요.`,
             link: '/home/locker?initialTab=matches', 
             createdAt: new Date().toISOString(),
             isRead: false
@@ -71,31 +71,31 @@ export const useMatchResult = () => {
           if (capSnap.exists() && capSnap.data().pushToken) {
              await sendPushNotification(
                  capSnap.data().pushToken, 
-                 '경기 결과 승인 요청', 
-                 '상대 팀이 결과를 입력했습니다. 내용을 확인하고 승인해주세요.', 
+                 '경기 결과 확인', 
+                 '상대 팀이 결과를 입력했어요. 점수를 확인해주세요.', 
                  { link: '/home/locker?initialTab=matches' }
              );
           }
         }
       }
       
-      Alert.alert('전송 완료', '상대 팀에게 승인 요청을 보냈습니다.');
+      Alert.alert('입력 완료', '상대 팀에게 확인을 요청했어요.');
       return true;
     } catch (e: any) {
       console.error("Submit Result Error:", e);
-      Alert.alert('오류', e.message || '결과 전송에 실패했습니다.');
+      Alert.alert('전송 실패', e.message || '결과 전송에 실패했어요. 다시 시도해주세요.');
       return false;
     } finally {
       setIsProcessing(false);
     }
   };
 
-  // 2. 결과 승인 (Approve) - [Critical Fix: 상대 팀 삭제 시에도 처리 가능하도록 개선]
+  // 2. 결과 승인 (Approve)
   const approveResult = async (matchData: any, myTeamId: string) => {
     if (isProcessing) return;
     
     if (matchData.result.submitterId === myTeamId) {
-      Alert.alert('대기 중', '상대 팀의 승인을 기다리고 있습니다.');
+      Alert.alert('승인 대기', '상대 팀의 확인을 기다리고 있어요.');
       return;
     }
 
@@ -105,10 +105,10 @@ export const useMatchResult = () => {
         const matchRef = doc(db, "matches", matchData.id);
         const matchDoc = await transaction.get(matchRef);
         
-        if (!matchDoc.exists()) throw "존재하지 않는 경기입니다.";
+        if (!matchDoc.exists()) throw "경기를 찾을 수 없어요.";
         const currentMatch = matchDoc.data();
 
-        if (currentMatch.status === 'finished') throw "이미 종료된 경기입니다.";
+        if (currentMatch.status === 'finished') throw "이미 종료된 경기예요.";
         
         const hostId = currentMatch.hostId;
         const guestId = currentMatch.guestId;
@@ -119,12 +119,12 @@ export const useMatchResult = () => {
         const guestDoc = await transaction.get(guestRef);
 
         // [Fix] 두 팀 중 하나라도 존재하면 경기를 종료 처리함
-        if (!hostDoc.exists() && !guestDoc.exists()) throw "양 팀 데이터가 모두 존재하지 않습니다.";
+        if (!hostDoc.exists() && !guestDoc.exists()) throw "팀 정보를 찾을 수 없어요.";
 
         const hScore = currentMatch.result.hostScore;
         const gScore = currentMatch.result.guestScore;
         
-        if (hScore === gScore) throw "데이터 오류: 동점은 허용되지 않습니다.";
+        if (hScore === gScore) throw "점수 오류: 동점은 입력할 수 없어요.";
 
         const isHostWin = hScore > gScore;
         const isGuestWin = gScore > hScore;
@@ -173,8 +173,8 @@ export const useMatchResult = () => {
              await addDoc(collection(db, "notifications"), {
                userId: captainId,
                type: 'normal',
-               title: '경기 결과 확정 🎉',
-               message: '경기가 최종 승인되어 전적이 반영되었습니다.',
+               title: '경기 결과 확정',
+               message: '경기가 승인되어 전적이 반영됐어요.',
                link: '/home/locker',
                createdAt: new Date().toISOString(),
                isRead: false
@@ -182,18 +182,18 @@ export const useMatchResult = () => {
              
              const capSnap = await getDoc(doc(db, "users", captainId));
              if (capSnap.exists() && capSnap.data().pushToken) {
-                await sendPushNotification(capSnap.data().pushToken, '경기 결과 확정 🎉', '전적이 반영되었습니다.', { link: '/home/locker' });
+                await sendPushNotification(capSnap.data().pushToken, '경기 결과 확정', '전적이 반영됐어요.', { link: '/home/locker' });
              }
            }
         }
       } catch (notiErr) { console.warn("Noti failed", notiErr); }
 
-      Alert.alert('처리 완료', '경기 결과가 확정되었습니다.\n(삭제된 팀의 경우 전적 반영이 생략되었을 수 있습니다)');
+      Alert.alert('확정 완료', '경기 결과가 확정됐어요.');
       return true;
 
     } catch (e: any) {
       console.error("Approve Result Error:", e);
-      Alert.alert('오류', typeof e === 'string' ? e : '승인 처리에 실패했습니다. 다시 시도해주세요.');
+      Alert.alert('승인 실패', typeof e === 'string' ? e : '처리에 실패했어요. 잠시 후 다시 시도해주세요.');
       return false;
     } finally {
       setIsProcessing(false);
@@ -210,10 +210,10 @@ export const useMatchResult = () => {
         "result.status": 'dispute',
         disputedAt: new Date().toISOString()
       });
-      Alert.alert('접수 완료', '이의가 접수되었습니다. 관리자가 확인 후 연락드립니다.');
+      Alert.alert('접수 완료', '점수 정정 요청이 접수됐어요. 관리자가 확인 후 연락드릴게요.');
       return true;
     } catch (e: any) {
-      Alert.alert('오류', '요청 실패: ' + e.message);
+      Alert.alert('요청 실패', '잠시 후 다시 시도해주세요.');
       return false;
     } finally {
       setIsProcessing(false);

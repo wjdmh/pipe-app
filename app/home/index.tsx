@@ -10,7 +10,6 @@ import { COLORS, TYPOGRAPHY } from '../../configs/theme';
 import { Card } from '../../components/Card';
 import { KUSF_TEAMS } from './ranking';
 
-// [Fix] 타입 정의 추가 (TypeScript 에러 방지)
 interface Team {
   id: string;
   name: string;
@@ -30,7 +29,7 @@ type MatchData = {
   loc: string; 
   status: string; 
   level?: string; 
-  isDeleted?: boolean; // 삭제 여부 필드 추가
+  isDeleted?: boolean;
 };
 
 const AnimatedCard = ({ children, onPress, style }: { children: React.ReactNode, onPress: () => void, style?: any }) => {
@@ -53,36 +52,29 @@ const FilterChip = ({ label, active, onPress }: { label: string, active: boolean
 const RankingCard = ({ onPress }: { onPress: () => void }) => {
   const [topTeams, setTopTeams] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<'male'|'female'>('male'); // [New] 성별 탭 추가
+  const [tab, setTab] = useState<'male'|'female'>('male');
 
   useEffect(() => {
       const fetchTopTeams = async () => {
           try {
-              // [Correction] 정확한 순위 계산을 위해 limit 제거 (전체 로드 후 병합)
               const q = query(collection(db, "teams"));
               const snap = await getDocs(q);
               
-              // DB 데이터를 Team 타입으로 캐스팅하여 가져옴
               const dbTeams = snap.docs.map(d => ({ id: d.id, ...d.data() } as Team));
               
-              // KUSF 데이터와 병합 로직
-              // 1. 현재 탭(성별)에 맞는 KUSF 데이터만 필터링
               let combined = KUSF_TEAMS.filter(t => t.gender === tab);
 
               dbTeams.forEach(dbTeam => {
-                  // 성별 불일치 시 스킵
                   if(dbTeam.gender !== tab) return;
 
                   const idx = combined.findIndex(t => t.id === dbTeam.kusfId || t.name === dbTeam.name);
                   if (idx !== -1) {
-                      // 기존 KUSF 팀 정보 업데이트 (DB 정보가 최신)
                       combined[idx] = { 
                           ...combined[idx], 
                           ...dbTeam, 
                           stats: dbTeam.stats || combined[idx].stats 
                       };
                   } else {
-                      // KUSF 리스트에 없는 신규 팀 추가
                       combined.push({
                           id: dbTeam.id, 
                           name: dbTeam.name, 
@@ -93,7 +85,6 @@ const RankingCard = ({ onPress }: { onPress: () => void }) => {
                   }
               });
               
-              // 포인트 내림차순 정렬 후 상위 3개만 표시
               const finalTop3 = combined.sort((a, b) => b.stats.points - a.stats.points).slice(0, 3);
               setTopTeams(finalTop3);
           } catch (e) {
@@ -103,16 +94,18 @@ const RankingCard = ({ onPress }: { onPress: () => void }) => {
           }
       };
       fetchTopTeams();
-  }, [tab]); // 탭 변경 시 재실행
+  }, [tab]);
 
   return (
     <AnimatedCard onPress={onPress} style={[tw`p-6 rounded-[24px] mb-8 shadow-sm`, { backgroundColor: COLORS.surface }]}>
         <View style={tw`flex-row justify-between items-start mb-4`}>
-            <View><Text style={[tw`text-xl font-extrabold mb-1`, { color: COLORS.textMain }]}>실시간 순위 🔥</Text><Text style={[tw`text-sm font-medium`, { color: COLORS.textSub }]}>매칭을 잡고 순위를 올려보세요!</Text></View>
+            <View>
+                <Text style={[tw`text-xl font-extrabold mb-1`, { color: COLORS.textMain }]}>실시간 순위</Text>
+                <Text style={[tw`text-sm font-medium`, { color: COLORS.textSub }]}>앱으로 경기를 잡고 순위를 올려봐요</Text>
+            </View>
             <FontAwesome5 name="chevron-right" size={14} color={COLORS.textCaption} style={tw`mt-1`} />
         </View>
         
-        {/* 성별 탭 */}
         <View style={tw`flex-row bg-[#F2F4F6] p-1 rounded-xl mb-4 self-start`}>
             <TouchableOpacity onPress={() => setTab('male')} style={tw`px-3 py-1.5 rounded-lg ${tab === 'male' ? 'bg-white shadow-sm' : ''}`}><Text style={[tw`text-xs font-bold`, { color: tab === 'male' ? COLORS.primary : COLORS.textCaption }]}>남자부</Text></TouchableOpacity>
             <TouchableOpacity onPress={() => setTab('female')} style={tw`px-3 py-1.5 rounded-lg ${tab === 'female' ? 'bg-white shadow-sm' : ''}`}><Text style={[tw`text-xs font-bold`, { color: tab === 'female' ? '#FF6B6B' : COLORS.textCaption }]}>여자부</Text></TouchableOpacity>
@@ -140,22 +133,18 @@ const RankingCard = ({ onPress }: { onPress: () => void }) => {
 export default function HomeScreen() {
   const router = useRouter();
   
-  // Data States
   const [matches, setMatches] = useState<MatchData[]>([]);
   const [lastDoc, setLastDoc] = useState<QueryDocumentSnapshot<DocumentData> | null>(null);
   const [hasMore, setHasMore] = useState(true);
   
-  // UI States
   const [filter, setFilter] = useState('all');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   
-  // User Info
   const [userTeamId, setUserTeamId] = useState<string | null>(null);
   const [userName, setUserName] = useState('');
 
-  // 1. 유저 정보 확인
   useEffect(() => {
     const checkUserTeam = async () => {
       const user = auth.currentUser;
@@ -169,18 +158,15 @@ export default function HomeScreen() {
             }
         } catch(e) { console.log(e); }
       }
-      // 유저 정보 로드 후 매칭 데이터 로드 시작
       fetchMatches(true);
     };
     checkUserTeam();
   }, []);
 
-  // 2. 필터 변경 시 데이터 리셋 및 재호출
   useEffect(() => {
       fetchMatches(true);
   }, [filter]);
 
-  // [Core Logic] 매칭 데이터 페칭 (Pagination + Filtering)
   const fetchMatches = async (isRefresh = false) => {
       if (isRefresh) {
           setLoading(true);
@@ -198,14 +184,12 @@ export default function HomeScreen() {
               limit(10)
           );
 
-          // 필터 적용 (DB Query Level)
           if (filter === '6man') q = query(q, where("type", "==", "6man"));
           else if (filter === '9man') q = query(q, where("type", "==", "9man"));
           else if (filter === 'mixed') q = query(q, where("gender", "==", "mixed"));
           else if (filter === 'male') q = query(q, where("gender", "==", "male"));
           else if (filter === 'female') q = query(q, where("gender", "==", "female"));
 
-          // 페이지네이션 커서 적용
           if (!isRefresh && lastDoc) {
               q = query(q, startAfter(lastDoc));
           }
@@ -218,20 +202,16 @@ export default function HomeScreen() {
               if (!data.isDeleted) newMatches.push({ id: d.id, ...data } as MatchData);
           });
 
-          // 상태 업데이트 [Critical Fix: 중복 데이터 방어]
           if (isRefresh) {
               setMatches(newMatches);
           } else {
               setMatches(prev => {
-                  // 기존 ID들을 Set으로 만들어 중복 체크 (O(1))
                   const existingIds = new Set(prev.map(m => m.id));
-                  // 중복되지 않은 새 데이터만 필터링
                   const uniqueNewMatches = newMatches.filter(m => !existingIds.has(m.id));
                   return [...prev, ...uniqueNewMatches];
               });
           }
 
-          // 다음 페이지 존재 여부 확인
           if (snapshot.docs.length < 10) setHasMore(false);
           else {
               setHasMore(true);
@@ -240,9 +220,6 @@ export default function HomeScreen() {
 
       } catch (e: any) {
           console.error("Match Fetch Error:", e);
-          if (e.message && e.message.includes("index")) {
-              Alert.alert("개발자 알림", "필터링을 위한 색인(Index)이 필요합니다. 콘솔 링크를 확인하세요.");
-          }
       } finally {
           setLoading(false);
           setRefreshing(false);
@@ -259,7 +236,6 @@ export default function HomeScreen() {
     let displayDate = item.time;
     let displayTime = '';
     
-    // 날짜 파싱 안전장치
     try {
         const d = new Date(item.time);
         if (!isNaN(d.getTime()) && item.time.includes('T')) {
@@ -306,9 +282,9 @@ export default function HomeScreen() {
         <StatusBar barStyle="dark-content" />
         <View style={tw`mb-10`}>
           <Text style={tw`text-4xl mb-2`}>👋</Text>
-          <Text style={tw`${TYPOGRAPHY.h1} mb-2`}>반가워요, {userName}님!</Text>
+          <Text style={tw`${TYPOGRAPHY.h1} mb-2`}>{userName}님</Text>
           <Text style={tw`${TYPOGRAPHY.body2} leading-6`}>
-            아직 소속된 팀이 없으시네요.{'\n'}팀과 함께라면 배구가 더 즐거워요!
+            아직 소속된 팀이 없어요.{'\n'}팀에 가입하거나 용병으로 활동해보세요.
           </Text>
         </View>
 
@@ -319,8 +295,8 @@ export default function HomeScreen() {
                 <FontAwesome5 name="search" size={20} color={COLORS.primary} />
               </View>
               <View>
-                <Text style={tw`${TYPOGRAPHY.h3}`}>이미 활동 중인 팀이 있나요?</Text>
-                <Text style={tw`${TYPOGRAPHY.body2}`}>우리 팀 검색하고 합류하기</Text>
+                <Text style={tw`${TYPOGRAPHY.h3}`}>팀 찾기</Text>
+                <Text style={tw`${TYPOGRAPHY.body2}`}>이미 만들어진 팀에 들어가요</Text>
               </View>
             </View>
           </Card>
@@ -331,8 +307,8 @@ export default function HomeScreen() {
                 <FontAwesome5 name="flag" size={18} color="white" />
               </View>
               <View>
-                <Text style={tw`text-lg font-bold text-white`}>새로운 팀을 만드나요?</Text>
-                <Text style={tw`text-sm text-indigo-100`}>팀을 등록하고 매칭 시작하기</Text>
+                <Text style={tw`text-lg font-bold text-white`}>팀 만들기</Text>
+                <Text style={tw`text-sm text-indigo-100`}>새로운 팀을 등록해요</Text>
               </View>
             </View>
           </Card>
@@ -343,8 +319,8 @@ export default function HomeScreen() {
                 <FontAwesome5 name="running" size={20} color="#F97316" />
               </View>
               <View>
-                <Text style={tw`${TYPOGRAPHY.h3}`}>배구가 하고 싶으신가요?</Text>
-                <Text style={tw`${TYPOGRAPHY.body2}`}>용병으로 참여할 팀 찾기</Text>
+                <Text style={tw`${TYPOGRAPHY.h3}`}>용병으로 참가하기</Text>
+                <Text style={tw`${TYPOGRAPHY.body2}`}>팀 없이 경기에 참여해요</Text>
               </View>
             </View>
           </Card>
@@ -358,7 +334,7 @@ export default function HomeScreen() {
     <SafeAreaView style={[tw`flex-1`, { backgroundColor: COLORS.background }]} edges={['top']}>
       <StatusBar barStyle="dark-content" backgroundColor={COLORS.background} />
       <View style={tw`px-6 pt-3 pb-2 flex-row justify-between items-center bg-[#F2F4F6]`}>
-        <View><Text style={[tw`text-sm font-bold mb-0.5`, { color: COLORS.textCaption }]}>오늘의 매칭</Text><Text style={[tw`text-[26px] font-extrabold`, { color: COLORS.textMain }]}>어떤 경기를 찾으세요?</Text></View>
+        <View><Text style={[tw`text-[26px] font-extrabold`, { color: COLORS.textMain }]}>매칭 찾기</Text></View>
         <TouchableOpacity onPress={() => router.push('/home/notification')} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} activeOpacity={0.7} style={[tw`p-2.5 rounded-full bg-white shadow-sm border border-gray-100`]}><FontAwesome5 name="bell" size={18} color={COLORS.textMain} /><View style={tw`absolute top-2 right-2.5 w-1.5 h-1.5 rounded-full bg-red-500`} /></TouchableOpacity>
       </View>
       
@@ -384,8 +360,8 @@ export default function HomeScreen() {
                             <FontAwesome5 name="running" size={16} color="#F97316" />
                         </View>
                         <View>
-                            <Text style={tw`font-bold text-gray-900`}>용병 찾기</Text>
-                            <Text style={tw`text-xs text-gray-500`}>개인 참가</Text>
+                            <Text style={tw`font-bold text-gray-900`}>게스트 참여</Text>
+                            <Text style={tw`text-xs text-gray-500`}>팀 없이 참여해요</Text>
                         </View>
                     </TouchableOpacity>
                     <TouchableOpacity onPress={() => router.push('/guest/write')} style={tw`flex-1 bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex-row items-center`}>
@@ -393,8 +369,8 @@ export default function HomeScreen() {
                             <FontAwesome5 name="user-plus" size={16} color="#4F46E5" />
                         </View>
                         <View>
-                            <Text style={tw`font-bold text-gray-900`}>용병 모집</Text>
-                            <Text style={tw`text-xs text-gray-500`}>부족한 포지션</Text>
+                            <Text style={tw`font-bold text-gray-900`}>게스트 모집</Text>
+
                         </View>
                     </TouchableOpacity>
                 </View>
@@ -411,7 +387,7 @@ export default function HomeScreen() {
                 </View>
             </>
         } 
-        ListEmptyComponent={!loading ? <View style={tw`items-center justify-center py-20`}><View style={[tw`w-20 h-20 rounded-full items-center justify-center mb-6`, { backgroundColor: '#E5E8EB' }]}><FontAwesome5 name="search" size={32} color="#8B95A1" /></View><Text style={[tw`text-lg font-bold mb-2`, { color: COLORS.textMain }]}>아직 열린 경기가 없어요</Text><Text style={[tw`text-sm text-center leading-relaxed`, { color: COLORS.textCaption }]}>필터를 바꿔보거나,{'\n'}직접 매칭을 만들어보세요.</Text></View> : <View style={tw`py-20`}><ActivityIndicator size="large" color={COLORS.primary} /></View>} 
+        ListEmptyComponent={!loading ? <View style={tw`items-center justify-center py-20`}><View style={[tw`w-20 h-20 rounded-full items-center justify-center mb-6`, { backgroundColor: '#E5E8EB' }]}><FontAwesome5 name="search" size={32} color="#8B95A1" /></View><Text style={[tw`text-lg font-bold mb-2`, { color: COLORS.textMain }]}>모집 중인 경기가 없어요</Text><Text style={[tw`text-sm text-center leading-relaxed`, { color: COLORS.textCaption }]}>필터를 바꿔보거나,{'\n'}직접 매칭을 만들어보세요.</Text></View> : <View style={tw`py-20`}><ActivityIndicator size="large" color={COLORS.primary} /></View>} 
       />
       <AnimatedCard onPress={() => router.push('/match/write')} style={[tw`absolute bottom-8 right-6 px-6 py-4 rounded-full flex-row items-center shadow-lg`, { backgroundColor: COLORS.primary, shadowColor: '#3182F6', shadowOpacity: 0.3, shadowRadius: 10, elevation: 6 }]}><FontAwesome5 name="pen" size={14} color="white" style={tw`mr-2`} /><Text style={tw`text-white font-bold text-base`}>매칭 만들기</Text></AnimatedCard>
     </SafeAreaView>

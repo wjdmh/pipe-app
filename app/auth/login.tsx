@@ -18,15 +18,21 @@ export default function LoginScreen() {
     setLoading(true);
     try {
       await signInWithEmailAndPassword(auth, email, password);
-      // [수정됨] 유저 정보 조회 및 팀 ID 체크 로직 제거
-      // 로그인 성공 시 무조건 홈으로 이동 (팀이 없으면 Guest UI가 뜹니다)
+      // 로그인 성공 시 무조건 홈으로 이동
       router.replace('/home');
 
     } catch (error: any) {
-      let msg = '아이디와 비밀번호를 확인해주세요.';
-      if (error.code === 'auth/invalid-email') msg = '이메일 형식이 올바르지 않아요.';
-      if (error.code === 'auth/invalid-credential') msg = '가입되지 않은 이메일이거나,\n비밀번호가 달라요.';
-      Alert.alert('로그인 안내', msg);
+      let title = '로그인 실패';
+      let msg = '이메일 또는 비밀번호를 확인해주세요.';
+      
+      if (error.code === 'auth/invalid-email') {
+        msg = '이메일 형식이 올바르지 않아요.';
+      }
+      if (error.code === 'auth/invalid-credential' || error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password') {
+        msg = '이메일 또는 비밀번호가 정확하지 않아요.';
+      }
+      
+      Alert.alert(title, msg);
     } finally {
       setLoading(false);
     }
@@ -43,14 +49,14 @@ export default function LoginScreen() {
         <View style={tw`flex-1 px-6 pt-10`}>
           <View style={tw`mb-10`}>
             <Text style={tw`text-2xl font-bold text-[#191F28] mb-2 leading-8`}>
-              안녕하세요! 👋{'\n'}어떤 계정으로 시작할까요?
+              이메일로 로그인
             </Text>
           </View>
 
           <View style={tw`gap-4`}>
             <TextInput
               style={tw`w-full bg-[#F2F4F6] p-4 rounded-xl text-lg text-[#333D4B]`}
-              placeholder="이메일 (example@email.com)"
+              placeholder="이메일"
               placeholderTextColor="#8B95A1"
               autoCapitalize="none"
               keyboardType="email-address"
@@ -70,7 +76,7 @@ export default function LoginScreen() {
           </View>
 
           <TouchableOpacity onPress={() => router.push('/auth/signup')} style={tw`mt-6`}>
-            <Text style={tw`text-[#8B95A1] text-sm text-center underline`}>아직 계정이 없으신가요?</Text>
+            <Text style={tw`text-[#8B95A1] text-sm text-center underline`}>회원가입</Text>
           </TouchableOpacity>
         </View>
 
@@ -84,7 +90,7 @@ export default function LoginScreen() {
                 <ActivityIndicator color="white" />
               ) : (
                 <Text style={tw`text-white font-bold text-lg ${isValid ? '' : 'text-[#8B95A1]'}`}>
-                  시작하기
+                  로그인
                 </Text>
               )}
             </TouchableOpacity>

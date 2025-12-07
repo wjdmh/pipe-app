@@ -8,7 +8,7 @@ import { db, auth } from '../../configs/firebaseConfig';
 import { useGuest, GuestPost } from '../../hooks/useGuest';
 import tw from 'twrnc';
 
-const POSITIONS = { 'L': '레프트', 'R': '라이트', 'C': '센터', 'S': '세터', 'Li': '리베로' };
+const POSITIONS = { 'OH': '아웃사이드 히터', 'OP': '아포짓', 'MB': '미들 블로커', 'S': '세터', 'L': '리베로' };
 
 export default function GuestDetailScreen() {
   const router = useRouter();
@@ -28,20 +28,20 @@ export default function GuestDetailScreen() {
         if (snap.exists()) {
             setPost({ id: snap.id, ...snap.data() } as GuestPost);
         } else {
-            Alert.alert('알림', '삭제되거나 없는 게시글입니다.');
+            Alert.alert('알림', '삭제되거나 문제가 있는 게시글에요.');
             router.back();
         }
     } catch (e) { console.error(e); } finally { setLoading(false); }
   };
 
   const handleDelete = () => {
-      Alert.alert('삭제 확인', '정말 이 모집글을 삭제하시겠습니까?', [
+      Alert.alert('삭제 확인', '정말 이 모집글을 삭제할까요?', [
           { text: '취소', style: 'cancel' },
           { text: '삭제', style: 'destructive', onPress: async () => {
               if(!post) return;
               const success = await deletePost(post.id);
               if(success) { 
-                  Alert.alert('완료', '삭제되었습니다.'); 
+                  Alert.alert('완료', '삭제되었어요.'); 
                   router.back(); 
               }
           }}
@@ -98,7 +98,7 @@ export default function GuestDetailScreen() {
         </View>
 
         <Text style={tw`text-2xl font-extrabold text-gray-900 mb-1`}>{post.hostTeamName}</Text>
-        <Text style={tw`text-gray-500 mb-6 font-bold`}>{post.status === 'recruiting' ? '현재 모집 중 🔥' : '마감된 글입니다'}</Text>
+        <Text style={tw`text-gray-500 mb-6 font-bold`}>{post.status === 'recruiting' ? '현재 모집 중 🔥' : '모집이 마감되었어요'}</Text>
 
         <View style={tw`bg-gray-50 p-5 rounded-2xl gap-4 mb-6`}>
             <View style={tw`flex-row items-center`}>
@@ -119,7 +119,7 @@ export default function GuestDetailScreen() {
 
         <Text style={tw`text-lg font-bold text-gray-900 mb-2`}>상세 내용</Text>
         <View style={tw`bg-white border border-gray-100 p-4 rounded-xl min-h-[100px]`}>
-            <Text style={tw`text-gray-600 leading-6`}>{post.description || '상세 내용이 없습니다.'}</Text>
+            <Text style={tw`text-gray-600 leading-6`}>{post.description || '상세 내용이 없어요'}</Text>
         </View>
       </ScrollView>
 

@@ -142,14 +142,14 @@ export default function WriteMatchScreen() {
 
   const handleSubmit = async () => {
     // 1. 입력값 검증 (Validation)
-    if (!type) return Alert.alert('알림', '경기 방식을 선택해주세요 (6인제/9인제).');
-    if (!gender) return Alert.alert('알림', '참가 선수 성별을 선택해주세요.');
-    if (!place) return Alert.alert('알림', '경기 장소를 입력해주세요.');
+    if (!type) return Alert.alert('정보 입력', '경기 방식을 선택해주세요.');
+    if (!gender) return Alert.alert('정보 입력', '성별을 선택해주세요.');
+    if (!place) return Alert.alert('정보 입력', '경기 장소를 입력해주세요.');
 
     setLoading(true);
     try {
       const user = auth.currentUser;
-      if (!user) throw new Error('로그인 정보가 유효하지 않습니다. 다시 로그인해주세요.');
+      if (!user) throw new Error('로그인이 필요해요.');
 
       // 2. 유저 정보 안전 조회
       const userRef = doc(db, "users", user.uid);
@@ -160,8 +160,8 @@ export default function WriteMatchScreen() {
       
       // 3. 팀 정보 유효성 검사
       if (!userData?.teamId) {
-        Alert.alert('알림', '팀 프로필이 없습니다. 팀을 먼저 등록해주세요.', [
-            { text: '이동', onPress: () => router.replace('/team/register') }
+        Alert.alert('팀 등록 필요', '팀 프로필이 없어요. 팀을 먼저 등록해주세요.', [
+            { text: '등록하기', onPress: () => router.replace('/team/register') }
         ]);
         return;
       }
@@ -191,7 +191,7 @@ export default function WriteMatchScreen() {
 
       await addDoc(collection(db, "matches"), payload);
 
-      Alert.alert('성공', '매칭 공고가 등록되었습니다! 🔥', [
+      Alert.alert('작성 완료', '매칭 공고가 등록되었습니다.', [
         { text: '확인', onPress: () => router.back() }
       ]);
 
@@ -229,14 +229,13 @@ export default function WriteMatchScreen() {
             {/* Title */}
             <View style={tw`mb-10`}>
                 <Text style={tw`text-3xl font-extrabold text-gray-900 leading-tight mb-2`}>
-                    새로운 경기를{'\n'}시작해볼까요?
+                    매칭 만들기
                 </Text>
-                <Text style={tw`text-gray-400 text-base`}>아래 질문에 차근차근 답해주세요.</Text>
             </View>
 
             {/* Q1: Type */}
             <FadeInSection>
-                <Text style={tw`text-lg font-bold text-gray-800 mb-4`}>1. 경기 방식</Text>
+                <Text style={tw`text-lg font-bold text-gray-800 mb-4`}>경기 방식</Text>
                 <View style={tw`flex-row gap-3`}>
                     <SelectCard label="6인제" subLabel="정규 룰" icon="volleyball-ball" selected={type === '6man'} onPress={() => { setType('6man'); nextStep(2); }} />
                     <SelectCard label="9인제" subLabel="생활체육" icon="users" selected={type === '9man'} onPress={() => { setType('9man'); nextStep(2); }} />
@@ -246,15 +245,15 @@ export default function WriteMatchScreen() {
             {/* Q2: Gender */}
             {step >= 2 && (
             <FadeInSection delay={100}>
-                <Text style={tw`text-lg font-bold text-gray-800 mb-4`}>2. 참가 선수 성별</Text>
+                <Text style={tw`text-lg font-bold text-gray-800 mb-4`}>성별</Text>
                 <View style={tw`gap-3`}>
                 <TouchableOpacity onPress={() => { setGender('mixed'); nextStep(3); }} activeOpacity={0.8} style={tw`w-full p-5 rounded-3xl border flex-row items-center shadow-sm ${gender === 'mixed' ? 'bg-indigo-50 border-[#4F46E5]' : 'bg-white border-gray-100'}`}>
                     <View style={tw`w-12 h-12 rounded-full items-center justify-center mr-4 ${gender === 'mixed' ? 'bg-[#4F46E5]' : 'bg-gray-50'}`}>
                         <FontAwesome5 name="restroom" size={20} color={gender === 'mixed' ? 'white' : '#9CA3AF'} />
                     </View>
                     <View>
-                        <Text style={tw`text-lg font-bold ${gender === 'mixed' ? 'text-[#4F46E5]' : 'text-gray-800'}`}>혼성 (Mixed)</Text>
-                        <Text style={tw`text-xs mt-1 ${gender === 'mixed' ? 'text-indigo-400' : 'text-gray-400'}`}>남녀 선수가 함께 뛰어요</Text>
+                        <Text style={tw`text-lg font-bold ${gender === 'mixed' ? 'text-[#4F46E5]' : 'text-gray-800'}`}>혼성</Text>
+                        <Text style={tw`text-xs mt-1 ${gender === 'mixed' ? 'text-indigo-400' : 'text-gray-400'}`}>남녀 혼합</Text>
                     </View>
                 </TouchableOpacity>
                 <View style={tw`flex-row gap-3`}>
@@ -268,7 +267,7 @@ export default function WriteMatchScreen() {
             {/* Q3: Date & Time */}
             {step >= 3 && (
             <FadeInSection delay={100}>
-                <Text style={tw`text-lg font-bold text-gray-800 mb-4`}>3. 경기 일시</Text>
+                <Text style={tw`text-lg font-bold text-gray-800 mb-4`}>일시</Text>
                 <TouchableOpacity 
                     onPress={() => { setTempDate(date); setShowDateModal(true); }} 
                     activeOpacity={0.8}
@@ -285,14 +284,14 @@ export default function WriteMatchScreen() {
             </FadeInSection>
             )}
 
-            {/* Q4: Location (Reverted to TextInput) */}
+            {/* Q4: Location */}
             {step >= 4 && (
             <FadeInSection delay={100}>
-                <Text style={tw`text-lg font-bold text-gray-800 mb-4`}>4. 경기 장소</Text>
+                <Text style={tw`text-lg font-bold text-gray-800 mb-4`}>장소</Text>
                 <View style={tw`bg-white rounded-3xl border border-gray-200 p-1 shadow-sm`}>
                     <RNTextInput
                         style={tw`bg-white p-5 text-lg text-gray-800 rounded-2xl`}
-                        placeholder="예: 한신대학교 체육관"
+                        placeholder="체육관 이름 또는 주소 입력"
                         placeholderTextColor="#D1D5DB"
                         value={place}
                         onChangeText={(text) => setPlace(text)}
@@ -306,11 +305,11 @@ export default function WriteMatchScreen() {
             {/* Q5: Note */}
             {step >= 5 && (
             <FadeInSection delay={100}>
-                <Text style={tw`text-lg font-bold text-gray-800 mb-4`}>5. 추가 전달사항 (선택)</Text>
+                <Text style={tw`text-lg font-bold text-gray-800 mb-4`}>안내 사항 (선택)</Text>
                 <View style={tw`bg-white rounded-3xl border border-gray-200 p-1 mb-8 shadow-sm`}>
                     <RNTextInput
                     style={tw`bg-white p-5 text-lg text-gray-800 min-h-[140px] rounded-2xl`}
-                    placeholder="주차, 참가비, 팀 실력 등 상대팀이 알아야 할 내용을 자유롭게 적어주세요."
+                    placeholder="주차 정보, 참가비, 팀 실력 등"
                     placeholderTextColor="#D1D5DB"
                     multiline
                     textAlignVertical="top"
@@ -324,7 +323,7 @@ export default function WriteMatchScreen() {
                 disabled={loading} 
                 style={tw`w-full bg-[#4F46E5] py-5 rounded-3xl items-center shadow-lg shadow-indigo-200 active:scale-95 mb-10`}
                 >
-                {loading ? <ActivityIndicator color="white" /> : <Text style={tw`text-white font-extrabold text-xl`}>매칭 등록하기</Text>}
+                {loading ? <ActivityIndicator color="white" /> : <Text style={tw`text-white font-extrabold text-xl`}>완료</Text>}
                 </TouchableOpacity>
             </FadeInSection>
             )}
@@ -359,7 +358,7 @@ export default function WriteMatchScreen() {
                     }}
                     style={tw`mt-6 bg-[#4F46E5] py-4 rounded-2xl items-center shadow-lg shadow-indigo-200`}
                 >
-                    <Text style={tw`text-white font-bold text-lg`}>시간 설정 완료</Text>
+                    <Text style={tw`text-white font-bold text-lg`}>설정</Text>
                 </TouchableOpacity>
             </View>
         </View>

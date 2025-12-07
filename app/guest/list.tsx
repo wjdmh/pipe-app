@@ -7,7 +7,7 @@ import tw from 'twrnc';
 import { useGuest, GuestPost } from '../../hooks/useGuest';
 import { auth } from '../../configs/firebaseConfig';
 
-const POSITIONS = { 'L': '레프트', 'R': '라이트', 'C': '센터', 'S': '세터', 'Li': '리베로' };
+const POSITIONS = { 'OH': '레프트', 'OP': '라이트', 'MB': '미들 블로커', 'S': '세터', 'L': '리베로' };
 
 export default function GuestListScreen() {
   const router = useRouter();
@@ -81,7 +81,7 @@ export default function GuestListScreen() {
               style={tw`px-4 py-2 rounded-xl ${isApplied ? 'bg-gray-200' : 'bg-indigo-600'}`}
             >
               <Text style={tw`font-bold ${isApplied ? 'text-gray-500' : 'text-white'}`}>
-                {isApplied ? '신청 취소' : '용병 지원'}
+                {isApplied ? '신청 취소' : '게스트 지원'}
               </Text>
             </TouchableOpacity>
           )}
@@ -95,7 +95,7 @@ export default function GuestListScreen() {
       <StatusBar barStyle="dark-content" />
       <View style={tw`px-5 py-4 bg-white border-b border-gray-100 flex-row justify-between items-center`}>
         <TouchableOpacity onPress={() => router.back()}><FontAwesome5 name="arrow-left" size={20} color="#191F28" /></TouchableOpacity>
-        <Text style={tw`text-lg font-bold text-gray-900`}>용병 찾기</Text>
+        <Text style={tw`text-lg font-bold text-gray-900`}>게스트로 참여하기</Text>
         <TouchableOpacity onPress={() => router.push('/guest/write')}><FontAwesome5 name="plus" size={20} color="#4f46e5" /></TouchableOpacity>
       </View>
 
@@ -126,7 +126,7 @@ export default function GuestListScreen() {
           keyExtractor={item => item.id}
           renderItem={renderItem}
           contentContainerStyle={tw`p-5 pb-20`}
-          ListEmptyComponent={<Text style={tw`text-center text-gray-400 mt-10`}>현재 모집 중인 용병 공고가 없습니다.</Text>}
+          ListEmptyComponent={<Text style={tw`text-center text-gray-400 mt-10`}>현재 게스트를 모집 중인 팀이 없어요.</Text>}
         />
       )}
     </SafeAreaView>
