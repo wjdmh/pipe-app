@@ -218,11 +218,17 @@ export default function HomeScreen() {
               if (!data.isDeleted) newMatches.push({ id: d.id, ...data } as MatchData);
           });
 
-          // 상태 업데이트
+          // 상태 업데이트 [Critical Fix: 중복 데이터 방어]
           if (isRefresh) {
               setMatches(newMatches);
           } else {
-              setMatches(prev => [...prev, ...newMatches]);
+              setMatches(prev => {
+                  // 기존 ID들을 Set으로 만들어 중복 체크 (O(1))
+                  const existingIds = new Set(prev.map(m => m.id));
+                  // 중복되지 않은 새 데이터만 필터링
+                  const uniqueNewMatches = newMatches.filter(m => !existingIds.has(m.id));
+                  return [...prev, ...uniqueNewMatches];
+              });
           }
 
           // 다음 페이지 존재 여부 확인

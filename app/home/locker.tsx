@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, TextInput, Alert, ActivityIndicator, Modal, FlatList } from 'react-native';
-import { doc, getDoc, updateDoc, collection, query, where, onSnapshot, orderBy, arrayRemove, arrayUnion, addDoc } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, collection, query, where, onSnapshot, arrayRemove, arrayUnion, addDoc, runTransaction } from 'firebase/firestore';
 import { auth, db } from '../../configs/firebaseConfig';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -98,7 +98,6 @@ export default function LockerScreen() {
         const unsubTeam = onSnapshot(doc(db, "teams", tid), (d) => {
             if (d.exists()) {
                 const data = d.data();
-                // [Fix] 타입 충돌 방지를 위해 명시적 캐스팅 사용
                 setTeamData({ id: d.id, ...data } as TeamData);
                 setIsCaptain(data.captainId === user.uid);
             }
@@ -147,55 +146,115 @@ export default function LockerScreen() {
     return () => { unsubHost(); unsubApply(); unsubConfirmed(); };
   }, [myTeamId]);
 
+  // [Atomic Join] 가입 승인 (트랜잭션)
   const handleApproveMember = async (req: JoinRequest) => {
       if (!isCaptain || !myTeamId) return;
       try {
-          const newPlayer = { id: Date.now(), uid: req.uid, name: req.name, position: req.position };
-          await updateDoc(doc(db, "teams", myTeamId), {
-              joinRequests: arrayRemove(req),
-              roster: arrayUnion(newPlayer),
-              members: arrayUnion(req.uid)
+          await runTransaction(db, async (transaction) => {
+              const teamRef = doc(db, "teams", myTeamId);
+              const userRef = doc(db, "users", req.uid);
+
+              const teamDoc = await transaction.get(teamRef);
+              const userDoc = await transaction.get(userRef);
+
+              if (!teamDoc.exists()) throw "팀 데이터가 없습니다.";
+              if (!userDoc.exists()) throw "유저 데이터가 없습니다.";
+              if (userDoc.data().teamId) throw "이미 다른 팀에 소속된 유저입니다.";
+
+              const newPlayer = { id: Date.now(), uid: req.uid, name: req.name, position: req.position };
+
+              transaction.update(teamRef, {
+                  joinRequests: arrayRemove(req),
+                  roster: arrayUnion(newPlayer),
+                  members: arrayUnion(req.uid)
+              });
+
+              transaction.update(userRef, { 
+                  teamId: myTeamId, 
+                  role: 'member',
+                  updatedAt: new Date().toISOString()
+              });
           });
-          await updateDoc(doc(db, "users", req.uid), { teamId: myTeamId, role: 'member' });
           Alert.alert('승인 완료', `${req.name}님이 팀원이 되었습니다.`);
-      } catch (e) { Alert.alert('오류', '승인 처리에 실패했습니다.'); }
+      } catch (e: any) { 
+          Alert.alert('오류', typeof e === 'string' ? e : '승인 처리에 실패했습니다.'); 
+      }
   };
 
   const handleRejectMember = async (req: JoinRequest) => {
       if (!isCaptain || !myTeamId) return;
-      await updateDoc(doc(db, "teams", myTeamId), { joinRequests: arrayRemove(req) });
+      try {
+        await updateDoc(doc(db, "teams", myTeamId), { joinRequests: arrayRemove(req) });
+      } catch(e) { Alert.alert('오류', '거절 실패'); }
   };
 
+  // [Atomic Kick] 멤버 방출 (트랜잭션)
   const handleKickMember = async (player: Player) => {
       if (!isCaptain || !myTeamId || !player.uid) return;
       Alert.alert('방출', '정말 방출하시겠습니까?', [
           { text: '취소' },
           { text: '방출', style: 'destructive', onPress: async () => {
               try {
-                  await updateDoc(doc(db, "teams", myTeamId), { roster: arrayRemove(player), members: arrayRemove(player.uid) });
-                  await updateDoc(doc(db, "users", player.uid!), { teamId: null, role: 'guest' });
+                  await runTransaction(db, async (transaction) => {
+                      const teamRef = doc(db, "teams", myTeamId);
+                      const userRef = doc(db, "users", player.uid!);
+
+                      const teamDoc = await transaction.get(teamRef);
+                      const userDoc = await transaction.get(userRef);
+
+                      if (!teamDoc.exists()) throw "팀 데이터 오류";
+
+                      transaction.update(teamRef, { 
+                          roster: arrayRemove(player), 
+                          members: arrayRemove(player.uid) 
+                      });
+
+                      if (userDoc.exists()) {
+                          transaction.update(userRef, { 
+                              teamId: null, 
+                              role: 'guest',
+                              updatedAt: new Date().toISOString()
+                          });
+                      }
+                  });
                   Alert.alert('완료', '멤버를 방출했습니다.');
-              } catch (e) { Alert.alert('오류', '방출 실패'); }
+              } catch (e) { Alert.alert('오류', '방출 처리에 실패했습니다.'); }
           }}
       ]);
   };
 
+  // ✅ [Atomic Add] 수동 선수 추가 (arrayUnion 사용)
   const handleAddManualPlayer = async () => {
     if (!newPlayerName || !myTeamId) return;
     try {
       const newPlayer = { id: Date.now(), name: newPlayerName, position: newPlayerPos };
+      // 기존 덮어쓰기 로직 제거 -> arrayUnion으로 안전하게 추가
       await updateDoc(doc(db, "teams", myTeamId), { 
-          roster: [...(teamData?.roster || []), newPlayer] 
+          roster: arrayUnion(newPlayer)
       });
       setNewPlayerName('');
       Alert.alert('성공', '선수가 등록되었습니다.');
     } catch (e) { Alert.alert('오류', '선수 등록 실패'); }
   };
 
+  // ✅ [Atomic Delete] 수동 선수 삭제 (트랜잭션 사용)
   const handleDeleteManualPlayer = async (pid: number) => {
     if (!myTeamId) return;
-    const updated = (teamData?.roster || []).filter(p => p.id !== pid);
-    await updateDoc(doc(db, "teams", myTeamId), { roster: updated });
+    try {
+        await runTransaction(db, async (transaction) => {
+            const teamRef = doc(db, "teams", myTeamId);
+            const teamDoc = await transaction.get(teamRef);
+            if (!teamDoc.exists()) throw "Team not found";
+            
+            // 최신 로스터 가져와서 필터링
+            const currentRoster = teamDoc.data().roster || [];
+            const updatedRoster = currentRoster.filter((p: any) => p.id !== pid);
+            
+            transaction.update(teamRef, { roster: updatedRoster });
+        });
+    } catch (e) {
+        Alert.alert('오류', '삭제 실패');
+    }
   };
 
   const updateTeamLevel = async (lvl: string) => {
@@ -250,7 +309,7 @@ export default function LockerScreen() {
           let phone = "정보 없음";
           if (captainId) {
               const uSnap = await getDoc(doc(db, "users", captainId));
-              if (uSnap.exists()) phone = uSnap.data().phoneNumber || "번호 없음";
+              if (uSnap.exists()) phone = uSnap.data().phoneNumber || uSnap.data().phone || "번호 없음";
           }
           setSelectedMatchDetail({ match: match, opponentName: tData.name, opponentPhone: phone });
           setMatchDetailModalVisible(true);

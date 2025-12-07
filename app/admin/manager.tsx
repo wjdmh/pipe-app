@@ -143,7 +143,6 @@ export default function AdminManager() {
   // --- TAB 2: 모집 관리 ---
   const handleSelectRecruiting = async (match: any) => {
       setSelectedMatch(match);
-      // [Fix] note가 undefined일 경우 빈 문자열로 처리하여 TextInput 오류 방지
       setMatchEditForm({ 
           time: match.time || '', 
           loc: match.loc || '', 
@@ -216,20 +215,50 @@ export default function AdminManager() {
       } catch(e) { Alert.alert('오류', '수정 실패'); }
   };
 
+  // ✅ [수정됨] 안전한 팀 삭제 (연쇄 삭제 적용)
   const deleteTeam = async () => {
     if (!selectedTeam) return;
-    Alert.alert('팀 삭제 (Soft Delete)', `'${selectedTeam.name}' 팀을 삭제 처리하시겠습니까?`, [
+    Alert.alert('팀 삭제 (Soft Delete)', `'${selectedTeam.name}' 팀을 삭제 처리하시겠습니까?\n소속된 모든 멤버는 자동으로 탈퇴(Guest) 처리됩니다.`, [
       { text: '취소' },
       { text: '삭제', style: 'destructive', onPress: async () => {
           try {
-              await updateDoc(doc(db, "teams", selectedTeam.id), { isDeleted: true, deletedAt: new Date().toISOString() });
-              if (selectedTeam.captainId && captainStatus === 'active') {
-                  try { await updateDoc(doc(db, "users", selectedTeam.captainId), { teamId: null, role: 'User' }); } catch(err) {}
-              }
-              Alert.alert('완료', '팀이 삭제 처리되었습니다.');
+              await runTransaction(db, async (transaction) => {
+                  // 1. 최신 팀 데이터 조회 (동시성 방어)
+                  const teamRef = doc(db, "teams", selectedTeam.id);
+                  const teamDoc = await transaction.get(teamRef);
+                  
+                  if (!teamDoc.exists()) throw "팀 데이터가 존재하지 않습니다.";
+                  
+                  const teamData = teamDoc.data();
+                  const memberIds = teamData.members || []; // 멤버 목록 가져오기
+
+                  // 2. 모든 멤버(대표 포함)의 소속 해제
+                  memberIds.forEach((uid: string) => {
+                      const userRef = doc(db, "users", uid);
+                      transaction.update(userRef, { 
+                          teamId: null, 
+                          role: 'guest',
+                          updatedAt: new Date().toISOString()
+                      });
+                  });
+
+                  // 3. 팀 소프트 삭제 처리
+                  transaction.update(teamRef, { 
+                      isDeleted: true, 
+                      deletedAt: new Date().toISOString(),
+                      captainId: null, // 대표자 정보도 제거
+                      members: []      // 멤버 리스트 초기화
+                  });
+              });
+
+              Alert.alert('완료', '팀과 소속 멤버가 모두 정리되었습니다.');
               setTeamModalVisible(false);
-              loadData();
-          } catch (e) { Alert.alert('오류', '삭제 실패'); }
+              loadData(); // 목록 새로고침
+
+          } catch (e: any) { 
+              console.error(e);
+              Alert.alert('오류', '삭제 처리 중 문제가 발생했습니다: ' + e.message); 
+          }
       }}
     ]);
   };
@@ -297,7 +326,6 @@ export default function AdminManager() {
                 <TouchableOpacity key={m.id} onPress={() => handleSelectRecruiting(m)} style={tw`bg-slate-800 p-4 rounded-xl mb-3 border border-slate-700`}>
                     <View style={tw`flex-row justify-between`}>
                         <Text style={tw`text-indigo-400 font-bold`}>{m.team}</Text>
-                        {/* [Fix] 날짜가 없어도 에러 안나게 처리 */}
                         <Text style={tw`text-slate-500 text-xs`}>{m.createdAt ? m.createdAt.split('T')[0] : '날짜없음'}</Text>
                     </View>
                     <Text style={tw`text-white font-bold mt-1`}>{formatTimeSimple(m.time)}</Text>

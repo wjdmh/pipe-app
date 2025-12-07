@@ -54,14 +54,14 @@ export default function MyPageScreen() {
     ]);
   };
 
-  // [Critical Fix] 안전한 회원 탈퇴 로직 (Transaction + Auth Error Handling)
+  // ✅ [수정됨] 데이터 무결성을 보장하는 안전한 탈퇴 로직
   const handleWithdrawal = async () => {
     const user = auth.currentUser;
     if (!user) return;
 
     Alert.alert(
         '회원 탈퇴', 
-        '정말 탈퇴하시겠습니까?\n\n팀 대표인 경우 팀 데이터도 함께 삭제되며, 이는 절대 복구할 수 없습니다.', 
+        '정말 탈퇴하시겠습니까?\n\n팀 대표인 경우 팀이 해체되며, 모든 팀원은 자동으로 소속이 해제됩니다.', 
         [
             { text: '취소', style: 'cancel' },
             { 
@@ -69,7 +69,7 @@ export default function MyPageScreen() {
                 style: 'destructive', 
                 onPress: async () => {
                     try {
-                        // 1. Firestore 데이터 삭제 (트랜잭션으로 원자성 보장)
+                        // 1. Firestore 데이터 정리 (트랜잭션)
                         await runTransaction(db, async (transaction) => {
                             // 유저 데이터 확인
                             const userRef = doc(db, "users", user.uid);
@@ -78,17 +78,49 @@ export default function MyPageScreen() {
 
                             const uData = userSnap.data();
 
-                            // 팀 대표라면 팀 데이터도 삭제
-                            if (uData.teamId && uData.role === 'leader') {
+                            // 소속 팀이 있는 경우 처리
+                            if (uData.teamId) {
                                 const teamRef = doc(db, "teams", uData.teamId);
-                                transaction.delete(teamRef);
+                                const teamSnap = await transaction.get(teamRef);
+
+                                if (teamSnap.exists()) {
+                                    const teamData = teamSnap.data();
+
+                                    // Case A: 팀 대표가 탈퇴하는 경우 -> 팀 해체 & 팀원 구조
+                                    if (uData.role === 'leader') {
+                                        const memberIds = teamData.members || [];
+                                        
+                                        // 다른 팀원들의 teamId를 null로 초기화 (유령 팀 방지)
+                                        for (const memberUid of memberIds) {
+                                            if (memberUid === user.uid) continue;
+                                            const memberRef = doc(db, "users", memberUid);
+                                            transaction.update(memberRef, { 
+                                                teamId: null, 
+                                                role: 'guest',
+                                                updatedAt: new Date().toISOString()
+                                            });
+                                        }
+                                        // 팀 삭제
+                                        transaction.delete(teamRef);
+                                    } 
+                                    // Case B: 일반 팀원이 탈퇴하는 경우 -> 명단에서 본인 제거
+                                    else {
+                                        const newMembers = (teamData.members || []).filter((uid: string) => uid !== user.uid);
+                                        const newRoster = (teamData.roster || []).filter((p: any) => p.uid !== user.uid);
+                                        
+                                        transaction.update(teamRef, { 
+                                            members: newMembers,
+                                            roster: newRoster
+                                        });
+                                    }
+                                }
                             }
 
-                            // 유저 데이터 삭제
+                            // 유저 데이터 최종 삭제
                             transaction.delete(userRef);
                         });
 
-                        console.log("Firestore 데이터 삭제 완료 (Transaction Success)");
+                        console.log("Firestore Cleanup Success");
 
                         // 2. Firebase Auth 계정 영구 삭제
                         await deleteUser(user);
@@ -99,7 +131,7 @@ export default function MyPageScreen() {
                     } catch (e: any) {
                         console.error("Withdrawal Error:", e);
                         
-                        // [Auth Error] 재로그인 필요 시 처리
+                        // 재로그인 필요 에러 처리
                         if (e.code === 'auth/requires-recent-login') {
                             Alert.alert(
                                 '보안 인증 필요', 

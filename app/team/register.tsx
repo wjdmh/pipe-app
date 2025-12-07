@@ -3,7 +3,7 @@ import { View, Text, TextInput, TouchableOpacity, Alert, ScrollView, ActivityInd
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { FontAwesome5 } from '@expo/vector-icons';
-import { collection, addDoc, serverTimestamp, query, getDocs, doc, getDoc, setDoc, updateDoc, arrayUnion } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, query, getDocs, doc, getDoc, setDoc, updateDoc, arrayUnion, runTransaction } from 'firebase/firestore';
 import { db, auth } from '../../configs/firebaseConfig';
 import tw from 'twrnc';
 import { KUSF_TEAMS } from '../home/ranking';
@@ -32,7 +32,7 @@ export default function TeamRegister() {
   const [isCodeSent, setIsCodeSent] = useState(false);
 
   const [teamName, setTeamName] = useState('');
-  const [description, setDescription] = useState(''); // 기존 유지
+  const [description, setDescription] = useState('');
   const [selectedRegion, setSelectedRegion] = useState('');
   const [showRegionModal, setShowRegionModal] = useState(false);
 
@@ -95,7 +95,7 @@ export default function TeamRegister() {
     setStep('VERIFY');
   };
 
-  // [New] 가입 신청 로직
+  // 가입 신청 로직
   const sendJoinRequest = async (teamDocData: any) => {
       if (!auth.currentUser || !userInfo) return;
       setLoading(true);
@@ -137,57 +137,77 @@ export default function TeamRegister() {
       setStep('INFO_FORM');
   };
 
+  // ✅ [수정됨] 절대 안전한 팀 생성 (Atomic Transaction 적용)
   const submitTeam = async () => {
       if (!teamName || !selectedRegion) return Alert.alert('오류', '팀 이름과 지역은 필수입니다.');
       if (!auth.currentUser) return;
       
       setLoading(true);
       try {
-        // [Fix] roster 배열 타입 명시
-        const teamData = {
-            name: teamName, 
-            affiliation: targetTeam ? targetTeam.affiliation : (userInfo?.affiliation || '미인증'),
-            region: selectedRegion, 
-            gender: selectedGender,
-            description: description || '',
-            captainId: auth.currentUser.uid, 
-            leaderName: userInfo?.name || '이름없음',
-            members: [auth.currentUser.uid], 
-            roster: [] as any[], // [Fix] 빈 배열 타입 명시
-            joinRequests: [],
-            kusfId: targetTeam ? targetTeam.id : null,
-            initialStats: targetTeam ? targetTeam.stats : { wins: 0, losses: 0, points: 0, total: 0 },
-            stats: targetTeam ? targetTeam.stats : { wins: 0, losses: 0, points: 0, total: 0 }, // stats 필드 통일
-            createdAt: serverTimestamp(),
-            isDeleted: false
-        };
+        const userUid = auth.currentUser.uid;
 
-        // 본인을 Roster에 추가
-        const me = { 
-            id: Date.now(), 
-            uid: auth.currentUser.uid, 
-            name: userInfo?.name || '나', 
-            position: userInfo?.position || 'L' 
-        };
-        teamData.roster.push(me);
+        await runTransaction(db, async (transaction) => {
+            // 1. 유저 상태 검증 (중복 팀 생성 방지)
+            const userRef = doc(db, "users", userUid);
+            const userSnap = await transaction.get(userRef);
+            if (!userSnap.exists()) throw "회원 정보를 찾을 수 없습니다.";
+            if (userSnap.data().teamId) throw "이미 소속된 팀이 있습니다.";
 
-        let tid = '';
-        if(isReclaiming && reclaimDocId) {
-            await updateDoc(doc(db, "teams", reclaimDocId), teamData);
-            tid = reclaimDocId;
-        } else {
-            const ref = await addDoc(collection(db, "teams"), teamData);
-            tid = ref.id;
-        }
+            // 2. 팀 데이터 준비
+            const me = { 
+                id: Date.now(), 
+                uid: userUid, 
+                name: userInfo?.name || '나', 
+                position: userInfo?.position || 'L' 
+            };
+
+            const teamPayload = {
+                name: teamName, 
+                affiliation: targetTeam ? targetTeam.affiliation : (userInfo?.affiliation || '미인증'),
+                region: selectedRegion, 
+                gender: selectedGender,
+                description: description || '',
+                captainId: userUid, 
+                leaderName: userInfo?.name || '이름없음',
+                members: [userUid], 
+                roster: [me],
+                joinRequests: [],
+                kusfId: targetTeam ? targetTeam.id : null,
+                stats: targetTeam ? targetTeam.stats : { wins: 0, losses: 0, points: 0, total: 0 },
+                createdAt: new Date().toISOString(),
+                isDeleted: false
+            };
+
+            let teamRef;
+
+            if (isReclaiming && reclaimDocId) {
+                // [이어받기] 기존 문서 업데이트
+                teamRef = doc(db, "teams", reclaimDocId);
+                const teamDoc = await transaction.get(teamRef);
+                if (!teamDoc.exists()) throw "이어받을 팀 정보를 찾을 수 없습니다.";
+                transaction.update(teamRef, teamPayload);
+            } else {
+                // [신규생성] 새 문서 생성
+                teamRef = doc(collection(db, "teams")); // ID 미리 생성
+                transaction.set(teamRef, teamPayload);
+            }
+
+            // 3. 유저 정보 업데이트 (Atomic)
+            transaction.update(userRef, { 
+                teamId: teamRef.id, 
+                role: 'leader',
+                updatedAt: new Date().toISOString()
+            });
+        });
         
-        // 유저 정보 업데이트
-        await setDoc(doc(db, "users", auth.currentUser.uid), { teamId: tid, role: 'leader' }, { merge: true });
-        
-        Alert.alert('성공', '팀 등록이 완료되었습니다!');
-        router.replace('/home');
+        Alert.alert('성공', '팀 등록이 완료되었습니다!', [
+            { text: '확인', onPress: () => router.replace('/home') }
+        ]);
+
       } catch(e: any) { 
-          console.error(e);
-          Alert.alert('오류', e.message); 
+          console.error("Team Create Error:", e);
+          const msg = typeof e === 'string' ? e : (e.message || '팀 등록에 실패했습니다.');
+          Alert.alert('오류', msg); 
       } finally { 
           setLoading(false); 
       }
@@ -204,7 +224,7 @@ export default function TeamRegister() {
         </Text>
       </View>
 
-      {/* SEARCH VIEW - 유실되었던 FlatList 복구 */}
+      {/* SEARCH VIEW */}
       {step === 'SEARCH' && (
           <View style={tw`flex-1`}>
              <View style={tw`px-5 pt-4`}>
@@ -225,7 +245,6 @@ export default function TeamRegister() {
                 contentContainerStyle={tw`px-5 pb-32`}
                 renderItem={({item}) => {
                     const existing = registeredTeamsMap[item.id];
-                    // 활동 중 여부: 데이터가 있고 + 삭제안됨 + 캡틴존재
                     const isActive = existing && !existing.isDeleted && existing.captainId;
                     return (
                         <TouchableOpacity onPress={() => onSelectExistingTeam(item)} style={tw`p-4 mb-3 rounded-xl border ${isActive ? 'bg-blue-50 border-blue-200' : 'bg-white border-gray-200'} shadow-sm`}>
@@ -245,7 +264,6 @@ export default function TeamRegister() {
                 }}
              />
              
-             {/* 하단 고정 버튼 */}
              <View style={tw`absolute bottom-0 w-full p-5 bg-white border-t border-gray-100`}>
                  <TouchableOpacity onPress={() => { setTargetTeam(null); setTeamName(''); setIsReclaiming(false); setStep('INFO_FORM'); }} style={tw`bg-[#191F28] py-4 rounded-xl items-center shadow-lg`}>
                      <Text style={tw`text-white font-bold text-lg`}>찾는 팀이 없나요? 새로운 팀 생성</Text>

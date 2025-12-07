@@ -11,7 +11,6 @@ import {
   Animated, 
   Modal, 
   TouchableWithoutFeedback, 
-  Keyboard,
   ScrollView,
   LogBox
 } from 'react-native';
@@ -21,14 +20,10 @@ import { auth, db } from '../../configs/firebaseConfig';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { FontAwesome5 } from '@expo/vector-icons';
-import { GooglePlacesAutocomplete, GooglePlacesAutocompleteRef } from 'react-native-google-places-autocomplete';
 import tw from 'twrnc';
 
 // ⚠️ VirtualizedLists 경고 무시
 LogBox.ignoreLogs(['VirtualizedLists should never be nested']);
-
-// ✅ 사용자 API 키
-const GOOGLE_API_KEY = "AIzaSyDzsmyPhhVTB64k_P4aJjYBVUpuMPJZA_Q";
 
 /**
  * [Animation Component]
@@ -107,7 +102,6 @@ export default function WriteMatchScreen() {
   
   // Refs
   const scrollViewRef = useRef<ScrollView>(null);
-  const googlePlacesRef = useRef<GooglePlacesAutocompleteRef>(null);
   
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
@@ -123,9 +117,6 @@ export default function WriteMatchScreen() {
   const [showDateModal, setShowDateModal] = useState(false);
   const [tempDate, setTempDate] = useState(new Date());
   
-  // ✅ [상태 추가] 검색 리스트 표시 여부 제어 (초기값 'auto' 아님 true로 설정해도 무관하나 auto가 안전)
-  const [listViewDisplayed, setListViewDisplayed] = useState<'auto' | boolean>('auto');
-
   // [UX 개선] 단계 자동 스크롤
   const nextStep = (next: number) => {
     if (step < next) {
@@ -150,48 +141,64 @@ export default function WriteMatchScreen() {
   };
 
   const handleSubmit = async () => {
-    if (!type || !gender || !place) return Alert.alert('잠시만요', '필수 정보를 모두 입력해주세요.');
+    // 1. 입력값 검증 (Validation)
+    if (!type) return Alert.alert('알림', '경기 방식을 선택해주세요 (6인제/9인제).');
+    if (!gender) return Alert.alert('알림', '참가 선수 성별을 선택해주세요.');
+    if (!place) return Alert.alert('알림', '경기 장소를 입력해주세요.');
 
     setLoading(true);
     try {
       const user = auth.currentUser;
-      if (!user) throw new Error('로그인이 필요합니다.');
+      if (!user) throw new Error('로그인 정보가 유효하지 않습니다. 다시 로그인해주세요.');
 
-      const userDoc = await getDoc(doc(db, "users", user.uid));
-      const userData = userDoc.data();
+      // 2. 유저 정보 안전 조회
+      const userRef = doc(db, "users", user.uid);
+      const userSnap = await getDoc(userRef);
+
+      if (!userSnap.exists()) throw new Error('회원 정보를 찾을 수 없습니다.');
+      const userData = userSnap.data();
       
+      // 3. 팀 정보 유효성 검사
       if (!userData?.teamId) {
-        Alert.alert('알림', '팀 프로필을 먼저 만들어주세요.');
-        router.replace('/team/register');
+        Alert.alert('알림', '팀 프로필이 없습니다. 팀을 먼저 등록해주세요.', [
+            { text: '이동', onPress: () => router.replace('/team/register') }
+        ]);
         return;
       }
 
-      const teamDoc = await getDoc(doc(db, "teams", userData.teamId));
-      const teamData = teamDoc.data();
+      const teamRef = doc(db, "teams", userData.teamId);
+      const teamSnap = await getDoc(teamRef);
 
-      await addDoc(collection(db, "matches"), {
+      if (!teamSnap.exists()) throw new Error('소속된 팀 정보를 찾을 수 없습니다.');
+      const teamData = teamSnap.data();
+
+      // 4. 데이터 쓰기
+      const payload = {
         hostId: userData.teamId,
-        team: teamData?.name || 'Unknown Team',
-        affiliation: teamData?.affiliation || '',
+        team: teamData.name || 'Unknown Team',
+        affiliation: teamData.affiliation || '소속 미정',
         type,
         gender,
         time: date.toISOString(),
         loc: place,
-        note: note || '',
+        note: note.trim(),
         status: 'recruiting',
         createdAt: new Date().toISOString(),
         applicants: [],
-        level: teamData?.level || 'B',
+        level: teamData.level || 'C',
         isDeleted: false
-      });
+      };
 
-      Alert.alert('매칭 등록 완료! 🎉', '곧 좋은 상대를 찾아드릴게요.', [
+      await addDoc(collection(db, "matches"), payload);
+
+      Alert.alert('성공', '매칭 공고가 등록되었습니다! 🔥', [
         { text: '확인', onPress: () => router.back() }
       ]);
 
     } catch (error: any) {
-      console.error(error);
-      Alert.alert('오류', '문제가 생겼어요. 다시 시도해주세요.');
+      console.error("Match Create Error:", error);
+      const errorMsg = error.message || '알 수 없는 오류가 발생했습니다.';
+      Alert.alert('등록 실패', errorMsg);
     } finally {
       setLoading(false);
     }
@@ -213,7 +220,6 @@ export default function WriteMatchScreen() {
         style={tw`flex-1`}
         keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
       >
-        {/* ✅ [터치 씹힘 해결의 핵심] Parent ScrollView에 handled 설정 */}
         <ScrollView
             ref={scrollViewRef}
             contentContainerStyle={tw`px-6 pt-6 pb-60`}
@@ -279,120 +285,19 @@ export default function WriteMatchScreen() {
             </FadeInSection>
             )}
 
-            {/* Q4: Location */}
+            {/* Q4: Location (Reverted to TextInput) */}
             {step >= 4 && (
-            <FadeInSection delay={100} zIndexValue={2000}>
+            <FadeInSection delay={100}>
                 <Text style={tw`text-lg font-bold text-gray-800 mb-4`}>4. 경기 장소</Text>
-                
-                {/* 검색창 컨테이너 */}
-                <View style={[tw`bg-white rounded-3xl shadow-sm border border-gray-200 relative`, { minHeight: 60, zIndex: 2000 }]}>
-                    <View style={tw`flex-row items-center px-4 pt-4`}>
-                        <FontAwesome5 name="search" size={16} color="#4F46E5" style={tw`mr-3`} />
-                        <Text style={tw`text-gray-400 font-bold text-xs`}>장소 검색</Text>
-                    </View>
-
-                    <GooglePlacesAutocomplete
-                        ref={googlePlacesRef}
-                        placeholder='예: 한신대학교 체육관'
-                        
-                        // ✅ [핵심 Fix] 리스트 표시 여부 제어
-                        listViewDisplayed={listViewDisplayed}
-
-                        onPress={(data, details = null) => {
-                            if (googlePlacesRef.current) {
-                                googlePlacesRef.current.setAddressText(data.description);
-                            }
-                            setPlace(data.description);
-                            
-                            // ✅ [핵심 Fix] 선택 시 리스트 강제 숨김
-                            setListViewDisplayed(false); 
-                            Keyboard.dismiss(); 
-                            
-                            nextStep(5);
-                        }}
-                        query={{
-                            key: GOOGLE_API_KEY,
-                            language: 'ko',
-                            components: 'country:kr',
-                        }}
-                        
-                        // ❌ 에러 발생 코드 삭제 (flatListProps, listProps 등 삭제)
-                        // 상위 ScrollView에서 keyboardShouldPersistTaps='handled'를 처리하므로 삭제해도 안전함.
-
-                        renderRow={(data) => (
-                            <View style={tw`flex-row items-center py-3 bg-white`}>
-                                <View style={tw`w-8 h-8 rounded-full bg-gray-50 items-center justify-center mr-3`}>
-                                    <FontAwesome5 name="map-marker-alt" size={14} color="#64748b" />
-                                </View>
-                                <View style={tw`flex-1`}>
-                                    {/* 글씨 검정색 강제 적용 */}
-                                    <Text style={[tw`text-base font-medium`, { color: '#000000' }]}>
-                                        {data.structured_formatting?.main_text || data.description}
-                                    </Text>
-                                    <Text style={[tw`text-xs mt-0.5`, { color: '#9CA3AF' }]}>
-                                        {data.structured_formatting?.secondary_text || ''}
-                                    </Text>
-                                </View>
-                            </View>
-                        )}
-                        styles={{
-                            container: { flex: 0 },
-                            textInputContainer: { 
-                                backgroundColor: 'transparent', 
-                                paddingHorizontal: 16, 
-                                paddingBottom: 16 
-                            },
-                            textInput: { 
-                                height: 50, 
-                                fontSize: 18, 
-                                fontWeight: 'bold',
-                                backgroundColor: '#F9FAFB', 
-                                borderRadius: 16,
-                                paddingHorizontal: 16,
-                                color: '#000000', // 입력 텍스트 검정 강제
-                            },
-                            listView: { 
-                                position: 'absolute', 
-                                top: 70, 
-                                left: 0,
-                                right: 0,
-                                backgroundColor: 'white', 
-                                borderRadius: 12,
-                                elevation: 5, 
-                                zIndex: 5000, 
-                                shadowColor: "#000",
-                                shadowOffset: { width: 0, height: 4 },
-                                shadowOpacity: 0.1,
-                                shadowRadius: 10,
-                                borderWidth: 1,
-                                borderColor: '#F3F4F6',
-                            },
-                            row: { 
-                                padding: 12, 
-                                backgroundColor: 'white', 
-                            },
-                            separator: { 
-                                height: 1, 
-                                backgroundColor: '#F3F4F6' 
-                            },
-                            description: {
-                                color: '#000000', 
-                            }
-                        }}
-                        textInputProps={{
-                            placeholderTextColor: "#9CA3AF",
-                            returnKeyType: "search",
-                            // ✅ [핵심 Fix] 텍스트 입력 시에는 다시 리스트가 보여야 함
-                            onChangeText: (text) => {
-                                setPlace(text);
-                                setListViewDisplayed('auto');
-                            },
-                            autoCorrect: false
-                        }}
-                        enablePoweredByContainer={false}
-                        fetchDetails={false}
-                        minLength={2}
-                        debounce={300}
+                <View style={tw`bg-white rounded-3xl border border-gray-200 p-1 shadow-sm`}>
+                    <RNTextInput
+                        style={tw`bg-white p-5 text-lg text-gray-800 rounded-2xl`}
+                        placeholder="예: 한신대학교 체육관"
+                        placeholderTextColor="#D1D5DB"
+                        value={place}
+                        onChangeText={(text) => setPlace(text)}
+                        returnKeyType="next"
+                        onSubmitEditing={() => nextStep(5)}
                     />
                 </View>
             </FadeInSection>
@@ -400,9 +305,9 @@ export default function WriteMatchScreen() {
 
             {/* Q5: Note */}
             {step >= 5 && (
-            <FadeInSection delay={100} zIndexValue={-1}>
+            <FadeInSection delay={100}>
                 <Text style={tw`text-lg font-bold text-gray-800 mb-4`}>5. 추가 전달사항 (선택)</Text>
-                <View style={[tw`bg-white rounded-3xl border border-gray-200 p-1 mb-8 shadow-sm`, { zIndex: -1 }]}>
+                <View style={tw`bg-white rounded-3xl border border-gray-200 p-1 mb-8 shadow-sm`}>
                     <RNTextInput
                     style={tw`bg-white p-5 text-lg text-gray-800 min-h-[140px] rounded-2xl`}
                     placeholder="주차, 참가비, 팀 실력 등 상대팀이 알아야 할 내용을 자유롭게 적어주세요."
