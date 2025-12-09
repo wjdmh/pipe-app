@@ -1,5 +1,5 @@
 {
-  "homepage": "https://wjdmh.github.io/pipe-app ",
+  "homepage": "https://wjdmh.github.io/pipe-app",
   "name": "pipe-app",
   "version": "1.0.0",
   "main": "expo-router/entry",
@@ -7,7 +7,9 @@
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "build:web": "expo export -p web",
+    "deploy": "gh-pages -d dist"
   },
   "dependencies": {
     "@expo/metro-runtime": "~6.1.2",
