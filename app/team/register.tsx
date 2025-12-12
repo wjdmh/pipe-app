@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, Alert, ScrollView, ActivityIndicator, FlatList, Modal } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, Alert, ScrollView, ActivityIndicator, FlatList, Modal, KeyboardAvoidingView, Platform } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { FontAwesome5 } from '@expo/vector-icons';
@@ -62,7 +62,7 @@ export default function TeamRegister() {
       } catch (e) { console.error("Teams Fetch Error", e); }
   };
 
-  // KUSF 팀 목록 필터링 (로컬 데이터 KUSF_TEAMS 활용)
+  // KUSF 팀 목록 필터링
   const filteredTeams = KUSF_TEAMS.filter(team => {
     return team.gender === selectedGender && (team.name.includes(searchQuery) || team.affiliation.includes(searchQuery));
   });
@@ -70,7 +70,7 @@ export default function TeamRegister() {
   const onSelectExistingTeam = async (kusfTeam: any) => {
     const existingData = registeredTeamsMap[kusfTeam.id];
 
-    // Case 1: 이미 등록된 팀이 활성화된 경우 -> 가입 신청 (일반 부원)
+    // Case 1: 이미 등록된 팀이 활성화된 경우
     if (existingData && !existingData.isDeleted && existingData.captainId) {
         Alert.alert('가입 신청', `'${existingData.name}' 팀은 이미 활동 중입니다.\n팀원으로 가입 신청을 보내시겠습니까?`, [
             { text: '취소', style: 'cancel' },
@@ -79,7 +79,7 @@ export default function TeamRegister() {
         return;
     }
     
-    // Case 2: 등록되었으나 비활성(삭제됨/대표없음) -> 이어받기 (대표자)
+    // Case 2: 등록되었으나 비활성(삭제됨/대표없음) -> 이어받기
     if (existingData) {
         Alert.alert('팀 이어받기', '현재 활동하지 않는 팀입니다. 대표자가 되어 팀을 운영하시겠습니까?', [
             { text: '취소', style: 'cancel' },
@@ -100,7 +100,6 @@ export default function TeamRegister() {
     setStep('VERIFY');
   };
 
-  // [Atomic Operation] 가입 신청 로직 강화
   const sendJoinRequest = async (teamDocData: any) => {
       if (!auth.currentUser || !userInfo) return;
       setLoading(true);
@@ -111,7 +110,6 @@ export default function TeamRegister() {
               
               if (!teamSnap.exists()) throw "팀이 존재하지 않습니다.";
               
-              // 중복 신청 방지 체크
               const currentRequests = teamSnap.data().joinRequests || [];
               const isAlreadyRequested = currentRequests.some((req: any) => req.uid === auth.currentUser?.uid);
               if (isAlreadyRequested) throw "이미 가입 신청을 보냈습니다.";
@@ -138,7 +136,6 @@ export default function TeamRegister() {
       }
   };
 
-  // 인증 로직 (간소화됨 - 실제 구현 시 메일 API 연동 필요)
   const sendVerificationCode = async () => {
       if (!email.includes('@')) return Alert.alert('오류', '올바른 이메일 형식이 아닙니다.');
       setTimeout(() => {
@@ -153,7 +150,6 @@ export default function TeamRegister() {
       setStep('INFO_FORM');
   };
 
-  // [Critical Logic] 절대 안전한 팀 생성 (Atomic Transaction)
   const submitTeam = async () => {
       if (!teamName || !selectedRegion) return Alert.alert('오류', '팀 이름과 지역은 필수입니다.');
       if (!auth.currentUser) return;
@@ -163,13 +159,11 @@ export default function TeamRegister() {
         const userUid = auth.currentUser.uid;
 
         await runTransaction(db, async (transaction) => {
-            // 1. 유저 상태 검증 (중복 팀 생성 방지)
             const userRef = doc(db, "users", userUid);
             const userSnap = await transaction.get(userRef);
             if (!userSnap.exists()) throw "회원 정보를 찾을 수 없습니다.";
             if (userSnap.data().teamId) throw "이미 소속된 팀이 있습니다.";
 
-            // 2. 팀 데이터 준비
             const me = { 
                 id: Date.now(), 
                 uid: userUid, 
@@ -190,9 +184,8 @@ export default function TeamRegister() {
                 joinRequests: [],
                 kusfId: targetTeam ? targetTeam.id : null,
                 stats: targetTeam ? targetTeam.stats : { wins: 0, losses: 0, points: 0, total: 0 },
-                level: 'C', // 초기 레벨
+                level: 'C',
                 createdAt: new Date().toISOString(),
-                // [Strategic Proposal] 유령 팀 방지를 위한 활동 시간 필드
                 lastActiveAt: serverTimestamp(),
                 isDeleted: false
             };
@@ -200,7 +193,6 @@ export default function TeamRegister() {
             let teamRef;
 
             if (isReclaiming && reclaimDocId) {
-                // [이어받기] 기존 문서 업데이트 (Soft Delete 해제)
                 teamRef = doc(db, "teams", reclaimDocId);
                 const teamDoc = await transaction.get(teamRef);
                 if (!teamDoc.exists()) throw "이어받을 팀 정보를 찾을 수 없습니다.";
@@ -208,15 +200,13 @@ export default function TeamRegister() {
                 transaction.update(teamRef, {
                     ...teamPayload,
                     isDeleted: false,
-                    deletedAt: null // 삭제 기록 초기화
+                    deletedAt: null 
                 });
             } else {
-                // [신규생성] 새 문서 생성
                 teamRef = doc(collection(db, "teams")); 
                 transaction.set(teamRef, teamPayload);
             }
 
-            // 3. 유저 정보 업데이트 (Atomic)
             transaction.update(userRef, { 
                 teamId: teamRef.id, 
                 role: 'leader',
@@ -248,92 +238,115 @@ export default function TeamRegister() {
         </Text>
       </View>
 
-      {/* SEARCH VIEW */}
-      {step === 'SEARCH' && (
-          <View style={tw`flex-1`}>
-             <View style={tw`px-5 pt-4`}>
-                 <Text style={tw`text-2xl font-bold text-[#191F28] mb-1`}>소속 팀을 선택하세요</Text>
-                 <Text style={tw`text-gray-500 mb-4`}>활동하려는 팀을 검색하거나 새로 만들어보세요.</Text>
-                 
-                 <View style={tw`flex-row bg-gray-100 p-1 rounded-xl mb-4`}>
-                    <TouchableOpacity onPress={() => setSelectedGender('male')} style={tw`flex-1 py-2 rounded-lg items-center ${selectedGender === 'male' ? 'bg-white shadow-sm' : ''}`}><Text style={tw`font-bold ${selectedGender === 'male' ? 'text-[#3182F6]' : 'text-gray-400'}`}>남자부</Text></TouchableOpacity>
-                    <TouchableOpacity onPress={() => setSelectedGender('female')} style={tw`flex-1 py-2 rounded-lg items-center ${selectedGender === 'female' ? 'bg-white shadow-sm' : ''}`}><Text style={tw`font-bold ${selectedGender === 'female' ? 'text-[#FF6B6B]' : 'text-gray-400'}`}>여자부</Text></TouchableOpacity>
-                 </View>
+      {/* [Web Fix] KeyboardAvoidingView 추가: 웹 브라우저 호환성 확보 */}
+      <KeyboardAvoidingView 
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        style={tw`flex-1`}
+      >
+        {/* SEARCH VIEW */}
+        {step === 'SEARCH' && (
+            <View style={tw`flex-1`}>
+                <View style={tw`px-5 pt-4`}>
+                    <Text style={tw`text-2xl font-bold text-[#191F28] mb-1`}>소속 팀을 선택하세요</Text>
+                    <Text style={tw`text-gray-500 mb-4`}>활동하려는 팀을 검색하거나 새로 만들어보세요.</Text>
+                    
+                    <View style={tw`flex-row bg-gray-100 p-1 rounded-xl mb-4`}>
+                        <TouchableOpacity onPress={() => setSelectedGender('male')} style={tw`flex-1 py-2 rounded-lg items-center ${selectedGender === 'male' ? 'bg-white shadow-sm' : ''}`}><Text style={tw`font-bold ${selectedGender === 'male' ? 'text-[#3182F6]' : 'text-gray-400'}`}>남자부</Text></TouchableOpacity>
+                        <TouchableOpacity onPress={() => setSelectedGender('female')} style={tw`flex-1 py-2 rounded-lg items-center ${selectedGender === 'female' ? 'bg-white shadow-sm' : ''}`}><Text style={tw`font-bold ${selectedGender === 'female' ? 'text-[#FF6B6B]' : 'text-gray-400'}`}>여자부</Text></TouchableOpacity>
+                    </View>
 
-                 <TextInput style={tw`bg-gray-50 p-3 rounded-xl border border-gray-200 mb-4`} placeholder="학교명 또는 팀 이름 검색" value={searchQuery} onChangeText={setSearchQuery} />
-             </View>
+                    <TextInput style={tw`bg-gray-50 p-3 rounded-xl border border-gray-200 mb-4`} placeholder="학교명 또는 팀 이름 검색" value={searchQuery} onChangeText={setSearchQuery} />
+                </View>
 
-             <FlatList
-                data={filteredTeams}
-                keyExtractor={i => i.id}
-                contentContainerStyle={tw`px-5 pb-32`}
-                renderItem={({item}) => {
-                    const existing = registeredTeamsMap[item.id];
-                    const isActive = existing && !existing.isDeleted && existing.captainId;
-                    return (
-                        <TouchableOpacity onPress={() => onSelectExistingTeam(item)} style={tw`p-4 mb-3 rounded-xl border ${isActive ? 'bg-blue-50 border-blue-200' : 'bg-white border-gray-200'} shadow-sm`}>
-                            <View style={tw`flex-row justify-between items-center`}>
-                                <View>
-                                    <Text style={tw`font-bold text-lg text-[#191F28]`}>{item.name}</Text>
-                                    <Text style={tw`text-gray-500`}>{item.affiliation}</Text>
+                <FlatList
+                    data={filteredTeams}
+                    keyExtractor={i => i.id}
+                    contentContainerStyle={tw`px-5 pb-32`}
+                    keyboardShouldPersistTaps="handled"
+                    renderItem={({item}) => {
+                        const existing = registeredTeamsMap[item.id];
+                        const isActive = existing && !existing.isDeleted && existing.captainId;
+                        return (
+                            <TouchableOpacity onPress={() => onSelectExistingTeam(item)} style={tw`p-4 mb-3 rounded-xl border ${isActive ? 'bg-blue-50 border-blue-200' : 'bg-white border-gray-200'} shadow-sm`}>
+                                <View style={tw`flex-row justify-between items-center`}>
+                                    <View>
+                                        <Text style={tw`font-bold text-lg text-[#191F28]`}>{item.name}</Text>
+                                        <Text style={tw`text-gray-500`}>{item.affiliation}</Text>
+                                    </View>
+                                    {isActive ? (
+                                        <View style={tw`bg-blue-100 px-2 py-1 rounded`}><Text style={tw`text-xs font-bold text-blue-600`}>가입신청 가능</Text></View>
+                                    ) : (
+                                        <Text style={tw`text-xs text-green-600 font-bold`}>이어받기 가능</Text>
+                                    )}
                                 </View>
-                                {isActive ? (
-                                    <View style={tw`bg-blue-100 px-2 py-1 rounded`}><Text style={tw`text-xs font-bold text-blue-600`}>가입신청 가능</Text></View>
-                                ) : (
-                                    <Text style={tw`text-xs text-green-600 font-bold`}>이어받기 가능</Text>
-                                )}
-                            </View>
-                        </TouchableOpacity>
-                    );
-                }}
-             />
-             
-             <View style={tw`absolute bottom-0 w-full p-5 bg-white border-t border-gray-100`}>
-                 <TouchableOpacity onPress={() => { setTargetTeam(null); setTeamName(''); setIsReclaiming(false); setStep('INFO_FORM'); }} style={tw`bg-[#191F28] py-4 rounded-xl items-center shadow-lg`}>
-                     <Text style={tw`text-white font-bold text-lg`}>찾는 팀이 없나요? 새로운 팀 생성</Text>
-                 </TouchableOpacity>
-             </View>
-          </View>
-      )}
-
-      {/* VERIFY FORM */}
-      {step === 'VERIFY' && targetTeam && (
-          <ScrollView contentContainerStyle={tw`p-5`}>
-            <Text style={tw`text-2xl font-bold mb-2`}>학교 인증</Text>
-            <Text style={tw`text-gray-500 mb-6`}>{targetTeam.affiliation} 메일로 인증해주세요.</Text>
-            <View style={tw`flex-row mb-4`}>
-                <TextInput style={tw`flex-1 bg-gray-50 p-4 rounded-xl border border-gray-200`} placeholder="example@univ.ac.kr" value={email} onChangeText={setEmail} autoCapitalize="none"/>
-                <TouchableOpacity onPress={sendVerificationCode} style={tw`bg-blue-500 justify-center px-4 ml-2 rounded-xl`}><Text style={tw`text-white font-bold`}>전송</Text></TouchableOpacity>
+                            </TouchableOpacity>
+                        );
+                    }}
+                />
+                
+                <View style={tw`absolute bottom-0 w-full p-5 bg-white border-t border-gray-100`}>
+                    <TouchableOpacity onPress={() => { setTargetTeam(null); setTeamName(''); setIsReclaiming(false); setStep('INFO_FORM'); }} style={tw`bg-[#191F28] py-4 rounded-xl items-center shadow-lg`}>
+                        <Text style={tw`text-white font-bold text-lg`}>찾는 팀이 없나요? 새로운 팀 생성</Text>
+                    </TouchableOpacity>
+                </View>
             </View>
-            {isCodeSent && (
-                <>
-                    <TextInput style={tw`bg-gray-50 p-4 rounded-xl border border-gray-200 mb-6`} placeholder="인증코드 6자리" value={inputCode} onChangeText={setInputCode} keyboardType="number-pad"/>
-                    <TouchableOpacity onPress={verifyAndGoToInfo} style={tw`bg-[#191F28] p-4 rounded-xl items-center`}><Text style={tw`text-white font-bold text-lg`}>확인</Text></TouchableOpacity>
-                </>
-            )}
-          </ScrollView>
-      )}
+        )}
 
-      {/* INFO FORM */}
-      {step === 'INFO_FORM' && (
-          <ScrollView contentContainerStyle={tw`p-5`}>
-            <Text style={tw`text-2xl font-bold mb-1`}>팀 정보 입력</Text>
-            <Text style={tw`text-gray-500 mb-6`}>상세 정보를 입력해주세요.</Text>
+        {/* VERIFY FORM */}
+        {step === 'VERIFY' && targetTeam && (
+            <ScrollView contentContainerStyle={tw`p-5`} keyboardShouldPersistTaps="handled">
+                <Text style={tw`text-2xl font-bold mb-2`}>학교 인증</Text>
+                <Text style={tw`text-gray-500 mb-6`}>{targetTeam.affiliation} 메일로 인증해주세요.</Text>
+                <View style={tw`flex-row mb-4`}>
+                    <TextInput style={tw`flex-1 bg-gray-50 p-4 rounded-xl border border-gray-200`} placeholder="example@univ.ac.kr" value={email} onChangeText={setEmail} autoCapitalize="none"/>
+                    <TouchableOpacity onPress={sendVerificationCode} style={tw`bg-blue-500 justify-center px-4 ml-2 rounded-xl`}><Text style={tw`text-white font-bold`}>전송</Text></TouchableOpacity>
+                </View>
+                {isCodeSent && (
+                    <>
+                        <TextInput style={tw`bg-gray-50 p-4 rounded-xl border border-gray-200 mb-6`} placeholder="인증코드 6자리" value={inputCode} onChangeText={setInputCode} keyboardType="number-pad"/>
+                        <TouchableOpacity onPress={verifyAndGoToInfo} style={tw`bg-[#191F28] p-4 rounded-xl items-center`}><Text style={tw`text-white font-bold text-lg`}>확인</Text></TouchableOpacity>
+                    </>
+                )}
+            </ScrollView>
+        )}
 
-            <Text style={tw`font-bold text-gray-500 mb-1 ml-1`}>팀 이름</Text>
-            <TextInput style={tw`bg-gray-50 p-4 rounded-xl mb-4 border border-gray-200`} placeholder="팀 이름" value={teamName} onChangeText={setTeamName} editable={!targetTeam}/>
+        {/* INFO FORM */}
+        {step === 'INFO_FORM' && (
+            <ScrollView contentContainerStyle={tw`p-5`} keyboardShouldPersistTaps="handled">
+                <Text style={tw`text-2xl font-bold mb-1`}>팀 정보 입력</Text>
+                <Text style={tw`text-gray-500 mb-6`}>상세 정보를 입력해주세요.</Text>
 
-            <Text style={tw`font-bold text-gray-500 mb-1 ml-1`}>활동 지역</Text>
-            <TouchableOpacity onPress={() => setShowRegionModal(true)} style={tw`bg-gray-50 p-4 rounded-xl mb-4 border border-gray-200`}><Text>{selectedRegion || '지역 선택'}</Text></TouchableOpacity>
+                <Text style={tw`font-bold text-gray-500 mb-1 ml-1`}>팀 이름</Text>
+                <TextInput style={tw`bg-gray-50 p-4 rounded-xl mb-4 border border-gray-200`} placeholder="팀 이름" value={teamName} onChangeText={setTeamName} editable={!targetTeam}/>
 
-            <Text style={tw`font-bold text-gray-500 mb-1 ml-1`}>팀 소개 (선택)</Text>
-            <TextInput style={tw`bg-gray-50 p-4 rounded-xl mb-8 border border-gray-200 h-24`} multiline placeholder="팀 소개를 입력하세요." value={description} onChangeText={setDescription}/>
+                <Text style={tw`font-bold text-gray-500 mb-1 ml-1`}>활동 지역</Text>
+                <TouchableOpacity onPress={() => setShowRegionModal(true)} style={tw`bg-gray-50 p-4 rounded-xl mb-4 border border-gray-200`}><Text>{selectedRegion || '지역 선택'}</Text></TouchableOpacity>
 
-            <TouchableOpacity onPress={submitTeam} style={tw`bg-blue-600 p-4 rounded-xl items-center mb-10`}><Text style={tw`text-white font-bold text-lg`}>완료</Text></TouchableOpacity>
-            
-            <Modal visible={showRegionModal} transparent><View style={tw`flex-1 bg-black/50 justify-center p-5`}><View style={tw`bg-white rounded-xl h-2/3`}><ScrollView>{REGIONS.map(r=><TouchableOpacity key={r} onPress={()=>{setSelectedRegion(r);setShowRegionModal(false)}} style={tw`p-4 border-b border-gray-100`}><Text style={tw`text-center`}>{r}</Text></TouchableOpacity>)}</ScrollView></View></View></Modal>
-          </ScrollView>
-      )}
+                <Text style={tw`font-bold text-gray-500 mb-1 ml-1`}>팀 소개 (선택)</Text>
+                <TextInput style={tw`bg-gray-50 p-4 rounded-xl mb-8 border border-gray-200 h-24`} multiline placeholder="팀 소개를 입력하세요." value={description} onChangeText={setDescription}/>
+
+                <TouchableOpacity onPress={submitTeam} style={tw`bg-blue-600 p-4 rounded-xl items-center mb-10`}><Text style={tw`text-white font-bold text-lg`}>완료</Text></TouchableOpacity>
+                
+                <Modal visible={showRegionModal} transparent animationType="fade">
+                    <View style={tw`flex-1 bg-black/50 justify-center p-5`}>
+                        <View style={tw`bg-white rounded-xl h-2/3 p-4`}>
+                            <Text style={tw`text-lg font-bold mb-4 text-center`}>지역 선택</Text>
+                            <ScrollView>
+                                {REGIONS.map(r => (
+                                    <TouchableOpacity key={r} onPress={() => { setSelectedRegion(r); setShowRegionModal(false) }} style={tw`p-4 border-b border-gray-100 items-center active:bg-gray-50`}>
+                                        <Text style={tw`text-base text-gray-800`}>{r}</Text>
+                                    </TouchableOpacity>
+                                ))}
+                            </ScrollView>
+                            <TouchableOpacity onPress={() => setShowRegionModal(false)} style={tw`mt-4 p-3 bg-gray-100 rounded-lg items-center`}>
+                                <Text style={tw`text-gray-600 font-bold`}>닫기</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </Modal>
+            </ScrollView>
+        )}
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }

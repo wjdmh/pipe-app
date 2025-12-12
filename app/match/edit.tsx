@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { View, Text, TextInput, TouchableOpacity, ScrollView, Alert, ActivityIndicator, Platform, KeyboardAvoidingView, Animated, Dimensions, Modal } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { doc, getDoc, updateDoc, addDoc, collection } from 'firebase/firestore'; // [Fix] addDoc, collection 추가
+import { doc, getDoc, updateDoc, addDoc, collection } from 'firebase/firestore'; 
 import { db } from '../../configs/firebaseConfig';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -42,7 +42,7 @@ export default function EditMatchScreen() {
   const [date, setDate] = useState(new Date());
   const [place, setPlace] = useState('');
   const [note, setNote] = useState('');
-  const [existingApplicants, setExistingApplicants] = useState<string[]>([]); // [New] 기존 신청자 목록 저장
+  const [existingApplicants, setExistingApplicants] = useState<string[]>([]);
 
   const [showDateModal, setShowDateModal] = useState(false);
   const [tempDate, setTempDate] = useState(new Date());
@@ -58,7 +58,7 @@ export default function EditMatchScreen() {
           setGender(data.gender);
           setPlace(data.loc);
           setNote(data.note);
-          setExistingApplicants(data.applicants || []); // 신청자 목록 저장
+          setExistingApplicants(data.applicants || []);
           
           const dateStr = data.time && !isNaN(new Date(data.time).getTime()) ? data.time : data.timestamp;
           if (dateStr) setDate(new Date(dateStr));
@@ -74,17 +74,19 @@ export default function EditMatchScreen() {
     loadData();
   }, [id]);
 
-  const nextStep = (next: number) => {
-    if (step < next) {
-        setStep(next);
-        setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 300);
-    }
-  };
-
   const formatDateKr = (d: Date) => `${d.getMonth() + 1}월 ${d.getDate()}일`;
   const formatTimeKr = (d: Date) => `${d.getHours() >= 12 ? '오후' : '오전'} ${d.getHours() % 12 || 12}시 ${d.getMinutes() > 0 ? `${d.getMinutes()}분` : ''}`;
 
-  // [New] 알림 전송 로직
+  // [Web Fix] 날짜 변경 핸들러
+  const handleDateChange = (event: any, selectedDate?: Date) => {
+    const currentDate = selectedDate || date;
+    if (Platform.OS === 'web') {
+        setDate(currentDate);
+    } else {
+        setTempDate(currentDate);
+    }
+  };
+
   const sendUpdateNotification = async (targetTeamIds: string[]) => {
       for (const teamId of targetTeamIds) {
           try {
@@ -119,7 +121,6 @@ export default function EditMatchScreen() {
           note 
       });
 
-      // [New] 신청자가 있다면 알림 발송
       if (existingApplicants.length > 0) {
           await sendUpdateNotification(existingApplicants);
       }
@@ -137,9 +138,10 @@ export default function EditMatchScreen() {
         <Text style={tw`text-lg font-bold text-[#191F28]`}>공고 수정</Text>
         <View style={tw`w-8`} />
       </View>
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={tw`flex-1`}>
+
+      {/* [Web Fix] KeyboardAvoidingView behavior 수정 */}
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={tw`flex-1`}>
         <ScrollView ref={scrollViewRef} contentContainerStyle={tw`px-6 pt-2 pb-32`} showsVerticalScrollIndicator={false}>
-          {/* ... (UI 부분은 기존과 동일) ... */}
           <FadeInView>
             <Text style={tw`text-lg font-bold text-[#333D4B] mb-3`}>1. 경기 방식</Text>
             <View style={tw`flex-row gap-3`}>
@@ -162,9 +164,23 @@ export default function EditMatchScreen() {
           </FadeInView>
           <FadeInView delay={100}>
               <Text style={tw`text-lg font-bold text-[#333D4B] mb-3`}>3. 일시</Text>
-              <TouchableOpacity onPress={() => { setTempDate(date); setShowDateModal(true); }} style={tw`bg-white p-5 rounded-2xl border border-transparent shadow-sm`}>
-                <Text style={tw`text-2xl font-bold text-[#3182F6]`}>{formatDateKr(date)} {formatTimeKr(date)}</Text>
-              </TouchableOpacity>
+              
+              {/* [Web Fix] 날짜 선택 UI 분기 */}
+              {Platform.OS === 'web' ? (
+                  <View style={tw`bg-white p-4 rounded-2xl border border-transparent shadow-sm`}>
+                      <DateTimePicker 
+                          value={date} 
+                          mode="datetime" 
+                          display="default" 
+                          onChange={handleDateChange} 
+                          style={{ height: 40 }} 
+                      />
+                  </View>
+              ) : (
+                  <TouchableOpacity onPress={() => { setTempDate(date); setShowDateModal(true); }} style={tw`bg-white p-5 rounded-2xl border border-transparent shadow-sm`}>
+                    <Text style={tw`text-2xl font-bold text-[#3182F6]`}>{formatDateKr(date)} {formatTimeKr(date)}</Text>
+                  </TouchableOpacity>
+              )}
           </FadeInView>
           <FadeInView delay={100}>
               <Text style={tw`text-lg font-bold text-[#333D4B] mb-3`}>4. 장소</Text>
@@ -179,18 +195,22 @@ export default function EditMatchScreen() {
           </FadeInView>
         </ScrollView>
       </KeyboardAvoidingView>
-      <Modal visible={showDateModal} transparent animationType="fade">
-        <View style={tw`flex-1 justify-end bg-black/60`}>
-            <View style={tw`bg-white rounded-t-3xl p-6 pb-10`}>
-                <View style={tw`flex-row justify-between items-center mb-6`}>
-                    <Text style={tw`text-xl font-bold text-[#191F28]`}>시간 선택</Text>
-                    <TouchableOpacity onPress={() => setShowDateModal(false)}><Text style={tw`text-[#8B95A1] font-bold`}>취소</Text></TouchableOpacity>
+
+      {/* Date Picker Modal (Mobile Only) */}
+      {Platform.OS !== 'web' && (
+        <Modal visible={showDateModal} transparent animationType="fade">
+            <View style={tw`flex-1 justify-end bg-black/60`}>
+                <View style={tw`bg-white rounded-t-3xl p-6 pb-10`}>
+                    <View style={tw`flex-row justify-between items-center mb-6`}>
+                        <Text style={tw`text-xl font-bold text-[#191F28]`}>시간 선택</Text>
+                        <TouchableOpacity onPress={() => setShowDateModal(false)}><Text style={tw`text-[#8B95A1] font-bold`}>취소</Text></TouchableOpacity>
+                    </View>
+                    <DateTimePicker value={tempDate} mode="datetime" display="spinner" onChange={handleDateChange} textColor="#191F28" locale="ko-KR" style={tw`h-48`} />
+                    <TouchableOpacity onPress={() => { setDate(tempDate); setShowDateModal(false); }} style={tw`mt-6 bg-[#3182F6] py-4 rounded-xl items-center`}><Text style={tw`text-white font-bold text-lg`}>확인</Text></TouchableOpacity>
                 </View>
-                <DateTimePicker value={tempDate} mode="datetime" display="spinner" onChange={(e, d) => d && setTempDate(d)} textColor="#191F28" locale="ko-KR" style={tw`h-48`} />
-                <TouchableOpacity onPress={() => { setDate(tempDate); setShowDateModal(false); }} style={tw`mt-6 bg-[#3182F6] py-4 rounded-xl items-center`}><Text style={tw`text-white font-bold text-lg`}>확인</Text></TouchableOpacity>
             </View>
-        </View>
-      </Modal>
+        </Modal>
+      )}
     </SafeAreaView>
   );
 }

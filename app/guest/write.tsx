@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, ScrollView, Alert, ActivityIndicator, Modal, KeyboardAvoidingView, Platform } from 'react-native'; // [Add] KeyboardAvoidingView, Platform 추가
+import { View, Text, TextInput, TouchableOpacity, ScrollView, Alert, ActivityIndicator, Modal, KeyboardAvoidingView, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { FontAwesome5 } from '@expo/vector-icons';
@@ -10,6 +10,13 @@ import { useGuest } from '../../hooks/useGuest';
 import tw from 'twrnc';
 
 const POSITIONS = ['OH', 'OP', 'MB', 'S', 'L'];
+
+// [Helper] 로컬 시간 ISO 문자열 변환 (웹 input용)
+const toLocalISOString = (date: Date) => {
+  const offset = date.getTimezoneOffset() * 60000; //ms
+  const localISOTime = (new Date(date.getTime() - offset)).toISOString().slice(0, 16);
+  return localISOTime;
+};
 
 export default function GuestWriteScreen() {
   const router = useRouter();
@@ -23,10 +30,8 @@ export default function GuestWriteScreen() {
   const [location, setLocation] = useState('');
   const [positions, setPositions] = useState<string[]>([]);
   const [gender, setGender] = useState<'male'|'female'|'mixed'>('mixed');
-  
   const [fee, setFee] = useState('');
   const [isFree, setIsFree] = useState(false);
-
   const [description, setDescription] = useState('');
 
   const formatDateKr = (d: Date) => {
@@ -40,6 +45,21 @@ export default function GuestWriteScreen() {
     const ampm = hour >= 12 ? '오후' : '오전';
     const formatHour = hour % 12 || 12;
     return `${ampm} ${formatHour}시 ${min > 0 ? `${min}분` : ''}`;
+  };
+
+  // [Mobile] 날짜 변경 핸들러
+  const handleDateChange = (event: any, selectedDate?: Date) => {
+    if (selectedDate) {
+        setTempDate(selectedDate);
+    }
+  };
+
+  // [Web] 날짜 변경 핸들러
+  const handleWebDateChange = (e: any) => {
+      const val = e.target.value;
+      if (val) {
+          setDate(new Date(val));
+      }
   };
 
   const togglePosition = (pos: string) => {
@@ -101,8 +121,9 @@ export default function GuestWriteScreen() {
       });
 
       if (success) {
-        Alert.alert('등록 완료', '용병 모집글이 등록되었습니다.');
-        router.back();
+        Alert.alert('등록 완료', '용병 모집글이 등록되었습니다.', [
+            { text: '확인', onPress: () => router.back() }
+        ]);
       }
     } catch (e) {
       Alert.alert('오류', '등록 중 문제가 발생했습니다.');
@@ -112,18 +133,20 @@ export default function GuestWriteScreen() {
   };
 
   return (
-    <SafeAreaView style={tw`flex-1 bg-white`}>
-      <View style={tw`px-5 py-4 border-b border-gray-100 flex-row items-center`}>
-        <TouchableOpacity onPress={() => router.back()}><FontAwesome5 name="arrow-left" size={20} color="#191F28" /></TouchableOpacity>
-        <Text style={tw`text-lg font-bold ml-4 text-gray-900`}>게스트 모집하기</Text>
-      </View>
+    <SafeAreaView style={tw`flex-1 bg-white`} edges={['bottom']}>
+      {/* Header 제거: Stack Navigation 헤더 사용 */}
 
-      {/* [Fix] KeyboardAvoidingView 추가: 입력창 가림 방지 */}
       <KeyboardAvoidingView 
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
         style={tw`flex-1`}
       >
-        <ScrollView contentContainerStyle={tw`p-6 pb-20`}>
+        <ScrollView contentContainerStyle={tw`p-6 pb-20`} showsVerticalScrollIndicator={false}>
+            {/* Title 추가 */}
+            <View style={tw`mb-8`}>
+                <Text style={tw`text-2xl font-extrabold text-gray-900 mb-2`}>게스트 모집하기</Text>
+                <Text style={tw`text-gray-500 text-sm`}>함께 운동할 멤버를 찾아보세요.</Text>
+            </View>
+
             <Text style={tw`font-bold text-gray-500 mb-2`}>필요 포지션</Text>
             <View style={tw`flex-row flex-wrap gap-2 mb-6`}>
             {POSITIONS.map(pos => (
@@ -153,21 +176,41 @@ export default function GuestWriteScreen() {
             </View>
 
             <Text style={tw`font-bold text-gray-500 mb-2`}>일시</Text>
-            <TouchableOpacity 
-                onPress={() => { setTempDate(date); setShowDatePicker(true); }} 
-                activeOpacity={0.8}
-                style={tw`bg-white p-5 rounded-3xl border border-gray-200 flex-row justify-between items-center shadow-sm mb-6`}
-            >
-                <View>
-                    <Text style={tw`text-xs font-bold text-gray-400 mb-1`}>날짜와 시간</Text>
-                    <Text style={tw`text-xl font-extrabold text-[#4F46E5]`}>
-                        {formatDateKr(date)}  {formatTimeKr(date)}
-                    </Text>
+            {Platform.OS === 'web' ? (
+                <View style={tw`bg-white p-4 rounded-xl border border-gray-200 mb-6`}>
+                    {React.createElement('input', {
+                        type: 'datetime-local',
+                        value: toLocalISOString(date),
+                        onChange: handleWebDateChange,
+                        style: {
+                            border: 'none',
+                            width: '100%',
+                            height: '40px',
+                            fontSize: '16px',
+                            color: '#111827',
+                            backgroundColor: 'transparent',
+                            outline: 'none',
+                            cursor: 'pointer'
+                        }
+                    })}
                 </View>
-                <View style={tw`w-10 h-10 bg-indigo-50 rounded-full items-center justify-center`}>
-                    <FontAwesome5 name="calendar-alt" size={18} color="#4F46E5" />
-                </View>
-            </TouchableOpacity>
+            ) : (
+                <TouchableOpacity 
+                    onPress={() => { setTempDate(date); setShowDatePicker(true); }} 
+                    activeOpacity={0.8}
+                    style={tw`bg-white p-5 rounded-3xl border border-gray-200 flex-row justify-between items-center shadow-sm mb-6`}
+                >
+                    <View>
+                        <Text style={tw`text-xs font-bold text-gray-400 mb-1`}>날짜와 시간</Text>
+                        <Text style={tw`text-xl font-extrabold text-[#4F46E5]`}>
+                            {formatDateKr(date)}  {formatTimeKr(date)}
+                        </Text>
+                    </View>
+                    <View style={tw`w-10 h-10 bg-indigo-50 rounded-full items-center justify-center`}>
+                        <FontAwesome5 name="calendar-alt" size={18} color="#4F46E5" />
+                    </View>
+                </TouchableOpacity>
+            )}
 
             <Text style={tw`font-bold text-gray-500 mb-2`}>장소</Text>
             <TextInput style={tw`bg-gray-50 p-4 rounded-xl border border-gray-200 mb-6`} placeholder="정확한 주소를 입력해주세요" value={location} onChangeText={setLocation} />
@@ -199,38 +242,21 @@ export default function GuestWriteScreen() {
         </ScrollView>
       </KeyboardAvoidingView>
 
-      {/* Date Picker Modal */}
-      <Modal visible={showDatePicker} transparent animationType="fade">
-        <View style={tw`flex-1 justify-end bg-black/60`}>
-            <View style={tw`bg-white rounded-t-[32px] p-6 pb-10 shadow-2xl`}>
-                <View style={tw`flex-row justify-between items-center mb-6 px-2`}>
-                    <Text style={tw`text-xl font-bold text-gray-900`}>시간 선택</Text>
-                    <TouchableOpacity onPress={() => setShowDatePicker(false)} style={tw`bg-gray-100 px-4 py-2 rounded-full`}>
-                        <Text style={tw`text-gray-500 font-bold text-xs`}>취소</Text>
-                    </TouchableOpacity>
+      {/* Date Picker Modal (Mobile Only) */}
+      {Platform.OS !== 'web' && (
+        <Modal visible={showDatePicker} transparent animationType="fade">
+            <View style={tw`flex-1 justify-end bg-black/60`}>
+                <View style={tw`bg-white rounded-t-[32px] p-6 pb-10 shadow-2xl`}>
+                    <View style={tw`flex-row justify-between items-center mb-6 px-2`}>
+                        <Text style={tw`text-xl font-bold text-gray-900`}>시간 선택</Text>
+                        <TouchableOpacity onPress={() => setShowDatePicker(false)} style={tw`bg-gray-100 px-4 py-2 rounded-full`}><Text style={tw`text-gray-500 font-bold text-xs`}>취소</Text></TouchableOpacity>
+                    </View>
+                    <DateTimePicker value={tempDate} mode="datetime" display="spinner" onChange={handleDateChange} textColor="#111827" locale="ko-KR" minimumDate={new Date()} style={tw`h-48`} />
+                    <TouchableOpacity onPress={() => { setDate(tempDate); setShowDatePicker(false); }} style={tw`mt-6 bg-[#4F46E5] py-4 rounded-2xl items-center shadow-lg shadow-indigo-200`}><Text style={tw`text-white font-bold text-lg`}>설정</Text></TouchableOpacity>
                 </View>
-                <DateTimePicker
-                    value={tempDate}
-                    mode="datetime"
-                    display="spinner"
-                    onChange={(e, d) => d && setTempDate(d)}
-                    textColor="#111827"
-                    locale="ko-KR"
-                    minimumDate={new Date()}
-                    style={tw`h-48`}
-                />
-                <TouchableOpacity 
-                    onPress={() => {
-                        setDate(tempDate);
-                        setShowDatePicker(false);
-                    }}
-                    style={tw`mt-6 bg-[#4F46E5] py-4 rounded-2xl items-center shadow-lg shadow-indigo-200`}
-                >
-                    <Text style={tw`text-white font-bold text-lg`}>설정</Text>
-                </TouchableOpacity>
             </View>
-        </View>
-      </Modal>
+        </Modal>
+      )}
     </SafeAreaView>
   );
 }

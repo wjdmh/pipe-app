@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, Alert, ActivityIndicator, ScrollView } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, Alert, ActivityIndicator, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { createUserWithEmailAndPassword, updateProfile, deleteUser, User } from 'firebase/auth';
@@ -10,7 +10,6 @@ import { FontAwesome5 } from '@expo/vector-icons';
 
 type UserRole = 'leader' | 'member' | 'guest';
 
-// [Update] 포지션 명칭 국제 표준화 (약어 및 구 명칭 병기)
 const POSITIONS = [
   { id: 'OH', label: '아웃사이드(레프트)' },
   { id: 'OP', label: '아포짓(라이트)' },
@@ -95,53 +94,63 @@ export default function SignupScreen() {
          <Text style={tw`text-xl font-bold ml-2 text-[#191F28]`}>회원가입</Text>
       </View>
 
-      <ScrollView contentContainerStyle={tw`p-6 pb-20`} showsVerticalScrollIndicator={false}>
-        <View style={tw`mb-8`}>
-            <Text style={tw`text-2xl font-bold text-[#191F28]`}>기본 정보</Text>
-        </View>
+      {/* [Web Fix] KeyboardAvoidingView 조건부 적용 및 ScrollView 설정 */}
+      <KeyboardAvoidingView 
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        style={tw`flex-1`}
+      >
+        <ScrollView 
+            contentContainerStyle={tw`p-6 pb-20`} 
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+        >
+            <View style={tw`mb-8`}>
+                <Text style={tw`text-2xl font-bold text-[#191F28]`}>기본 정보</Text>
+            </View>
 
-        <Text style={tw`text-sm font-bold text-gray-500 mb-1 ml-1`}>이메일</Text>
-        <TextInput style={tw`bg-gray-50 p-4 rounded-xl mb-4 border border-gray-200 text-base`} placeholder="이메일 주소" keyboardType="email-address" autoCapitalize="none" value={email} onChangeText={setEmail} />
+            <Text style={tw`text-sm font-bold text-gray-500 mb-1 ml-1`}>이메일</Text>
+            <TextInput style={tw`bg-gray-50 p-4 rounded-xl mb-4 border border-gray-200 text-base`} placeholder="이메일 주소" keyboardType="email-address" autoCapitalize="none" value={email} onChangeText={setEmail} />
 
-        <Text style={tw`text-sm font-bold text-gray-500 mb-1 ml-1`}>비밀번호</Text>
-        <TextInput style={tw`bg-gray-50 p-4 rounded-xl mb-4 border border-gray-200 text-base`} placeholder="비밀번호 (6자 이상)" secureTextEntry value={password} onChangeText={setPassword} />
+            <Text style={tw`text-sm font-bold text-gray-500 mb-1 ml-1`}>비밀번호</Text>
+            <TextInput style={tw`bg-gray-50 p-4 rounded-xl mb-4 border border-gray-200 text-base`} placeholder="비밀번호 (6자 이상)" secureTextEntry value={password} onChangeText={setPassword} />
 
-        <Text style={tw`text-sm font-bold text-gray-500 mb-1 ml-1`}>휴대폰 번호</Text>
-        <TextInput style={tw`bg-gray-50 p-4 rounded-xl mb-4 border border-gray-200 text-base`} placeholder="숫자만 입력" keyboardType="phone-pad" value={phone} onChangeText={setPhone} />
+            <Text style={tw`text-sm font-bold text-gray-500 mb-1 ml-1`}>휴대폰 번호</Text>
+            <TextInput style={tw`bg-gray-50 p-4 rounded-xl mb-4 border border-gray-200 text-base`} placeholder="숫자만 입력" keyboardType="phone-pad" value={phone} onChangeText={setPhone} />
 
-        <Text style={tw`text-sm font-bold text-gray-500 mb-1 ml-1`}>이름</Text>
-        <TextInput style={tw`bg-gray-50 p-4 rounded-xl mb-4 border border-gray-200 text-base`} placeholder="실명" value={name} onChangeText={setName} />
+            <Text style={tw`text-sm font-bold text-gray-500 mb-1 ml-1`}>이름</Text>
+            <TextInput style={tw`bg-gray-50 p-4 rounded-xl mb-4 border border-gray-200 text-base`} placeholder="실명" value={name} onChangeText={setName} />
 
-        <Text style={tw`text-sm font-bold text-gray-500 mb-1 ml-1`}>성별</Text>
-        <View style={tw`flex-row mb-4`}>
-          <TouchableOpacity onPress={() => setGender('male')} style={tw`flex-1 py-3 border rounded-l-xl items-center justify-center ${gender === 'male' ? 'bg-[#3182F6] border-[#3182F6]' : 'bg-gray-50 border-gray-200'}`}><Text style={tw`font-bold ${gender === 'male' ? 'text-white' : 'text-gray-500'}`}>남자</Text></TouchableOpacity>
-          <TouchableOpacity onPress={() => setGender('female')} style={tw`flex-1 py-3 border border-l-0 rounded-r-xl items-center justify-center ${gender === 'female' ? 'bg-[#FF6B6B] border-[#FF6B6B]' : 'bg-gray-50 border-gray-200'}`}><Text style={tw`font-bold ${gender === 'female' ? 'text-white' : 'text-gray-500'}`}>여자</Text></TouchableOpacity>
-        </View>
+            <Text style={tw`text-sm font-bold text-gray-500 mb-1 ml-1`}>성별</Text>
+            <View style={tw`flex-row mb-4`}>
+            <TouchableOpacity onPress={() => setGender('male')} style={tw`flex-1 py-3 border rounded-l-xl items-center justify-center ${gender === 'male' ? 'bg-[#3182F6] border-[#3182F6]' : 'bg-gray-50 border-gray-200'}`}><Text style={tw`font-bold ${gender === 'male' ? 'text-white' : 'text-gray-500'}`}>남자</Text></TouchableOpacity>
+            <TouchableOpacity onPress={() => setGender('female')} style={tw`flex-1 py-3 border border-l-0 rounded-r-xl items-center justify-center ${gender === 'female' ? 'bg-[#FF6B6B] border-[#FF6B6B]' : 'bg-gray-50 border-gray-200'}`}><Text style={tw`font-bold ${gender === 'female' ? 'text-white' : 'text-gray-500'}`}>여자</Text></TouchableOpacity>
+            </View>
 
-        <Text style={tw`text-sm font-bold text-gray-500 mb-1 ml-1`}>주 포지션</Text>
-        <View style={tw`flex-row flex-wrap gap-2 mb-4`}>
-            {POSITIONS.map((pos) => (
-                <TouchableOpacity 
-                    key={pos.id} 
-                    onPress={() => setPosition(pos.id)}
-                    style={tw`px-3 py-2 rounded-lg border ${position === pos.id ? 'bg-[#3182F6] border-[#3182F6]' : 'bg-white border-gray-200'}`}
-                >
-                    <Text style={tw`text-xs font-bold ${position === pos.id ? 'text-white' : 'text-gray-500'}`}>{pos.label}</Text>
-                </TouchableOpacity>
-            ))}
-        </View>
+            <Text style={tw`text-sm font-bold text-gray-500 mb-1 ml-1`}>주 포지션</Text>
+            <View style={tw`flex-row flex-wrap gap-2 mb-4`}>
+                {POSITIONS.map((pos) => (
+                    <TouchableOpacity 
+                        key={pos.id} 
+                        onPress={() => setPosition(pos.id)}
+                        style={tw`px-3 py-2 rounded-lg border ${position === pos.id ? 'bg-[#3182F6] border-[#3182F6]' : 'bg-white border-gray-200'}`}
+                    >
+                        <Text style={tw`text-xs font-bold ${position === pos.id ? 'text-white' : 'text-gray-500'}`}>{pos.label}</Text>
+                    </TouchableOpacity>
+                ))}
+            </View>
 
-        <Text style={tw`text-sm font-bold text-gray-500 mb-1 ml-1`}>팀 내 역할</Text>
-        <View style={tw`flex-row mb-8`}>
-          <TouchableOpacity onPress={() => setRole('leader')} style={tw`flex-1 py-3 border rounded-l-xl items-center justify-center ${role === 'leader' ? 'bg-[#191F28] border-[#191F28]' : 'bg-gray-50 border-gray-200'}`}><Text style={tw`font-bold ${role === 'leader' ? 'text-white' : 'text-gray-500'}`}>대표(주장)</Text></TouchableOpacity>
-          <TouchableOpacity onPress={() => setRole('member')} style={tw`flex-1 py-3 border-t border-b border-r items-center justify-center ${role === 'member' ? 'bg-[#191F28] border-[#191F28]' : 'bg-gray-50 border-gray-200'}`}><Text style={tw`font-bold ${role === 'member' ? 'text-white' : 'text-gray-500'}`}>팀원</Text></TouchableOpacity>
-          <TouchableOpacity onPress={() => setRole('guest')} style={tw`flex-1 py-3 border rounded-r-xl border-l-0 items-center justify-center ${role === 'guest' ? 'bg-[#191F28] border-[#191F28]' : 'bg-gray-50 border-gray-200'}`}><Text style={tw`font-bold ${role === 'guest' ? 'text-white' : 'text-gray-500'}`}>기타</Text></TouchableOpacity>
-        </View>
+            <Text style={tw`text-sm font-bold text-gray-500 mb-1 ml-1`}>팀 내 역할</Text>
+            <View style={tw`flex-row mb-8`}>
+            <TouchableOpacity onPress={() => setRole('leader')} style={tw`flex-1 py-3 border rounded-l-xl items-center justify-center ${role === 'leader' ? 'bg-[#191F28] border-[#191F28]' : 'bg-gray-50 border-gray-200'}`}><Text style={tw`font-bold ${role === 'leader' ? 'text-white' : 'text-gray-500'}`}>대표(주장)</Text></TouchableOpacity>
+            <TouchableOpacity onPress={() => setRole('member')} style={tw`flex-1 py-3 border-t border-b border-r items-center justify-center ${role === 'member' ? 'bg-[#191F28] border-[#191F28]' : 'bg-gray-50 border-gray-200'}`}><Text style={tw`font-bold ${role === 'member' ? 'text-white' : 'text-gray-500'}`}>팀원</Text></TouchableOpacity>
+            <TouchableOpacity onPress={() => setRole('guest')} style={tw`flex-1 py-3 border rounded-r-xl border-l-0 items-center justify-center ${role === 'guest' ? 'bg-[#191F28] border-[#191F28]' : 'bg-gray-50 border-gray-200'}`}><Text style={tw`font-bold ${role === 'guest' ? 'text-white' : 'text-gray-500'}`}>기타</Text></TouchableOpacity>
+            </View>
 
-        <TouchableOpacity onPress={handleSignup} disabled={loading} style={tw`bg-[#3182F6] p-4 rounded-xl items-center shadow-sm`}>
-          {loading ? <ActivityIndicator color="white" /> : <Text style={tw`text-white font-bold text-lg`}>가입하기</Text>}
-        </TouchableOpacity>
-      </ScrollView>
+            <TouchableOpacity onPress={handleSignup} disabled={loading} style={tw`bg-[#3182F6] p-4 rounded-xl items-center shadow-sm`}>
+            {loading ? <ActivityIndicator color="white" /> : <Text style={tw`text-white font-bold text-lg`}>가입하기</Text>}
+            </TouchableOpacity>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }

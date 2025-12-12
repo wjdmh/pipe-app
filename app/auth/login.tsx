@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, Alert, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, Alert, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { auth } from '../../configs/firebaseConfig';
@@ -42,11 +42,12 @@ export default function LoginScreen() {
 
   return (
     <SafeAreaView style={tw`flex-1 bg-white`}>
+      {/* [Web Fix] 웹에서는 behavior를 사용하지 않음 */}
       <KeyboardAvoidingView 
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
         style={tw`flex-1`}
       >
-        <View style={tw`flex-1 px-6 pt-10`}>
+        <ScrollView contentContainerStyle={tw`flex-grow px-6 pt-10`} keyboardShouldPersistTaps="handled">
           <View style={tw`mb-10`}>
             <Text style={tw`text-2xl font-bold text-[#191F28] mb-2 leading-8`}>
               이메일로 로그인
@@ -62,7 +63,8 @@ export default function LoginScreen() {
               keyboardType="email-address"
               value={email}
               onChangeText={setEmail}
-              autoFocus={true}
+              // [Web Fix] autoFocus는 모바일에서 키보드가 즉시 올라와 불편할 수 있으므로 웹에서만 추천
+              autoFocus={Platform.OS === 'web'}
             />
 
             <TextInput
@@ -78,7 +80,7 @@ export default function LoginScreen() {
           <TouchableOpacity onPress={() => router.push('/auth/signup')} style={tw`mt-6`}>
             <Text style={tw`text-[#8B95A1] text-sm text-center underline`}>회원가입</Text>
           </TouchableOpacity>
-        </View>
+        </ScrollView>
 
         <View style={tw`p-4 border-t border-[#F2F4F6]`}>
             <TouchableOpacity

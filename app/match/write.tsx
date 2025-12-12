@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 import { 
   View, 
   Text, 
@@ -25,48 +25,6 @@ import tw from 'twrnc';
 // ⚠️ VirtualizedLists 경고 무시
 LogBox.ignoreLogs(['VirtualizedLists should never be nested']);
 
-/**
- * [Animation Component]
- */
-const FadeInSection = ({ 
-  children, 
-  delay = 0, 
-  visible = true, 
-  zIndexValue = 0 
-}: { 
-  children: React.ReactNode, 
-  delay?: number, 
-  visible?: boolean, 
-  zIndexValue?: number 
-}) => {
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const translateY = useRef(new Animated.Value(20)).current;
-
-  useEffect(() => {
-    if (visible) {
-      Animated.parallel([
-        Animated.timing(fadeAnim, { toValue: 1, duration: 500, delay, useNativeDriver: true }),
-        Animated.timing(translateY, { toValue: 0, duration: 500, delay, useNativeDriver: true })
-      ]).start();
-    }
-  }, [visible]);
-
-  if (!visible) return null;
-  
-  return (
-    <Animated.View style={{ 
-      opacity: fadeAnim, 
-      transform: [{ translateY }], 
-      marginBottom: 40, 
-      zIndex: zIndexValue, 
-      elevation: zIndexValue, 
-      position: 'relative'
-    }}>
-      {children}
-    </Animated.View>
-  );
-};
-
 // [Design Component] 선택 카드
 const SelectCard = ({ label, subLabel, icon, selected, onPress }: { label: string, subLabel?: string, icon: string, selected: boolean, onPress: () => void }) => {
   const scaleAnim = useRef(new Animated.Value(1)).current;
@@ -83,27 +41,29 @@ const SelectCard = ({ label, subLabel, icon, selected, onPress }: { label: strin
   return (
     <TouchableWithoutFeedback onPressIn={handlePressIn} onPressOut={handlePressOut}>
       <Animated.View style={[
-        tw`flex-1 p-5 rounded-3xl border shadow-sm items-center justify-center h-40`,
+        tw`flex-1 p-5 rounded-2xl border shadow-sm items-center justify-center h-36`,
         { transform: [{ scale: scaleAnim }] },
         selected ? tw`bg-indigo-50 border-[#4F46E5] shadow-indigo-100` : tw`bg-white border-gray-100`
       ]}>
-        <View style={tw`w-14 h-14 rounded-full items-center justify-center mb-3 ${selected ? 'bg-[#4F46E5]' : 'bg-gray-50'}`}>
-            <FontAwesome5 name={icon} size={22} color={selected ? 'white' : '#9CA3AF'} />
+        <View style={tw`w-12 h-12 rounded-full items-center justify-center mb-3 ${selected ? 'bg-[#4F46E5]' : 'bg-gray-50'}`}>
+            <FontAwesome5 name={icon} size={20} color={selected ? 'white' : '#9CA3AF'} />
         </View>
-        <Text style={tw`text-lg font-bold ${selected ? 'text-[#4F46E5]' : 'text-gray-800'}`}>{label}</Text>
-        {subLabel && <Text style={tw`text-xs mt-1 ${selected ? 'text-indigo-400' : 'text-gray-400'}`}>{subLabel}</Text>}
+        <Text style={tw`text-base font-bold ${selected ? 'text-[#4F46E5]' : 'text-gray-800'}`}>{label}</Text>
+        {subLabel && <Text style={tw`text-[10px] mt-1 ${selected ? 'text-indigo-400' : 'text-gray-400'}`}>{subLabel}</Text>}
       </Animated.View>
     </TouchableWithoutFeedback>
   );
 };
 
+// [Helper] 로컬 시간 ISO 문자열 변환 (웹 input용)
+const toLocalISOString = (date: Date) => {
+  const offset = date.getTimezoneOffset() * 60000; //ms
+  const localISOTime = (new Date(date.getTime() - offset)).toISOString().slice(0, 16);
+  return localISOTime;
+};
+
 export default function WriteMatchScreen() {
   const router = useRouter();
-  
-  // Refs
-  const scrollViewRef = useRef<ScrollView>(null);
-  
-  const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
 
   // Data States
@@ -113,19 +73,9 @@ export default function WriteMatchScreen() {
   const [place, setPlace] = useState('');
   const [note, setNote] = useState('');
 
-  // UI States
+  // UI States (Mobile Only)
   const [showDateModal, setShowDateModal] = useState(false);
   const [tempDate, setTempDate] = useState(new Date());
-  
-  // [UX 개선] 단계 자동 스크롤
-  const nextStep = (next: number) => {
-    if (step < next) {
-        setStep(next);
-        setTimeout(() => {
-            scrollViewRef.current?.scrollToEnd({ animated: true });
-        }, 500); 
-    }
-  };
 
   const formatDateKr = (d: Date) => {
     const days = ['일', '월', '화', '수', '목', '금', '토'];
@@ -140,25 +90,32 @@ export default function WriteMatchScreen() {
     return `${ampm} ${formatHour}시 ${min > 0 ? `${min}분` : ''}`;
   };
 
+  // [Mobile] 날짜 변경 핸들러
+  const handleDateChange = (event: any, selectedDate?: Date) => {
+    if (selectedDate) setTempDate(selectedDate);
+  };
+
+  // [Web] 날짜 변경 핸들러
+  const handleWebDateChange = (e: any) => {
+      const val = e.target.value;
+      if (val) setDate(new Date(val));
+  };
+
   const handleSubmit = async () => {
-    // 1. 입력값 검증 (Validation)
     if (!type) return Alert.alert('정보 입력', '경기 방식을 선택해주세요.');
     if (!gender) return Alert.alert('정보 입력', '성별을 선택해주세요.');
-    if (!place.trim()) return Alert.alert('정보 입력', '경기 장소를 입력해주세요.'); // [Fix] 공백 체크 추가
+    if (!place.trim()) return Alert.alert('정보 입력', '경기 장소를 입력해주세요.');
 
     setLoading(true);
     try {
       const user = auth.currentUser;
       if (!user) throw new Error('로그인이 필요해요.');
 
-      // 2. 유저 정보 안전 조회
       const userRef = doc(db, "users", user.uid);
       const userSnap = await getDoc(userRef);
-
       if (!userSnap.exists()) throw new Error('회원 정보를 찾을 수 없습니다.');
       const userData = userSnap.data();
       
-      // 3. 팀 정보 유효성 검사
       if (!userData?.teamId) {
         Alert.alert('팀 등록 필요', '팀 프로필이 없어요. 팀을 먼저 등록해주세요.', [
             { text: '등록하기', onPress: () => router.replace('/team/register') }
@@ -168,207 +125,179 @@ export default function WriteMatchScreen() {
 
       const teamRef = doc(db, "teams", userData.teamId);
       const teamSnap = await getDoc(teamRef);
-
       if (!teamSnap.exists()) throw new Error('소속된 팀 정보를 찾을 수 없습니다.');
       const teamData = teamSnap.data();
 
-      // [Strategic Proposal] 팀 활동 시간 갱신 (유령 팀 방지)
-      // 매칭을 생성한다는 것은 팀이 활발히 활동 중이라는 증거입니다.
-      await updateDoc(teamRef, { 
-          lastActiveAt: serverTimestamp() 
-      });
+      await updateDoc(teamRef, { lastActiveAt: serverTimestamp() });
 
-      // 4. 데이터 쓰기
-      const payload = {
+      await addDoc(collection(db, "matches"), {
         hostId: userData.teamId,
         team: teamData.name || 'Unknown Team',
         affiliation: teamData.affiliation || '소속 미정',
         type,
         gender,
         time: date.toISOString(),
-        loc: place.trim(), // [Fix] 공백 제거
+        loc: place.trim(),
         note: note.trim(),
         status: 'recruiting',
         createdAt: new Date().toISOString(),
         applicants: [],
         level: teamData.level || 'C',
         isDeleted: false
-      };
-
-      await addDoc(collection(db, "matches"), payload);
+      });
 
       Alert.alert('작성 완료', '매칭 공고가 등록되었습니다.', [
         { text: '확인', onPress: () => router.back() }
       ]);
 
     } catch (error: any) {
-      console.error("Match Create Error:", error);
-      const errorMsg = error.message || '알 수 없는 오류가 발생했습니다.';
-      Alert.alert('등록 실패', errorMsg);
+      Alert.alert('등록 실패', error.message || '오류가 발생했습니다.');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <SafeAreaView style={tw`flex-1 bg-white`}>
-      {/* Header */}
-      <View style={tw`px-5 h-14 flex-row items-center justify-between border-b border-gray-50 bg-white z-10`}>
-        <TouchableOpacity onPress={() => router.back()} style={tw`p-2 -ml-2 rounded-full active:bg-gray-100`}>
-          <FontAwesome5 name="arrow-left" size={20} color="#111827" />
-        </TouchableOpacity>
-        <Text style={tw`font-bold text-base text-gray-800`}>매칭 만들기</Text>
-        <View style={tw`w-8`} />
-      </View>
-
+    <SafeAreaView style={tw`flex-1 bg-[#F9FAFB]`} edges={['bottom']}>
+      {/* [Fix] 커스텀 헤더 제거: Stack Navigation 헤더 사용으로 중복 방지 */}
+      
       <KeyboardAvoidingView 
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
         style={tw`flex-1`}
-        keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
       >
-        <ScrollView
-            ref={scrollViewRef}
-            contentContainerStyle={tw`px-6 pt-6 pb-60`}
+        <ScrollView 
+            contentContainerStyle={tw`p-6 pb-40`} 
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps='handled'
         >
-            {/* Title */}
-            <View style={tw`mb-10`}>
-                <Text style={tw`text-3xl font-extrabold text-gray-900 leading-tight mb-2`}>
-                    매칭 만들기
-                </Text>
+            {/* Title Section */}
+            <View style={tw`mb-8`}>
+                <Text style={tw`text-2xl font-extrabold text-gray-900 mb-2`}>새로운 매칭 만들기</Text>
+                <Text style={tw`text-gray-500 text-sm`}>팀원들과 함께할 즐거운 경기를 만들어보세요.</Text>
             </View>
 
-            {/* Q1: Type */}
-            <FadeInSection>
-                <Text style={tw`text-lg font-bold text-gray-800 mb-4`}>경기 방식</Text>
+            {/* 1. 경기 방식 */}
+            <View style={tw`mb-6`}>
+                <Text style={tw`text-sm font-bold text-gray-600 mb-3 ml-1`}>경기 방식</Text>
                 <View style={tw`flex-row gap-3`}>
-                    <SelectCard label="6인제" subLabel="정규 룰" icon="volleyball-ball" selected={type === '6man'} onPress={() => { setType('6man'); nextStep(2); }} />
-                    <SelectCard label="9인제" subLabel="생활체육" icon="users" selected={type === '9man'} onPress={() => { setType('9man'); nextStep(2); }} />
+                    <SelectCard 
+                        label="6인제" subLabel="정규 룰" icon="volleyball-ball" 
+                        selected={type === '6man'} onPress={() => setType('6man')} 
+                    />
+                    <SelectCard 
+                        label="9인제" subLabel="생활체육" icon="users" 
+                        selected={type === '9man'} onPress={() => setType('9man')} 
+                    />
                 </View>
-            </FadeInSection>
+            </View>
 
-            {/* Q2: Gender */}
-            {step >= 2 && (
-            <FadeInSection delay={100}>
-                <Text style={tw`text-lg font-bold text-gray-800 mb-4`}>성별</Text>
+            {/* 2. 성별 */}
+            <View style={tw`mb-6`}>
+                <Text style={tw`text-sm font-bold text-gray-600 mb-3 ml-1`}>성별</Text>
                 <View style={tw`gap-3`}>
-                <TouchableOpacity onPress={() => { setGender('mixed'); nextStep(3); }} activeOpacity={0.8} style={tw`w-full p-5 rounded-3xl border flex-row items-center shadow-sm ${gender === 'mixed' ? 'bg-indigo-50 border-[#4F46E5]' : 'bg-white border-gray-100'}`}>
-                    <View style={tw`w-12 h-12 rounded-full items-center justify-center mr-4 ${gender === 'mixed' ? 'bg-[#4F46E5]' : 'bg-gray-50'}`}>
-                        <FontAwesome5 name="restroom" size={20} color={gender === 'mixed' ? 'white' : '#9CA3AF'} />
+                    <TouchableOpacity onPress={() => setGender('mixed')} activeOpacity={0.8} style={tw`w-full p-4 rounded-2xl border flex-row items-center shadow-sm ${gender === 'mixed' ? 'bg-indigo-50 border-[#4F46E5]' : 'bg-white border-gray-100'}`}>
+                        <View style={tw`w-10 h-10 rounded-full items-center justify-center mr-4 ${gender === 'mixed' ? 'bg-[#4F46E5]' : 'bg-gray-50'}`}>
+                            <FontAwesome5 name="restroom" size={16} color={gender === 'mixed' ? 'white' : '#9CA3AF'} />
+                        </View>
+                        <View>
+                            <Text style={tw`text-base font-bold ${gender === 'mixed' ? 'text-[#4F46E5]' : 'text-gray-800'}`}>혼성</Text>
+                            <Text style={tw`text-xs ${gender === 'mixed' ? 'text-indigo-400' : 'text-gray-400'}`}>남녀 혼합 경기</Text>
+                        </View>
+                    </TouchableOpacity>
+                    <View style={tw`flex-row gap-3`}>
+                        <SelectCard label="남자부" icon="male" selected={gender === 'male'} onPress={() => setGender('male')} />
+                        <SelectCard label="여자부" icon="female" selected={gender === 'female'} onPress={() => setGender('female')} />
                     </View>
-                    <View>
-                        <Text style={tw`text-lg font-bold ${gender === 'mixed' ? 'text-[#4F46E5]' : 'text-gray-800'}`}>혼성</Text>
-                        <Text style={tw`text-xs mt-1 ${gender === 'mixed' ? 'text-indigo-400' : 'text-gray-400'}`}>남녀 혼합</Text>
+                </View>
+            </View>
+
+            {/* 3. 일시 */}
+            <View style={tw`mb-6`}>
+                <Text style={tw`text-sm font-bold text-gray-600 mb-3 ml-1`}>일시</Text>
+                {Platform.OS === 'web' ? (
+                    <View style={tw`bg-white p-4 rounded-2xl border border-gray-200`}>
+                        {React.createElement('input', {
+                            type: 'datetime-local',
+                            value: toLocalISOString(date),
+                            onChange: handleWebDateChange,
+                            style: {
+                                border: 'none', width: '100%', height: '30px', fontSize: '16px',
+                                color: '#111827', backgroundColor: 'transparent', outline: 'none', cursor: 'pointer'
+                            }
+                        })}
                     </View>
-                </TouchableOpacity>
-                <View style={tw`flex-row gap-3`}>
-                    <SelectCard label="남자부" icon="male" selected={gender === 'male'} onPress={() => { setGender('male'); nextStep(3); }} />
-                    <SelectCard label="여자부" icon="female" selected={gender === 'female'} onPress={() => { setGender('female'); nextStep(3); }} />
-                </View>
-                </View>
-            </FadeInSection>
-            )}
+                ) : (
+                    <TouchableOpacity onPress={() => { setTempDate(date); setShowDateModal(true); }} activeOpacity={0.8} style={tw`bg-white p-5 rounded-2xl border border-gray-200 flex-row justify-between items-center shadow-sm`}>
+                        <View>
+                            <Text style={tw`text-xs font-bold text-gray-400 mb-1`}>선택된 시간</Text>
+                            <Text style={tw`text-lg font-bold text-[#191F28]`}>{formatDateKr(date)} {formatTimeKr(date)}</Text>
+                        </View>
+                        <FontAwesome5 name="calendar-alt" size={20} color="#4F46E5" />
+                    </TouchableOpacity>
+                )}
+            </View>
 
-            {/* Q3: Date & Time */}
-            {step >= 3 && (
-            <FadeInSection delay={100}>
-                <Text style={tw`text-lg font-bold text-gray-800 mb-4`}>일시</Text>
-                <TouchableOpacity 
-                    onPress={() => { setTempDate(date); setShowDateModal(true); }} 
-                    activeOpacity={0.8}
-                    style={tw`bg-white p-5 rounded-3xl border border-gray-200 flex-row justify-between items-center shadow-sm`}
-                >
-                <View>
-                    <Text style={tw`text-xs font-bold text-gray-400 mb-1`}>날짜와 시간</Text>
-                    <Text style={tw`text-xl font-extrabold text-[#4F46E5]`}>{formatDateKr(date)}  {formatTimeKr(date)}</Text>
-                </View>
-                <View style={tw`w-10 h-10 bg-indigo-50 rounded-full items-center justify-center`}>
-                    <FontAwesome5 name="calendar-alt" size={18} color="#4F46E5" />
-                </View>
-                </TouchableOpacity>
-            </FadeInSection>
-            )}
-
-            {/* Q4: Location */}
-            {step >= 4 && (
-            <FadeInSection delay={100}>
-                <Text style={tw`text-lg font-bold text-gray-800 mb-4`}>장소</Text>
-                <View style={tw`bg-white rounded-3xl border border-gray-200 p-1 shadow-sm`}>
+            {/* 4. 장소 */}
+            <View style={tw`mb-6`}>
+                <Text style={tw`text-sm font-bold text-gray-600 mb-3 ml-1`}>장소</Text>
+                <View style={tw`bg-white rounded-2xl border border-gray-200 shadow-sm`}>
                     <RNTextInput
-                        style={tw`bg-white p-5 text-lg text-gray-800 rounded-2xl`}
+                        style={tw`p-4 text-base text-gray-800 h-14`}
                         placeholder="체육관 이름 또는 주소 입력"
-                        placeholderTextColor="#D1D5DB"
+                        placeholderTextColor="#9CA3AF"
                         value={place}
-                        onChangeText={(text) => setPlace(text)}
-                        returnKeyType="next"
-                        onSubmitEditing={() => nextStep(5)}
+                        onChangeText={setPlace}
                     />
                 </View>
-            </FadeInSection>
-            )}
+            </View>
 
-            {/* Q5: Note */}
-            {step >= 5 && (
-            <FadeInSection delay={100}>
-                <Text style={tw`text-lg font-bold text-gray-800 mb-4`}>안내 사항 (선택)</Text>
-                <View style={tw`bg-white rounded-3xl border border-gray-200 p-1 mb-8 shadow-sm`}>
+            {/* 5. 안내 사항 */}
+            <View style={tw`mb-10`}>
+                <Text style={tw`text-sm font-bold text-gray-600 mb-3 ml-1`}>안내 사항 (선택)</Text>
+                <View style={tw`bg-white rounded-2xl border border-gray-200 shadow-sm`}>
                     <RNTextInput
-                    style={tw`bg-white p-5 text-lg text-gray-800 min-h-[140px] rounded-2xl`}
-                    placeholder="주차 정보, 참가비, 팀 실력 등"
-                    placeholderTextColor="#D1D5DB"
-                    multiline
-                    textAlignVertical="top"
-                    value={note}
-                    onChangeText={setNote}
+                        style={tw`p-4 text-base text-gray-800 min-h-[120px]`}
+                        placeholder="주차 정보, 참가비, 팀 실력 등 상세 정보를 적어주세요."
+                        placeholderTextColor="#9CA3AF"
+                        multiline
+                        textAlignVertical="top"
+                        value={note}
+                        onChangeText={setNote}
                     />
                 </View>
+            </View>
 
-                <TouchableOpacity 
+            {/* 완료 버튼 */}
+            <TouchableOpacity 
                 onPress={handleSubmit} 
                 disabled={loading} 
-                style={tw`w-full bg-[#4F46E5] py-5 rounded-3xl items-center shadow-lg shadow-indigo-200 active:scale-95 mb-10`}
-                >
-                {loading ? <ActivityIndicator color="white" /> : <Text style={tw`text-white font-extrabold text-xl`}>완료</Text>}
-                </TouchableOpacity>
-            </FadeInSection>
-            )}
+                style={tw`w-full bg-[#4F46E5] py-4 rounded-2xl items-center shadow-lg shadow-indigo-200 active:scale-95`}
+            >
+                {loading ? <ActivityIndicator color="white" /> : <Text style={tw`text-white font-bold text-lg`}>매칭 등록하기</Text>}
+            </TouchableOpacity>
+
         </ScrollView>
       </KeyboardAvoidingView>
 
-      {/* Date Picker Modal */}
-      <Modal visible={showDateModal} transparent animationType="fade">
-        <View style={tw`flex-1 justify-end bg-black/60`}>
-            <View style={tw`bg-white rounded-t-[32px] p-6 pb-10 shadow-2xl`}>
-                <View style={tw`flex-row justify-between items-center mb-6 px-2`}>
-                    <Text style={tw`text-xl font-bold text-gray-900`}>시간 선택</Text>
-                    <TouchableOpacity onPress={() => setShowDateModal(false)} style={tw`bg-gray-100 px-4 py-2 rounded-full`}>
-                        <Text style={tw`text-gray-500 font-bold text-xs`}>취소</Text>
+      {/* Date Picker Modal (Mobile Only) */}
+      {Platform.OS !== 'web' && (
+        <Modal visible={showDateModal} transparent animationType="fade">
+            <View style={tw`flex-1 justify-end bg-black/60`}>
+                <View style={tw`bg-white rounded-t-3xl p-6 pb-10 shadow-2xl`}>
+                    <View style={tw`flex-row justify-between items-center mb-6 px-2`}>
+                        <Text style={tw`text-xl font-bold text-[#191F28]`}>시간 선택</Text>
+                        <TouchableOpacity onPress={() => setShowDateModal(false)} style={tw`bg-gray-100 px-4 py-2 rounded-full`}>
+                            <Text style={tw`text-gray-500 font-bold text-xs`}>취소</Text>
+                        </TouchableOpacity>
+                    </View>
+                    <DateTimePicker value={tempDate} mode="datetime" display="spinner" onChange={handleDateChange} textColor="#111827" locale="ko-KR" minimumDate={new Date()} style={tw`h-48`} />
+                    <TouchableOpacity onPress={() => { setDate(tempDate); setShowDateModal(false); }} style={tw`mt-6 bg-[#4F46E5] py-4 rounded-2xl items-center shadow-lg shadow-indigo-200`}>
+                        <Text style={tw`text-white font-bold text-lg`}>확인</Text>
                     </TouchableOpacity>
                 </View>
-                <DateTimePicker
-                    value={tempDate}
-                    mode="datetime"
-                    display="spinner"
-                    onChange={(e, d) => d && setTempDate(d)}
-                    textColor="#111827"
-                    locale="ko-KR"
-                    minimumDate={new Date()}
-                    style={tw`h-48`}
-                />
-                <TouchableOpacity 
-                    onPress={() => {
-                        setDate(tempDate);
-                        setShowDateModal(false);
-                        nextStep(4);
-                    }}
-                    style={tw`mt-6 bg-[#4F46E5] py-4 rounded-2xl items-center shadow-lg shadow-indigo-200`}
-                >
-                    <Text style={tw`text-white font-bold text-lg`}>설정</Text>
-                </TouchableOpacity>
             </View>
-        </View>
-      </Modal>
+        </Modal>
+      )}
     </SafeAreaView>
   );
 }
