@@ -1,6 +1,9 @@
+// app/home/index.tsx
 import React, { useEffect, useState, useRef } from 'react';
-import { View, Text, FlatList, TouchableOpacity, ActivityIndicator, RefreshControl, StatusBar, Pressable, Animated, Alert } from 'react-native';
+import { View, Text, FlatList, TouchableOpacity, ActivityIndicator, RefreshControl, StatusBar, Pressable, Animated } from 'react-native';
 import { useRouter } from 'expo-router';
+// 👇 [추가] onAuthStateChanged import
+import { onAuthStateChanged } from 'firebase/auth'; 
 import { collection, query, orderBy, where, limit, startAfter, getDocs, doc, getDoc, QueryDocumentSnapshot, DocumentData } from 'firebase/firestore';
 import { auth, db } from '../../configs/firebaseConfig';
 import { FontAwesome5 } from '@expo/vector-icons';
@@ -10,6 +13,7 @@ import { COLORS, TYPOGRAPHY } from '../../configs/theme';
 import { Card } from '../../components/Card';
 import { KUSF_TEAMS } from './ranking';
 
+// ... (Team, MatchData interface 등 기존 코드 유지) ...
 interface Team {
   id: string;
   name: string;
@@ -32,6 +36,7 @@ type MatchData = {
   isDeleted?: boolean;
 };
 
+// ... (AnimatedCard, FilterChip, RankingCard 컴포넌트 기존 코드 유지) ...
 const AnimatedCard = ({ children, onPress, style }: { children: React.ReactNode, onPress: () => void, style?: any }) => {
   const scaleValue = useRef(new Animated.Value(1)).current;
   return (
@@ -144,10 +149,11 @@ export default function HomeScreen() {
   
   const [userTeamId, setUserTeamId] = useState<string | null>(null);
   const [userName, setUserName] = useState('');
-
+  
+  // 👇 [수정됨] 사용자 인증 상태 감지 로직 개선 (새로고침 문제 해결)
   useEffect(() => {
-    const checkUserTeam = async () => {
-      const user = auth.currentUser;
+    // onAuthStateChanged는 로그인 복구까지 기다렸다가 실행됩니다.
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
         try {
             const uSnap = await getDoc(doc(db, "users", user.uid));
@@ -157,12 +163,20 @@ export default function HomeScreen() {
               setUserName(data.nickname || data.name || '회원');
             }
         } catch(e) { console.log(e); }
+      } else {
+        // 로그아웃 상태일 때 초기화
+        setUserTeamId(null);
+        setUserName('');
       }
+      // 유저 확인이 끝난 후 매치 리스트를 불러옵니다.
       fetchMatches(true);
-    };
-    checkUserTeam();
-  }, []);
+    });
 
+    // 컴포넌트 언마운트 시 리스너 해제
+    return () => unsubscribe();
+  }, []); // filter 의존성 제거 (fetchMatches 내부에서 처리하거나 별도 useEffect 분리)
+
+  // 필터 변경 시 매치 다시 로드
   useEffect(() => {
       fetchMatches(true);
   }, [filter]);
@@ -229,6 +243,7 @@ export default function HomeScreen() {
 
   const onRefresh = () => {
       setRefreshing(true);
+      // 리프레시 시에도 유저 정보를 다시 확인하고 싶다면 아래 로직 유지, 아니라면 fetchMatches만 호출
       fetchMatches(true);
   };
 
@@ -282,7 +297,8 @@ export default function HomeScreen() {
         <StatusBar barStyle="dark-content" />
         <View style={tw`mb-10`}>
           <Text style={tw`text-4xl mb-2`}>👋</Text>
-          <Text style={tw`${TYPOGRAPHY.h1} mb-2`}>{userName}님</Text>
+          {/* 👇 [수정됨] 이름이 로딩되지 않았을 때 기본값 처리 */}
+          <Text style={tw`${TYPOGRAPHY.h1} mb-2`}>{userName || '회원'}님</Text>
           <Text style={tw`${TYPOGRAPHY.body2} leading-6`}>
             아직 소속된 팀이 없어요.{'\n'}팀에 가입하거나 용병으로 활동해보세요.
           </Text>
@@ -350,10 +366,8 @@ export default function HomeScreen() {
         ListFooterComponent={loadingMore ? <ActivityIndicator style={tw`py-4`} color={COLORS.primary} /> : <View style={tw`h-8`} />}
         ListHeaderComponent={
             <>
-                {/* 랭킹 카드 */}
                 <RankingCard onPress={() => router.push('/home/ranking')} />
                 
-                {/* 용병 버튼 영역 */}
                 <View style={tw`flex-row gap-3 mb-6`}>
                     <TouchableOpacity onPress={() => router.push('/guest/list')} style={tw`flex-1 bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex-row items-center`}>
                         <View style={tw`w-10 h-10 bg-orange-50 rounded-full items-center justify-center mr-3`}>
@@ -375,7 +389,6 @@ export default function HomeScreen() {
                     </TouchableOpacity>
                 </View>
 
-                {/* 필터 칩 */}
                 <View style={tw`mb-6`}>
                     <FlatList 
                         horizontal 
