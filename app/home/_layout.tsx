@@ -1,6 +1,5 @@
 import { Tabs } from 'expo-router';
 import { FontAwesome } from '@expo/vector-icons';
-import tw from 'twrnc';
 
 export default function HomeLayout() {
   return (
@@ -9,8 +8,22 @@ export default function HomeLayout() {
         headerShown: false,
         tabBarActiveTintColor: '#4f46e5', // Indigo-600
         tabBarInactiveTintColor: '#94a3b8', // Slate-400
-        tabBarStyle: tw`border-t border-slate-100 h-24 pb-8 pt-2`,
-        tabBarLabelStyle: tw`font-bold text-xs`,
+        // [수정됨] tw 대신 표준 스타일 객체 사용 (가장 안전한 방법)
+        // 기존: border-t border-slate-100 h-24 pb-8 pt-2
+        tabBarStyle: {
+          borderTopWidth: 1,
+          borderTopColor: '#f1f5f9', // slate-100 색상코드
+          height: 96, // h-24 (24 * 4px)
+          paddingBottom: 32, // pb-8
+          paddingTop: 8, // pt-2
+          backgroundColor: 'white', // 배경색 명시 (안전책)
+        },
+        // [수정됨] tw 대신 표준 스타일 사용
+        // 기존: font-bold text-xs
+        tabBarLabelStyle: {
+          fontWeight: 'bold',
+          fontSize: 12, // text-xs
+        },
       }}
     >
       {/* 1. 홈 */}

@@ -5,10 +5,9 @@ import { auth, db } from '../../configs/firebaseConfig';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import tw from 'twrnc';
-import { COLORS, TYPOGRAPHY } from '../../configs/theme';
+import { TYPOGRAPHY } from '../../configs/theme';
 import { Button } from '../../components/Button';
-import { Card } from '../../components/Card';
+// Card 컴포넌트 대신 View에 직접 스타일을 적용하여 호환성 문제 해결
 import { useMatchResult } from '../../hooks/useMatchResult'; 
 
 type JoinRequest = { uid: string; name: string; position: string; requestedAt: string; };
@@ -338,53 +337,53 @@ export default function LockerScreen() {
     }
   };
 
-  if (loading) return <View style={tw`flex-1 justify-center items-center`}><ActivityIndicator /></View>;
+  if (loading) return <View className="flex-1 justify-center items-center"><ActivityIndicator /></View>;
 
   return (
-    <SafeAreaView style={tw`flex-1 bg-white px-5`} edges={['top']}>
-      <Text style={tw`text-2xl font-extrabold text-[#191F28] mb-6 pt-4`}>라커룸</Text>
+    <SafeAreaView className="flex-1 bg-white px-5" edges={['top']}>
+      <Text className="text-2xl font-extrabold text-[#191F28] mb-6 pt-4">라커룸</Text>
       
-      <View style={tw`flex-row bg-[#F2F4F6] p-1 rounded-2xl mb-6`}>
-        <TouchableOpacity onPress={() => setActiveTab('team')} style={tw`flex-1 py-2 rounded-xl items-center ${activeTab === 'team' ? 'bg-white shadow-sm' : ''}`}><Text style={tw`font-bold ${activeTab === 'team' ? 'text-[#3182F6]' : 'text-gray-400'}`}>내 팀</Text></TouchableOpacity>
-        <TouchableOpacity onPress={() => setActiveTab('matches')} style={tw`flex-1 py-2 rounded-xl items-center ${activeTab === 'matches' ? 'bg-white shadow-sm' : ''}`}><Text style={tw`font-bold ${activeTab === 'matches' ? 'text-[#3182F6]' : 'text-gray-400'}`}>매칭</Text></TouchableOpacity>
+      <View className="flex-row bg-[#F2F4F6] p-1 rounded-2xl mb-6">
+        <TouchableOpacity onPress={() => setActiveTab('team')} className={`flex-1 py-2 rounded-xl items-center ${activeTab === 'team' ? 'bg-white shadow-sm' : ''}`}><Text className={`font-bold ${activeTab === 'team' ? 'text-[#3182F6]' : 'text-gray-400'}`}>내 팀</Text></TouchableOpacity>
+        <TouchableOpacity onPress={() => setActiveTab('matches')} className={`flex-1 py-2 rounded-xl items-center ${activeTab === 'matches' ? 'bg-white shadow-sm' : ''}`}><Text className={`font-bold ${activeTab === 'matches' ? 'text-[#3182F6]' : 'text-gray-400'}`}>매칭</Text></TouchableOpacity>
       </View>
 
       {activeTab === 'team' ? (
-        <ScrollView contentContainerStyle={tw`pb-32`} showsVerticalScrollIndicator={false}>
+        <ScrollView contentContainerClassName="pb-32" showsVerticalScrollIndicator={false}>
             {/* 1. 팀 정보 카드 */}
-            <Card style={tw`mb-6`}>
-                <View style={tw`flex-row justify-between items-center mb-4`}>
+            <View className="bg-white p-6 rounded-2xl shadow-sm mb-6">
+                <View className="flex-row justify-between items-center mb-4">
                     <View>
-                        <Text style={tw`${TYPOGRAPHY.h2}`}>{teamData?.name}</Text>
-                        <View style={tw`flex-row items-center mt-1`}>
-                            <Text style={tw`text-gray-500 mr-2`}>{teamData?.affiliation}</Text>
+                        <Text className={TYPOGRAPHY.h2}>{teamData?.name}</Text>
+                        <View className="flex-row items-center mt-1">
+                            <Text className="text-gray-500 mr-2">{teamData?.affiliation}</Text>
                             {isCaptain && (
-                                <TouchableOpacity onPress={() => setShowLevelModal(true)} style={tw`bg-gray-100 px-2 py-0.5 rounded`}>
-                                    <Text style={tw`text-xs font-bold text-[#3182F6]`}>{teamData?.level}급 ✎</Text>
+                                <TouchableOpacity onPress={() => setShowLevelModal(true)} className="bg-gray-100 px-2 py-0.5 rounded">
+                                    <Text className="text-xs font-bold text-[#3182F6]">{teamData?.level}급 ✎</Text>
                                 </TouchableOpacity>
                             )}
                         </View>
                     </View>
-                    {isCaptain && <View style={tw`bg-blue-100 px-2 py-1 rounded`}><Text style={tw`text-blue-600 text-xs font-bold`}>TEAM LEADER</Text></View>}
+                    {isCaptain && <View className="bg-blue-100 px-2 py-1 rounded"><Text className="text-blue-600 text-xs font-bold">TEAM LEADER</Text></View>}
                 </View>
-                <View style={tw`flex-row bg-gray-50 p-4 rounded-xl justify-between`}>
-                    <View style={tw`items-center`}><Text style={tw`text-xs text-gray-400`}>경기</Text><Text style={tw`text-lg font-bold`}>{teamData?.stats?.total||0}</Text></View>
-                    <View style={tw`items-center`}><Text style={tw`text-xs text-gray-400`}>승리</Text><Text style={tw`text-lg font-bold text-blue-500`}>{teamData?.stats?.wins||0}</Text></View>
-                    <View style={tw`items-center`}><Text style={tw`text-xs text-gray-400`}>승점</Text><Text style={tw`text-lg font-bold`}>{teamData?.stats?.points||0}</Text></View>
+                <View className="flex-row bg-gray-50 p-4 rounded-xl justify-between">
+                    <View className="items-center"><Text className="text-xs text-gray-400">경기</Text><Text className="text-lg font-bold">{teamData?.stats?.total||0}</Text></View>
+                    <View className="items-center"><Text className="text-xs text-gray-400">승리</Text><Text className="text-lg font-bold text-blue-500">{teamData?.stats?.wins||0}</Text></View>
+                    <View className="items-center"><Text className="text-xs text-gray-400">승점</Text><Text className="text-lg font-bold">{teamData?.stats?.points||0}</Text></View>
                 </View>
-            </Card>
+            </View>
 
             {/* 2. 가입 요청 목록 */}
             {isCaptain && teamData?.joinRequests && teamData.joinRequests.length > 0 && (
-                <View style={tw`mb-6`}>
-                    <Text style={tw`text-lg font-bold mb-3 text-red-500`}>🔔 가입 요청 ({teamData.joinRequests.length})</Text>
+                <View className="mb-6">
+                    <Text className="text-lg font-bold mb-3 text-red-500">🔔 가입 요청 ({teamData.joinRequests.length})</Text>
                     {teamData.joinRequests.map((req, idx) => (
-                        <View key={idx} style={tw`bg-white border border-red-100 p-4 rounded-xl mb-2 flex-row justify-between items-center shadow-sm`}>
+                        <View key={idx} className="bg-white border border-red-100 p-4 rounded-xl mb-2 flex-row justify-between items-center shadow-sm">
                             <View>
-                                <Text style={tw`font-bold`}>{req.name} <Text style={tw`text-gray-400 font-normal text-xs`}>({req.position})</Text></Text>
-                                <Text style={tw`text-xs text-gray-400`}>{req.requestedAt.split('T')[0]}</Text>
+                                <Text className="font-bold">{req.name} <Text className="text-gray-400 font-normal text-xs">({req.position})</Text></Text>
+                                <Text className="text-xs text-gray-400">{req.requestedAt.split('T')[0]}</Text>
                             </View>
-                            <View style={tw`flex-row gap-2`}>
+                            <View className="flex-row gap-2">
                                 <Button label="승인" size="sm" onPress={() => handleApproveMember(req)} />
                                 <Button label="거절" size="sm" variant="secondary" onPress={() => handleRejectMember(req)} />
                             </View>
@@ -394,19 +393,19 @@ export default function LockerScreen() {
             )}
 
             {/* 3. 선수 명단 */}
-            <Text style={tw`text-lg font-bold mb-3`}>선수 명단</Text>
+            <Text className="text-lg font-bold mb-3">선수 명단</Text>
             {teamData?.roster?.map((player) => (
-                <View key={player.id} style={tw`bg-white p-4 rounded-xl border border-gray-100 mb-2 flex-row justify-between items-center`}>
-                    <View style={tw`flex-row items-center`}>
-                        <View style={tw`w-8 h-8 bg-gray-100 rounded-full items-center justify-center mr-3`}>
-                            <Text style={tw`font-bold text-xs text-gray-600`}>{player.position}</Text>
+                <View key={player.id} className="bg-white p-4 rounded-xl border border-gray-100 mb-2 flex-row justify-between items-center">
+                    <View className="flex-row items-center">
+                        <View className="w-8 h-8 bg-gray-100 rounded-full items-center justify-center mr-3">
+                            <Text className="font-bold text-xs text-gray-600">{player.position}</Text>
                         </View>
-                        <Text style={tw`font-medium`}>{player.name}</Text>
-                        {player.uid === teamData.captainId && <FontAwesome5 name="crown" size={12} color="#FFD700" style={tw`ml-2`} />}
+                        <Text className="font-medium">{player.name}</Text>
+                        {player.uid === teamData.captainId && <FontAwesome5 name="crown" size={12} color="#FFD700" className="ml-2" />}
                     </View>
                     {isCaptain && player.uid !== auth.currentUser?.uid && (
-                        <TouchableOpacity onPress={() => player.uid ? handleKickMember(player) : handleDeleteManualPlayer(player.id)} style={tw`bg-red-50 p-2 rounded-lg`}>
-                            <Text style={tw`text-red-500 text-xs font-bold`}>내보내기</Text>
+                        <TouchableOpacity onPress={() => player.uid ? handleKickMember(player) : handleDeleteManualPlayer(player.id)} className="bg-red-50 p-2 rounded-lg">
+                            <Text className="text-red-500 text-xs font-bold">내보내기</Text>
                         </TouchableOpacity>
                     )}
                 </View>
@@ -414,28 +413,28 @@ export default function LockerScreen() {
 
             {/* 4. 수동 선수 추가 */}
             {isCaptain && (
-                <View style={tw`bg-[#F9FAFB] p-4 rounded-[24px] mt-4`}>
-                    <Text style={tw`text-xs font-bold text-[#8B95A1] mb-2 ml-1`}>선수 및 게스트를 직접 등록할 수 있어요!</Text>
-                    <View style={tw`flex-row gap-2`}>
-                        <TextInput style={tw`flex-1 bg-white p-3 rounded-xl border border-gray-200`} placeholder="이름 입력" value={newPlayerName} onChangeText={setNewPlayerName}/>
-                        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={tw`flex-1`}>
+                <View className="bg-[#F9FAFB] p-4 rounded-[24px] mt-4">
+                    <Text className="text-xs font-bold text-[#8B95A1] mb-2 ml-1">선수 및 게스트를 직접 등록할 수 있어요!</Text>
+                    <View className="flex-row gap-2">
+                        <TextInput className="flex-1 bg-white p-3 rounded-xl border border-gray-200" placeholder="이름 입력" value={newPlayerName} onChangeText={setNewPlayerName}/>
+                        <ScrollView horizontal showsHorizontalScrollIndicator={false} className="flex-1">
                             {POSITIONS.map(pos => (
-                                <TouchableOpacity key={pos} onPress={() => setNewPlayerPos(pos)} style={tw`w-10 h-10 rounded-xl items-center justify-center mr-1 ${newPlayerPos === pos ? 'bg-[#3182F6]' : 'bg-white border border-gray-200'}`}>
-                                    <Text style={tw`font-bold ${newPlayerPos === pos ? 'text-white' : 'text-[#8B95A1]'}`}>{pos}</Text>
+                                <TouchableOpacity key={pos} onPress={() => setNewPlayerPos(pos)} className={`w-10 h-10 rounded-xl items-center justify-center mr-1 ${newPlayerPos === pos ? 'bg-[#3182F6]' : 'bg-white border border-gray-200'}`}>
+                                    <Text className={`font-bold ${newPlayerPos === pos ? 'text-white' : 'text-[#8B95A1]'}`}>{pos}</Text>
                                 </TouchableOpacity>
                             ))}
                         </ScrollView>
                     </View>
-                    <TouchableOpacity onPress={handleAddManualPlayer} style={tw`mt-3 bg-[#333D4B] py-3 rounded-xl items-center`}><Text style={tw`text-white font-bold`}>추가</Text></TouchableOpacity>
+                    <TouchableOpacity onPress={handleAddManualPlayer} className="mt-3 bg-[#333D4B] py-3 rounded-xl items-center"><Text className="text-white font-bold">추가</Text></TouchableOpacity>
                 </View>
             )}
         </ScrollView>
       ) : (
-        <ScrollView contentContainerStyle={tw`pb-32`} showsVerticalScrollIndicator={false}>
+        <ScrollView contentContainerClassName="pb-32" showsVerticalScrollIndicator={false}>
             {/* 1. 확정된 경기 */}
-            <View style={tw`mb-8`}>
-                <Text style={tw`font-bold text-[#191F28] mb-3 border-l-4 border-green-500 pl-3`}>확정된 경기</Text>
-                {confirmedList.length === 0 && <Text style={tw`text-[#8B95A1] text-sm`}>확정된 경기가 없어요.</Text>}
+            <View className="mb-8">
+                <Text className="font-bold text-[#191F28] mb-3 border-l-4 border-green-500 pl-3">확정된 경기</Text>
+                {confirmedList.length === 0 && <Text className="text-[#8B95A1] text-sm">확정된 경기가 없어요.</Text>}
                 {confirmedList.map(m => {
                     const isDispute = m.status === 'dispute';
                     const waitingApproval = m.result?.status === 'waiting';
@@ -443,23 +442,23 @@ export default function LockerScreen() {
                     const timeDisplay = m.time.includes('T') ? m.time.split('T')[0] : m.time;
 
                     return (
-                        <TouchableOpacity key={m.id} onPress={() => handleMatchDetail(m)} style={tw`bg-white p-4 rounded-2xl border ${isDispute ? 'border-red-500' : 'border-green-100'} shadow-sm mb-3`}>
-                            <View style={tw`flex-row justify-between mb-2`}>
-                                <Text style={tw`${TYPOGRAPHY.body1}`}>{m.team}</Text>
-                                <Text style={tw`${TYPOGRAPHY.caption}`}>{timeDisplay}</Text>
+                        <TouchableOpacity key={m.id} onPress={() => handleMatchDetail(m)} className={`bg-white p-4 rounded-2xl border ${isDispute ? 'border-red-500' : 'border-green-100'} shadow-sm mb-3`}>
+                            <View className="flex-row justify-between mb-2">
+                                <Text className={TYPOGRAPHY.body1}>{m.team}</Text>
+                                <Text className={TYPOGRAPHY.caption}>{timeDisplay}</Text>
                             </View>
-                            <Text style={tw`${TYPOGRAPHY.body2} mb-3`}>{m.loc}</Text>
+                            <Text className={`${TYPOGRAPHY.body2} mb-3`}>{m.loc}</Text>
                             
                             {isDispute ? (
-                                <View style={tw`bg-red-50 p-3 rounded-xl items-center`}><Text style={tw`text-red-500 font-bold`}>🚨 점수 확인 중</Text></View>
+                                <View className="bg-red-50 p-3 rounded-xl items-center"><Text className="text-red-500 font-bold">🚨 점수 확인 중</Text></View>
                             ) : waitingApproval ? (
                                 iSubmitted ? (
-                                    <View style={tw`bg-orange-50 p-3 rounded-xl items-center`}><Text style={tw`text-orange-500 font-bold`}>상대팀의 수락을 대기중에요</Text></View>
+                                    <View className="bg-orange-50 p-3 rounded-xl items-center"><Text className="text-orange-500 font-bold">상대팀의 수락을 대기중에요</Text></View>
                                 ) : (
                                     <Button label="결과 확인하기" onPress={() => handleApprove(m)} isLoading={isProcessing} />
                                 )
                             ) : m.status === 'finished' ? (
-                                <View style={tw`bg-gray-100 p-2 rounded-xl items-center`}><Text style={tw`text-gray-500 font-bold`}>종료되었어요</Text></View>
+                                <View className="bg-gray-100 p-2 rounded-xl items-center"><Text className="text-gray-500 font-bold">종료되었어요</Text></View>
                             ) : (
                                 <Button label="결과 입력" variant="secondary" onPress={() => { setSelectedMatchId(m.id); setResultModalVisible(true); }} />
                             )}
@@ -469,17 +468,17 @@ export default function LockerScreen() {
             </View>
 
             {/* 2. 모집 중 */}
-            <View style={tw`mb-8`}>
-                <Text style={tw`font-bold text-[#191F28] mb-3 border-l-4 border-[#3182F6] pl-3`}>모집 중</Text>
-                {hostingList.length === 0 && <Text style={tw`text-[#8B95A1] text-sm`}>모집 중인 경기가 없어요.</Text>}
+            <View className="mb-8">
+                <Text className="font-bold text-[#191F28] mb-3 border-l-4 border-[#3182F6] pl-3">모집 중</Text>
+                {hostingList.length === 0 && <Text className="text-[#8B95A1] text-sm">모집 중인 경기가 없어요.</Text>}
                 {hostingList.map(m => (
-                    <View key={m.id} style={tw`bg-white p-4 rounded-2xl border border-[#F2F4F6] shadow-sm mb-3`}>
-                         <View style={tw`flex-row justify-between`}>
-                            <View><Text style={tw`font-bold text-[#333D4B]`}>{m.time.includes('T')?m.time.split('T')[0]:m.time}</Text><Text style={tw`text-xs text-[#8B95A1]`}>{m.loc}</Text></View>
+                    <View key={m.id} className="bg-white p-4 rounded-2xl border border-[#F2F4F6] shadow-sm mb-3">
+                         <View className="flex-row justify-between">
+                            <View><Text className="font-bold text-[#333D4B]">{m.time.includes('T')?m.time.split('T')[0]:m.time}</Text><Text className="text-xs text-[#8B95A1]">{m.loc}</Text></View>
                             {m.applicants && m.applicants.length > 0 ? (
-                                <TouchableOpacity onPress={() => openApplicantModal(m.id, m.applicants)} style={tw`bg-[#3182F6] px-4 py-2 rounded-xl justify-center`}><Text style={tw`text-white font-bold text-xs`}>신청자 보기 ({m.applicants.length}명)</Text></TouchableOpacity>
+                                <TouchableOpacity onPress={() => openApplicantModal(m.id, m.applicants)} className="bg-[#3182F6] px-4 py-2 rounded-xl justify-center"><Text className="text-white font-bold text-xs">신청자 보기 ({m.applicants.length}명)</Text></TouchableOpacity>
                             ) : (
-                                <View style={tw`bg-gray-100 px-4 py-2 rounded-xl justify-center`}><Text style={tw`text-[#8B95A1] font-bold text-xs`}>신청 대기</Text></View>
+                                <View className="bg-gray-100 px-4 py-2 rounded-xl justify-center"><Text className="text-[#8B95A1] font-bold text-xs">신청 대기</Text></View>
                             )}
                         </View>
                     </View>
@@ -487,14 +486,14 @@ export default function LockerScreen() {
             </View>
 
             {/* 3. 보낸 신청 */}
-            <View style={tw`mb-8`}>
-                <Text style={tw`font-bold text-[#191F28] mb-3 border-l-4 border-pink-500 pl-3`}>지원한 경기</Text>
-                {applyingList.length === 0 && <Text style={tw`text-[#8B95A1] text-sm`}>지원한 경기가 없어요.</Text>}
+            <View className="mb-8">
+                <Text className="font-bold text-[#191F28] mb-3 border-l-4 border-pink-500 pl-3">지원한 경기</Text>
+                {applyingList.length === 0 && <Text className="text-[#8B95A1] text-sm">지원한 경기가 없어요.</Text>}
                 {applyingList.map(m => (
-                    <View key={m.id} style={tw`bg-white p-4 rounded-2xl border border-[#F2F4F6] shadow-sm mb-3`}>
-                        <Text style={tw`font-bold text-[#333D4B]`}>{m.team}</Text>
-                        <Text style={tw`text-xs text-[#8B95A1]`}>{m.time.includes('T')?m.time.split('T')[0]:m.time} | {m.loc}</Text>
-                        <Text style={tw`text-pink-500 font-bold text-xs mt-2`}>수락 대기</Text>
+                    <View key={m.id} className="bg-white p-4 rounded-2xl border border-[#F2F4F6] shadow-sm mb-3">
+                        <Text className="font-bold text-[#333D4B]">{m.team}</Text>
+                        <Text className="text-xs text-[#8B95A1]">{m.time.includes('T')?m.time.split('T')[0]:m.time} | {m.loc}</Text>
+                        <Text className="text-pink-500 font-bold text-xs mt-2">수락 대기</Text>
                     </View>
                 ))}
             </View>
@@ -505,44 +504,44 @@ export default function LockerScreen() {
       
       {/* 1. 레벨 변경 모달 */}
       <Modal visible={showLevelModal} transparent animationType="fade">
-          <View style={tw`flex-1 justify-center items-center bg-black/50 px-6`}>
-              <View style={tw`bg-white w-full rounded-2xl p-6`}>
-                  <Text style={tw`text-lg font-bold mb-4 text-[#191F28] text-center`}>팀 수준 변경</Text>
-                  <View style={tw`flex-row justify-between mb-2`}>
+          <View className="flex-1 justify-center items-center bg-black/50 px-6">
+              <View className="bg-white w-full rounded-2xl p-6">
+                  <Text className="text-lg font-bold mb-4 text-[#191F28] text-center">팀 수준 변경</Text>
+                  <View className="flex-row justify-between mb-2">
                       {LEVELS.map(lvl => (
-                          <TouchableOpacity key={lvl} onPress={() => updateTeamLevel(lvl)} style={tw`w-12 h-12 rounded-xl items-center justify-center border ${teamData?.level === lvl ? 'bg-[#3182F6] border-[#3182F6]' : 'bg-white border-gray-200'}`}>
-                              <Text style={tw`font-bold text-lg ${teamData?.level === lvl ? 'text-white' : 'text-[#8B95A1]'}`}>{lvl}</Text>
+                          <TouchableOpacity key={lvl} onPress={() => updateTeamLevel(lvl)} className={`w-12 h-12 rounded-xl items-center justify-center border ${teamData?.level === lvl ? 'bg-[#3182F6] border-[#3182F6]' : 'bg-white border-gray-200'}`}>
+                              <Text className={`font-bold text-lg ${teamData?.level === lvl ? 'text-white' : 'text-[#8B95A1]'}`}>{lvl}</Text>
                           </TouchableOpacity>
                       ))}
                   </View>
-                  <TouchableOpacity onPress={() => setShowLevelModal(false)} style={tw`mt-4 py-2 items-center`}><Text style={tw`text-[#8B95A1] font-bold`}>취소</Text></TouchableOpacity>
+                  <TouchableOpacity onPress={() => setShowLevelModal(false)} className="mt-4 py-2 items-center"><Text className="text-[#8B95A1] font-bold">취소</Text></TouchableOpacity>
               </View>
           </View>
       </Modal>
 
       {/* 2. 신청자 관리 모달 */}
       <Modal visible={applicantModalVisible} animationType="slide" transparent={true}>
-        <View style={tw`flex-1 justify-end bg-black/50`}>
-            <View style={tw`bg-white rounded-t-3xl p-6 min-h-[50%]`}>
-                <Text style={tw`text-xl font-bold mb-4`}>신청 팀 목록</Text>
-                <FlatList data={applicantsData} keyExtractor={item => item.id} renderItem={({item}) => ( <View style={tw`flex-row justify-between items-center bg-[#F9FAFB] p-4 rounded-2xl mb-3`}> <View><Text style={tw`font-bold text-lg text-[#191F28]`}>{item.name}</Text><Text style={tw`text-sm text-[#8B95A1]`}>{item.affiliation} ({item.level}급)</Text></View> <TouchableOpacity onPress={() => acceptMatch(item.id)} style={tw`bg-[#3182F6] px-4 py-2 rounded-xl`}><Text style={tw`text-white font-bold`}>수락</Text></TouchableOpacity> </View> )} />
-                <TouchableOpacity onPress={() => setApplicantModalVisible(false)} style={tw`mt-4 bg-gray-200 p-4 rounded-xl items-center`}><Text style={tw`font-bold text-gray-600`}>닫기</Text></TouchableOpacity>
+        <View className="flex-1 justify-end bg-black/50">
+            <View className="bg-white rounded-t-3xl p-6 min-h-[50%]">
+                <Text className="text-xl font-bold mb-4">신청 팀 목록</Text>
+                <FlatList data={applicantsData} keyExtractor={item => item.id} renderItem={({item}) => ( <View className="flex-row justify-between items-center bg-[#F9FAFB] p-4 rounded-2xl mb-3"> <View><Text className="font-bold text-lg text-[#191F28]">{item.name}</Text><Text className="text-sm text-[#8B95A1]">{item.affiliation} ({item.level}급)</Text></View> <TouchableOpacity onPress={() => acceptMatch(item.id)} className="bg-[#3182F6] px-4 py-2 rounded-xl"><Text className="text-white font-bold">수락</Text></TouchableOpacity> </View> )} />
+                <TouchableOpacity onPress={() => setApplicantModalVisible(false)} className="mt-4 bg-gray-200 p-4 rounded-xl items-center"><Text className="font-bold text-gray-600">닫기</Text></TouchableOpacity>
             </View>
         </View>
       </Modal>
 
       {/* 3. 경기 결과 입력 모달 */}
       <Modal visible={resultModalVisible} animationType="fade" transparent={true}>
-        <View style={tw`flex-1 justify-center items-center bg-black/50 px-6`}>
-            <View style={tw`bg-white w-full rounded-3xl p-6`}>
-                <Text style={tw`${TYPOGRAPHY.h2} mb-2 text-center`}>경기 결과 입력</Text>
-                <Text style={tw`text-xs text-[#3182F6] font-bold mb-6 text-center`}>승리한 팀이 결과를 입력해주세요</Text>
-                <View style={tw`flex-row justify-between items-center mb-8`}>
-                    <View style={tw`items-center`}><Text style={tw`font-bold text-[#3182F6] mb-2`}>우리 팀 (승)</Text><TextInput style={tw`w-20 h-20 bg-gray-100 rounded-2xl text-center text-3xl font-bold`} keyboardType="number-pad" value={myScoreInput} onChangeText={setMyScoreInput} /></View>
-                    <Text style={tw`text-2xl font-bold text-gray-300`}>:</Text>
-                    <View style={tw`items-center`}><Text style={tw`font-bold text-gray-500 mb-2`}>상대 팀 (패)</Text><TextInput style={tw`w-20 h-20 bg-gray-100 rounded-2xl text-center text-3xl font-bold`} keyboardType="number-pad" value={opScoreInput} onChangeText={setOpScoreInput} /></View>
+        <View className="flex-1 justify-center items-center bg-black/50 px-6">
+            <View className="bg-white w-full rounded-3xl p-6">
+                <Text className={`${TYPOGRAPHY.h2} mb-2 text-center`}>경기 결과 입력</Text>
+                <Text className="text-xs text-[#3182F6] font-bold mb-6 text-center">승리한 팀이 결과를 입력해주세요</Text>
+                <View className="flex-row justify-between items-center mb-8">
+                    <View className="items-center"><Text className="font-bold text-[#3182F6] mb-2">우리 팀 (승)</Text><TextInput className="w-20 h-20 bg-gray-100 rounded-2xl text-center text-3xl font-bold" keyboardType="number-pad" value={myScoreInput} onChangeText={setMyScoreInput} /></View>
+                    <Text className="text-2xl font-bold text-gray-300">:</Text>
+                    <View className="items-center"><Text className="font-bold text-gray-500 mb-2">상대 팀 (패)</Text><TextInput className="w-20 h-20 bg-gray-100 rounded-2xl text-center text-3xl font-bold" keyboardType="number-pad" value={opScoreInput} onChangeText={setOpScoreInput} /></View>
                 </View>
-                <View style={tw`gap-3`}>
+                <View className="gap-3">
                     <Button label="입력 완료" onPress={handleSubmitResult} isLoading={isProcessing} />
                     <Button label="취소" variant="ghost" onPress={() => setResultModalVisible(false)} />
                 </View>
@@ -552,23 +551,23 @@ export default function LockerScreen() {
 
       {/* 4. 경기 상세 모달 (상대 연락처) */}
       <Modal visible={matchDetailModalVisible} transparent animationType="fade">
-          <View style={tw`flex-1 justify-center items-center bg-black/60 px-6`}>
-              <View style={tw`bg-white w-full rounded-2xl p-6`}>
-                  <Text style={tw`text-xl font-bold mb-4 text-[#191F28] text-center`}>경기 상세</Text>
-                  <View style={tw`mb-4 p-4 bg-[#F9FAFB] rounded-xl`}><Text style={tw`text-xs text-[#8B95A1] mb-1`}>상대 팀</Text><Text style={tw`text-lg font-bold text-[#3182F6]`}>{selectedMatchDetail?.opponentName}</Text></View>
-                  <View style={tw`mb-6 p-4 bg-[#F9FAFB] rounded-xl`}><Text style={tw`text-xs text-[#8B95A1] mb-1`}>대표 연락처</Text><Text style={tw`text-lg font-bold text-[#191F28]`}>{selectedMatchDetail?.opponentPhone}</Text></View>
-                  <View style={tw`mb-6`}><Text style={tw`text-xs text-[#8B95A1] mb-1 ml-1`}>장소</Text><Text style={tw`text-base font-medium text-[#333D4B] ml-1`}>{selectedMatchDetail?.match.loc}</Text></View>
-                  <TouchableOpacity onPress={() => setMatchDetailModalVisible(false)} style={tw`bg-[#3182F6] py-3 rounded-xl items-center`}><Text style={tw`text-white font-bold`}>확인</Text></TouchableOpacity>
+          <View className="flex-1 justify-center items-center bg-black/60 px-6">
+              <View className="bg-white w-full rounded-2xl p-6">
+                  <Text className="text-xl font-bold mb-4 text-[#191F28] text-center">경기 상세</Text>
+                  <View className="mb-4 p-4 bg-[#F9FAFB] rounded-xl"><Text className="text-xs text-[#8B95A1] mb-1">상대 팀</Text><Text className="text-lg font-bold text-[#3182F6]">{selectedMatchDetail?.opponentName}</Text></View>
+                  <View className="mb-6 p-4 bg-[#F9FAFB] rounded-xl"><Text className="text-xs text-[#8B95A1] mb-1">대표 연락처</Text><Text className="text-lg font-bold text-[#191F28]">{selectedMatchDetail?.opponentPhone}</Text></View>
+                  <View className="mb-6"><Text className="text-xs text-[#8B95A1] mb-1 ml-1">장소</Text><Text className="text-base font-medium text-[#333D4B] ml-1">{selectedMatchDetail?.match.loc}</Text></View>
+                  <TouchableOpacity onPress={() => setMatchDetailModalVisible(false)} className="bg-[#3182F6] py-3 rounded-xl items-center"><Text className="text-white font-bold">확인</Text></TouchableOpacity>
               </View>
           </View>
       </Modal>
 
       {/* 5. 팀 상세 정보 (전적 히스토리) */}
       <Modal visible={teamDetailModalVisible} animationType="slide" presentationStyle="pageSheet">
-          <View style={tw`flex-1 bg-white p-6 pt-10`}>
-              <View style={tw`flex-row justify-between items-center mb-8`}>
-                  <Text style={tw`text-2xl font-extrabold text-[#191F28]`}>팀 전적 기록</Text>
-                  <TouchableOpacity onPress={() => setTeamDetailModalVisible(false)} style={tw`bg-gray-100 p-2 rounded-full`}><FontAwesome5 name="times" size={20} color="#64748b" /></TouchableOpacity>
+          <View className="flex-1 bg-white p-6 pt-10">
+              <View className="flex-row justify-between items-center mb-8">
+                  <Text className="text-2xl font-extrabold text-[#191F28]">팀 전적 기록</Text>
+                  <TouchableOpacity onPress={() => setTeamDetailModalVisible(false)} className="bg-gray-100 p-2 rounded-full"><FontAwesome5 name="times" size={20} color="#64748b" /></TouchableOpacity>
               </View>
               <FlatList 
                 data={confirmedList.filter(m => m.status === 'finished')} 
@@ -579,13 +578,13 @@ export default function LockerScreen() {
                     const opScore = isHost ? item.result?.guestScore : item.result?.hostScore; 
                     const isWin = (myScore || 0) > (opScore || 0); 
                     return ( 
-                        <View style={tw`bg-white border border-gray-100 p-4 rounded-2xl mb-3 flex-row justify-between items-center shadow-sm`}> 
-                            <View><Text style={tw`font-bold text-[#333D4B]`}>{item.team}</Text><Text style={tw`text-xs text-[#8B95A1]`}>{item.time.split('T')[0]}</Text></View> 
-                            <View style={tw`flex-row items-center`}><Text style={tw`text-lg font-black ${isWin ? 'text-[#3182F6]' : 'text-[#8B95A1]'}`}>{myScore}</Text><Text style={tw`mx-2 text-gray-300 font-bold`}>:</Text><Text style={tw`text-lg font-black ${!isWin ? 'text-[#3182F6]' : 'text-[#8B95A1]'}`}>{opScore}</Text></View> 
+                        <View className="bg-white border border-gray-100 p-4 rounded-2xl mb-3 flex-row justify-between items-center shadow-sm"> 
+                            <View><Text className="font-bold text-[#333D4B]">{item.team}</Text><Text className="text-xs text-[#8B95A1]">{item.time.split('T')[0]}</Text></View> 
+                            <View className="flex-row items-center"><Text className={`text-lg font-black ${isWin ? 'text-[#3182F6]' : 'text-[#8B95A1]'}`}>{myScore}</Text><Text className="mx-2 text-gray-300 font-bold">:</Text><Text className={`text-lg font-black ${!isWin ? 'text-[#3182F6]' : 'text-[#8B95A1]'}`}>{opScore}</Text></View> 
                         </View> 
                     ); 
                 }} 
-                ListEmptyComponent={<Text style={tw`text-center text-[#8B95A1] mt-4`}>완료된 경기 기록이 없습니다.</Text>} 
+                ListEmptyComponent={<Text className="text-center text-[#8B95A1] mt-4">완료된 경기 기록이 없습니다.</Text>} 
               />
           </View>
       </Modal>

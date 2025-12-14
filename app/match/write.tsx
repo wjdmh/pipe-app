@@ -2,7 +2,7 @@ import React, { useState, useRef } from 'react';
 import { 
   View, 
   Text, 
-  TextInput as RNTextInput, 
+  TextInput, 
   TouchableOpacity, 
   Alert, 
   ActivityIndicator, 
@@ -20,7 +20,6 @@ import { auth, db } from '../../configs/firebaseConfig';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { FontAwesome5 } from '@expo/vector-icons';
-import tw from 'twrnc';
 
 // ⚠️ VirtualizedLists 경고 무시
 LogBox.ignoreLogs(['VirtualizedLists should never be nested']);
@@ -40,16 +39,15 @@ const SelectCard = ({ label, subLabel, icon, selected, onPress }: { label: strin
 
   return (
     <TouchableWithoutFeedback onPressIn={handlePressIn} onPressOut={handlePressOut}>
-      <Animated.View style={[
-        tw`flex-1 p-5 rounded-2xl border shadow-sm items-center justify-center h-36`,
-        { transform: [{ scale: scaleAnim }] },
-        selected ? tw`bg-indigo-50 border-[#4F46E5] shadow-indigo-100` : tw`bg-white border-gray-100`
-      ]}>
-        <View style={tw`w-12 h-12 rounded-full items-center justify-center mb-3 ${selected ? 'bg-[#4F46E5]' : 'bg-gray-50'}`}>
+      <Animated.View 
+        className={`flex-1 p-5 rounded-2xl border shadow-sm items-center justify-center h-36 ${selected ? 'bg-indigo-50 border-[#4F46E5] shadow-indigo-100' : 'bg-white border-gray-100'}`}
+        style={{ transform: [{ scale: scaleAnim }] }}
+      >
+        <View className={`w-12 h-12 rounded-full items-center justify-center mb-3 ${selected ? 'bg-[#4F46E5]' : 'bg-gray-50'}`}>
             <FontAwesome5 name={icon} size={20} color={selected ? 'white' : '#9CA3AF'} />
         </View>
-        <Text style={tw`text-base font-bold ${selected ? 'text-[#4F46E5]' : 'text-gray-800'}`}>{label}</Text>
-        {subLabel && <Text style={tw`text-[10px] mt-1 ${selected ? 'text-indigo-400' : 'text-gray-400'}`}>{subLabel}</Text>}
+        <Text className={`text-base font-bold ${selected ? 'text-[#4F46E5]' : 'text-gray-800'}`}>{label}</Text>
+        {subLabel && <Text className={`text-[10px] mt-1 ${selected ? 'text-indigo-400' : 'text-gray-400'}`}>{subLabel}</Text>}
       </Animated.View>
     </TouchableWithoutFeedback>
   );
@@ -158,28 +156,28 @@ export default function WriteMatchScreen() {
   };
 
   return (
-    <SafeAreaView style={tw`flex-1 bg-[#F9FAFB]`} edges={['bottom']}>
+    <SafeAreaView className="flex-1 bg-[#F9FAFB]" edges={['bottom']}>
       {/* [Fix] 커스텀 헤더 제거: Stack Navigation 헤더 사용으로 중복 방지 */}
       
       <KeyboardAvoidingView 
         behavior={Platform.OS === "ios" ? "padding" : undefined}
-        style={tw`flex-1`}
+        className="flex-1"
       >
         <ScrollView 
-            contentContainerStyle={tw`p-6 pb-40`} 
+            contentContainerClassName="p-6 pb-40"
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps='handled'
         >
             {/* Title Section */}
-            <View style={tw`mb-8`}>
-                <Text style={tw`text-2xl font-extrabold text-gray-900 mb-2`}>새로운 매칭 만들기</Text>
-                <Text style={tw`text-gray-500 text-sm`}>팀원들과 함께할 즐거운 경기를 만들어보세요.</Text>
+            <View className="mb-8">
+                <Text className="text-2xl font-extrabold text-gray-900 mb-2">새로운 매칭 만들기</Text>
+                <Text className="text-gray-500 text-sm">팀원들과 함께할 즐거운 경기를 만들어보세요.</Text>
             </View>
 
             {/* 1. 경기 방식 */}
-            <View style={tw`mb-6`}>
-                <Text style={tw`text-sm font-bold text-gray-600 mb-3 ml-1`}>경기 방식</Text>
-                <View style={tw`flex-row gap-3`}>
+            <View className="mb-6">
+                <Text className="text-sm font-bold text-gray-600 mb-3 ml-1">경기 방식</Text>
+                <View className="flex-row gap-3">
                     <SelectCard 
                         label="6인제" subLabel="정규 룰" icon="volleyball-ball" 
                         selected={type === '6man'} onPress={() => setType('6man')} 
@@ -192,19 +190,19 @@ export default function WriteMatchScreen() {
             </View>
 
             {/* 2. 성별 */}
-            <View style={tw`mb-6`}>
-                <Text style={tw`text-sm font-bold text-gray-600 mb-3 ml-1`}>성별</Text>
-                <View style={tw`gap-3`}>
-                    <TouchableOpacity onPress={() => setGender('mixed')} activeOpacity={0.8} style={tw`w-full p-4 rounded-2xl border flex-row items-center shadow-sm ${gender === 'mixed' ? 'bg-indigo-50 border-[#4F46E5]' : 'bg-white border-gray-100'}`}>
-                        <View style={tw`w-10 h-10 rounded-full items-center justify-center mr-4 ${gender === 'mixed' ? 'bg-[#4F46E5]' : 'bg-gray-50'}`}>
+            <View className="mb-6">
+                <Text className="text-sm font-bold text-gray-600 mb-3 ml-1">성별</Text>
+                <View className="gap-3">
+                    <TouchableOpacity onPress={() => setGender('mixed')} activeOpacity={0.8} className={`w-full p-4 rounded-2xl border flex-row items-center shadow-sm ${gender === 'mixed' ? 'bg-indigo-50 border-[#4F46E5]' : 'bg-white border-gray-100'}`}>
+                        <View className={`w-10 h-10 rounded-full items-center justify-center mr-4 ${gender === 'mixed' ? 'bg-[#4F46E5]' : 'bg-gray-50'}`}>
                             <FontAwesome5 name="restroom" size={16} color={gender === 'mixed' ? 'white' : '#9CA3AF'} />
                         </View>
                         <View>
-                            <Text style={tw`text-base font-bold ${gender === 'mixed' ? 'text-[#4F46E5]' : 'text-gray-800'}`}>혼성</Text>
-                            <Text style={tw`text-xs ${gender === 'mixed' ? 'text-indigo-400' : 'text-gray-400'}`}>남녀 혼합 경기</Text>
+                            <Text className={`text-base font-bold ${gender === 'mixed' ? 'text-[#4F46E5]' : 'text-gray-800'}`}>혼성</Text>
+                            <Text className={`text-xs ${gender === 'mixed' ? 'text-indigo-400' : 'text-gray-400'}`}>남녀 혼합 경기</Text>
                         </View>
                     </TouchableOpacity>
-                    <View style={tw`flex-row gap-3`}>
+                    <View className="flex-row gap-3">
                         <SelectCard label="남자부" icon="male" selected={gender === 'male'} onPress={() => setGender('male')} />
                         <SelectCard label="여자부" icon="female" selected={gender === 'female'} onPress={() => setGender('female')} />
                     </View>
@@ -212,10 +210,10 @@ export default function WriteMatchScreen() {
             </View>
 
             {/* 3. 일시 */}
-            <View style={tw`mb-6`}>
-                <Text style={tw`text-sm font-bold text-gray-600 mb-3 ml-1`}>일시</Text>
+            <View className="mb-6">
+                <Text className="text-sm font-bold text-gray-600 mb-3 ml-1">일시</Text>
                 {Platform.OS === 'web' ? (
-                    <View style={tw`bg-white p-4 rounded-2xl border border-gray-200`}>
+                    <View className="bg-white p-4 rounded-2xl border border-gray-200">
                         {React.createElement('input', {
                             type: 'datetime-local',
                             value: toLocalISOString(date),
@@ -227,10 +225,10 @@ export default function WriteMatchScreen() {
                         })}
                     </View>
                 ) : (
-                    <TouchableOpacity onPress={() => { setTempDate(date); setShowDateModal(true); }} activeOpacity={0.8} style={tw`bg-white p-5 rounded-2xl border border-gray-200 flex-row justify-between items-center shadow-sm`}>
+                    <TouchableOpacity onPress={() => { setTempDate(date); setShowDateModal(true); }} activeOpacity={0.8} className="bg-white p-5 rounded-2xl border border-gray-200 flex-row justify-between items-center shadow-sm">
                         <View>
-                            <Text style={tw`text-xs font-bold text-gray-400 mb-1`}>선택된 시간</Text>
-                            <Text style={tw`text-lg font-bold text-[#191F28]`}>{formatDateKr(date)} {formatTimeKr(date)}</Text>
+                            <Text className="text-xs font-bold text-gray-400 mb-1">선택된 시간</Text>
+                            <Text className="text-lg font-bold text-[#191F28]">{formatDateKr(date)} {formatTimeKr(date)}</Text>
                         </View>
                         <FontAwesome5 name="calendar-alt" size={20} color="#4F46E5" />
                     </TouchableOpacity>
@@ -238,11 +236,11 @@ export default function WriteMatchScreen() {
             </View>
 
             {/* 4. 장소 */}
-            <View style={tw`mb-6`}>
-                <Text style={tw`text-sm font-bold text-gray-600 mb-3 ml-1`}>장소</Text>
-                <View style={tw`bg-white rounded-2xl border border-gray-200 shadow-sm`}>
-                    <RNTextInput
-                        style={tw`p-4 text-base text-gray-800 h-14`}
+            <View className="mb-6">
+                <Text className="text-sm font-bold text-gray-600 mb-3 ml-1">장소</Text>
+                <View className="bg-white rounded-2xl border border-gray-200 shadow-sm">
+                    <TextInput
+                        className="p-4 text-base text-gray-800 h-14"
                         placeholder="체육관 이름 또는 주소 입력"
                         placeholderTextColor="#9CA3AF"
                         value={place}
@@ -252,11 +250,11 @@ export default function WriteMatchScreen() {
             </View>
 
             {/* 5. 안내 사항 */}
-            <View style={tw`mb-10`}>
-                <Text style={tw`text-sm font-bold text-gray-600 mb-3 ml-1`}>안내 사항 (선택)</Text>
-                <View style={tw`bg-white rounded-2xl border border-gray-200 shadow-sm`}>
-                    <RNTextInput
-                        style={tw`p-4 text-base text-gray-800 min-h-[120px]`}
+            <View className="mb-10">
+                <Text className="text-sm font-bold text-gray-600 mb-3 ml-1">안내 사항 (선택)</Text>
+                <View className="bg-white rounded-2xl border border-gray-200 shadow-sm">
+                    <TextInput
+                        className="p-4 text-base text-gray-800 min-h-[120px]"
                         placeholder="주차 정보, 참가비, 팀 실력 등 상세 정보를 적어주세요."
                         placeholderTextColor="#9CA3AF"
                         multiline
@@ -271,9 +269,9 @@ export default function WriteMatchScreen() {
             <TouchableOpacity 
                 onPress={handleSubmit} 
                 disabled={loading} 
-                style={tw`w-full bg-[#4F46E5] py-4 rounded-2xl items-center shadow-lg shadow-indigo-200 active:scale-95`}
+                className="w-full bg-[#4F46E5] py-4 rounded-2xl items-center shadow-lg shadow-indigo-200 active:scale-95"
             >
-                {loading ? <ActivityIndicator color="white" /> : <Text style={tw`text-white font-bold text-lg`}>매칭 등록하기</Text>}
+                {loading ? <ActivityIndicator color="white" /> : <Text className="text-white font-bold text-lg">매칭 등록하기</Text>}
             </TouchableOpacity>
 
         </ScrollView>
@@ -282,17 +280,17 @@ export default function WriteMatchScreen() {
       {/* Date Picker Modal (Mobile Only) */}
       {Platform.OS !== 'web' && (
         <Modal visible={showDateModal} transparent animationType="fade">
-            <View style={tw`flex-1 justify-end bg-black/60`}>
-                <View style={tw`bg-white rounded-t-3xl p-6 pb-10 shadow-2xl`}>
-                    <View style={tw`flex-row justify-between items-center mb-6 px-2`}>
-                        <Text style={tw`text-xl font-bold text-[#191F28]`}>시간 선택</Text>
-                        <TouchableOpacity onPress={() => setShowDateModal(false)} style={tw`bg-gray-100 px-4 py-2 rounded-full`}>
-                            <Text style={tw`text-gray-500 font-bold text-xs`}>취소</Text>
+            <View className="flex-1 justify-end bg-black/60">
+                <View className="bg-white rounded-t-3xl p-6 pb-10 shadow-2xl">
+                    <View className="flex-row justify-between items-center mb-6 px-2">
+                        <Text className="text-xl font-bold text-[#191F28]">시간 선택</Text>
+                        <TouchableOpacity onPress={() => setShowDateModal(false)} className="bg-gray-100 px-4 py-2 rounded-full">
+                            <Text className="text-gray-500 font-bold text-xs">취소</Text>
                         </TouchableOpacity>
                     </View>
-                    <DateTimePicker value={tempDate} mode="datetime" display="spinner" onChange={handleDateChange} textColor="#111827" locale="ko-KR" minimumDate={new Date()} style={tw`h-48`} />
-                    <TouchableOpacity onPress={() => { setDate(tempDate); setShowDateModal(false); }} style={tw`mt-6 bg-[#4F46E5] py-4 rounded-2xl items-center shadow-lg shadow-indigo-200`}>
-                        <Text style={tw`text-white font-bold text-lg`}>확인</Text>
+                    <DateTimePicker value={tempDate} mode="datetime" display="spinner" onChange={handleDateChange} textColor="#111827" locale="ko-KR" minimumDate={new Date()} className="h-48" />
+                    <TouchableOpacity onPress={() => { setDate(tempDate); setShowDateModal(false); }} className="mt-6 bg-[#4F46E5] py-4 rounded-2xl items-center shadow-lg shadow-indigo-200">
+                        <Text className="text-white font-bold text-lg">확인</Text>
                     </TouchableOpacity>
                 </View>
             </View>

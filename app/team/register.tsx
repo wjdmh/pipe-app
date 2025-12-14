@@ -5,7 +5,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { collection, query, getDocs, doc, getDoc, runTransaction, serverTimestamp } from 'firebase/firestore';
 import { db, auth } from '../../configs/firebaseConfig';
-import tw from 'twrnc';
 import { KUSF_TEAMS } from '../home/ranking';
 
 const REGIONS = ["서울", "경기", "인천", "강원", "충북", "충남", "대전", "세종", "전북", "전남", "광주", "경북", "경남", "대구", "울산", "부산", "제주"];
@@ -228,12 +227,12 @@ export default function TeamRegister() {
   };
 
   return (
-    <SafeAreaView style={tw`flex-1 bg-white`}>
-      <View style={tw`px-5 py-3 border-b border-gray-100 flex-row items-center`}>
-        <TouchableOpacity onPress={() => router.back()} style={tw`p-2 -ml-2`}>
+    <SafeAreaView className="flex-1 bg-white">
+      <View className="px-5 py-3 border-b border-gray-100 flex-row items-center">
+        <TouchableOpacity onPress={() => router.back()} className="p-2 -ml-2">
           <FontAwesome5 name="arrow-left" size={20} color="#191F28" />
         </TouchableOpacity>
-        <Text style={tw`text-xl font-bold ml-2 text-[#191F28]`}>
+        <Text className="text-xl font-bold ml-2 text-[#191F28]">
            {step === 'SEARCH' ? '팀 찾기' : step === 'VERIFY' ? '학교 인증' : '팀 정보 입력'}
         </Text>
       </View>
@@ -241,42 +240,42 @@ export default function TeamRegister() {
       {/* [Web Fix] KeyboardAvoidingView 추가: 웹 브라우저 호환성 확보 */}
       <KeyboardAvoidingView 
         behavior={Platform.OS === "ios" ? "padding" : undefined}
-        style={tw`flex-1`}
+        className="flex-1"
       >
         {/* SEARCH VIEW */}
         {step === 'SEARCH' && (
-            <View style={tw`flex-1`}>
-                <View style={tw`px-5 pt-4`}>
-                    <Text style={tw`text-2xl font-bold text-[#191F28] mb-1`}>소속 팀을 선택하세요</Text>
-                    <Text style={tw`text-gray-500 mb-4`}>활동하려는 팀을 검색하거나 새로 만들어보세요.</Text>
+            <View className="flex-1">
+                <View className="px-5 pt-4">
+                    <Text className="text-2xl font-bold text-[#191F28] mb-1">소속 팀을 선택하세요</Text>
+                    <Text className="text-gray-500 mb-4">활동하려는 팀을 검색하거나 새로 만들어보세요.</Text>
                     
-                    <View style={tw`flex-row bg-gray-100 p-1 rounded-xl mb-4`}>
-                        <TouchableOpacity onPress={() => setSelectedGender('male')} style={tw`flex-1 py-2 rounded-lg items-center ${selectedGender === 'male' ? 'bg-white shadow-sm' : ''}`}><Text style={tw`font-bold ${selectedGender === 'male' ? 'text-[#3182F6]' : 'text-gray-400'}`}>남자부</Text></TouchableOpacity>
-                        <TouchableOpacity onPress={() => setSelectedGender('female')} style={tw`flex-1 py-2 rounded-lg items-center ${selectedGender === 'female' ? 'bg-white shadow-sm' : ''}`}><Text style={tw`font-bold ${selectedGender === 'female' ? 'text-[#FF6B6B]' : 'text-gray-400'}`}>여자부</Text></TouchableOpacity>
+                    <View className="flex-row bg-gray-100 p-1 rounded-xl mb-4">
+                        <TouchableOpacity onPress={() => setSelectedGender('male')} className={`flex-1 py-2 rounded-lg items-center ${selectedGender === 'male' ? 'bg-white shadow-sm' : ''}`}><Text className={`font-bold ${selectedGender === 'male' ? 'text-[#3182F6]' : 'text-gray-400'}`}>남자부</Text></TouchableOpacity>
+                        <TouchableOpacity onPress={() => setSelectedGender('female')} className={`flex-1 py-2 rounded-lg items-center ${selectedGender === 'female' ? 'bg-white shadow-sm' : ''}`}><Text className={`font-bold ${selectedGender === 'female' ? 'text-[#FF6B6B]' : 'text-gray-400'}`}>여자부</Text></TouchableOpacity>
                     </View>
 
-                    <TextInput style={tw`bg-gray-50 p-3 rounded-xl border border-gray-200 mb-4`} placeholder="학교명 또는 팀 이름 검색" value={searchQuery} onChangeText={setSearchQuery} />
+                    <TextInput className="bg-gray-50 p-3 rounded-xl border border-gray-200 mb-4" placeholder="학교명 또는 팀 이름 검색" value={searchQuery} onChangeText={setSearchQuery} />
                 </View>
 
                 <FlatList
                     data={filteredTeams}
                     keyExtractor={i => i.id}
-                    contentContainerStyle={tw`px-5 pb-32`}
+                    contentContainerClassName="px-5 pb-32"
                     keyboardShouldPersistTaps="handled"
                     renderItem={({item}) => {
                         const existing = registeredTeamsMap[item.id];
                         const isActive = existing && !existing.isDeleted && existing.captainId;
                         return (
-                            <TouchableOpacity onPress={() => onSelectExistingTeam(item)} style={tw`p-4 mb-3 rounded-xl border ${isActive ? 'bg-blue-50 border-blue-200' : 'bg-white border-gray-200'} shadow-sm`}>
-                                <View style={tw`flex-row justify-between items-center`}>
+                            <TouchableOpacity onPress={() => onSelectExistingTeam(item)} className={`p-4 mb-3 rounded-xl border ${isActive ? 'bg-blue-50 border-blue-200' : 'bg-white border-gray-200'} shadow-sm`}>
+                                <View className="flex-row justify-between items-center">
                                     <View>
-                                        <Text style={tw`font-bold text-lg text-[#191F28]`}>{item.name}</Text>
-                                        <Text style={tw`text-gray-500`}>{item.affiliation}</Text>
+                                        <Text className="font-bold text-lg text-[#191F28]">{item.name}</Text>
+                                        <Text className="text-gray-500">{item.affiliation}</Text>
                                     </View>
                                     {isActive ? (
-                                        <View style={tw`bg-blue-100 px-2 py-1 rounded`}><Text style={tw`text-xs font-bold text-blue-600`}>가입신청 가능</Text></View>
+                                        <View className="bg-blue-100 px-2 py-1 rounded"><Text className="text-xs font-bold text-blue-600">가입신청 가능</Text></View>
                                     ) : (
-                                        <Text style={tw`text-xs text-green-600 font-bold`}>이어받기 가능</Text>
+                                        <Text className="text-xs text-green-600 font-bold">이어받기 가능</Text>
                                     )}
                                 </View>
                             </TouchableOpacity>
@@ -284,9 +283,9 @@ export default function TeamRegister() {
                     }}
                 />
                 
-                <View style={tw`absolute bottom-0 w-full p-5 bg-white border-t border-gray-100`}>
-                    <TouchableOpacity onPress={() => { setTargetTeam(null); setTeamName(''); setIsReclaiming(false); setStep('INFO_FORM'); }} style={tw`bg-[#191F28] py-4 rounded-xl items-center shadow-lg`}>
-                        <Text style={tw`text-white font-bold text-lg`}>찾는 팀이 없나요? 새로운 팀 생성</Text>
+                <View className="absolute bottom-0 w-full p-5 bg-white border-t border-gray-100">
+                    <TouchableOpacity onPress={() => { setTargetTeam(null); setTeamName(''); setIsReclaiming(false); setStep('INFO_FORM'); }} className="bg-[#191F28] py-4 rounded-xl items-center shadow-lg">
+                        <Text className="text-white font-bold text-lg">찾는 팀이 없나요? 새로운 팀 생성</Text>
                     </TouchableOpacity>
                 </View>
             </View>
@@ -294,17 +293,17 @@ export default function TeamRegister() {
 
         {/* VERIFY FORM */}
         {step === 'VERIFY' && targetTeam && (
-            <ScrollView contentContainerStyle={tw`p-5`} keyboardShouldPersistTaps="handled">
-                <Text style={tw`text-2xl font-bold mb-2`}>학교 인증</Text>
-                <Text style={tw`text-gray-500 mb-6`}>{targetTeam.affiliation} 메일로 인증해주세요.</Text>
-                <View style={tw`flex-row mb-4`}>
-                    <TextInput style={tw`flex-1 bg-gray-50 p-4 rounded-xl border border-gray-200`} placeholder="example@univ.ac.kr" value={email} onChangeText={setEmail} autoCapitalize="none"/>
-                    <TouchableOpacity onPress={sendVerificationCode} style={tw`bg-blue-500 justify-center px-4 ml-2 rounded-xl`}><Text style={tw`text-white font-bold`}>전송</Text></TouchableOpacity>
+            <ScrollView contentContainerClassName="p-5" keyboardShouldPersistTaps="handled">
+                <Text className="text-2xl font-bold mb-2">학교 인증</Text>
+                <Text className="text-gray-500 mb-6">{targetTeam.affiliation} 메일로 인증해주세요.</Text>
+                <View className="flex-row mb-4">
+                    <TextInput className="flex-1 bg-gray-50 p-4 rounded-xl border border-gray-200" placeholder="example@univ.ac.kr" value={email} onChangeText={setEmail} autoCapitalize="none"/>
+                    <TouchableOpacity onPress={sendVerificationCode} className="bg-blue-500 justify-center px-4 ml-2 rounded-xl"><Text className="text-white font-bold">전송</Text></TouchableOpacity>
                 </View>
                 {isCodeSent && (
                     <>
-                        <TextInput style={tw`bg-gray-50 p-4 rounded-xl border border-gray-200 mb-6`} placeholder="인증코드 6자리" value={inputCode} onChangeText={setInputCode} keyboardType="number-pad"/>
-                        <TouchableOpacity onPress={verifyAndGoToInfo} style={tw`bg-[#191F28] p-4 rounded-xl items-center`}><Text style={tw`text-white font-bold text-lg`}>확인</Text></TouchableOpacity>
+                        <TextInput className="bg-gray-50 p-4 rounded-xl border border-gray-200 mb-6" placeholder="인증코드 6자리" value={inputCode} onChangeText={setInputCode} keyboardType="number-pad"/>
+                        <TouchableOpacity onPress={verifyAndGoToInfo} className="bg-[#191F28] p-4 rounded-xl items-center"><Text className="text-white font-bold text-lg">확인</Text></TouchableOpacity>
                     </>
                 )}
             </ScrollView>
@@ -312,34 +311,34 @@ export default function TeamRegister() {
 
         {/* INFO FORM */}
         {step === 'INFO_FORM' && (
-            <ScrollView contentContainerStyle={tw`p-5`} keyboardShouldPersistTaps="handled">
-                <Text style={tw`text-2xl font-bold mb-1`}>팀 정보 입력</Text>
-                <Text style={tw`text-gray-500 mb-6`}>상세 정보를 입력해주세요.</Text>
+            <ScrollView contentContainerClassName="p-5" keyboardShouldPersistTaps="handled">
+                <Text className="text-2xl font-bold mb-1">팀 정보 입력</Text>
+                <Text className="text-gray-500 mb-6">상세 정보를 입력해주세요.</Text>
 
-                <Text style={tw`font-bold text-gray-500 mb-1 ml-1`}>팀 이름</Text>
-                <TextInput style={tw`bg-gray-50 p-4 rounded-xl mb-4 border border-gray-200`} placeholder="팀 이름" value={teamName} onChangeText={setTeamName} editable={!targetTeam}/>
+                <Text className="font-bold text-gray-500 mb-1 ml-1">팀 이름</Text>
+                <TextInput className="bg-gray-50 p-4 rounded-xl mb-4 border border-gray-200" placeholder="팀 이름" value={teamName} onChangeText={setTeamName} editable={!targetTeam}/>
 
-                <Text style={tw`font-bold text-gray-500 mb-1 ml-1`}>활동 지역</Text>
-                <TouchableOpacity onPress={() => setShowRegionModal(true)} style={tw`bg-gray-50 p-4 rounded-xl mb-4 border border-gray-200`}><Text>{selectedRegion || '지역 선택'}</Text></TouchableOpacity>
+                <Text className="font-bold text-gray-500 mb-1 ml-1">활동 지역</Text>
+                <TouchableOpacity onPress={() => setShowRegionModal(true)} className="bg-gray-50 p-4 rounded-xl mb-4 border border-gray-200"><Text>{selectedRegion || '지역 선택'}</Text></TouchableOpacity>
 
-                <Text style={tw`font-bold text-gray-500 mb-1 ml-1`}>팀 소개 (선택)</Text>
-                <TextInput style={tw`bg-gray-50 p-4 rounded-xl mb-8 border border-gray-200 h-24`} multiline placeholder="팀 소개를 입력하세요." value={description} onChangeText={setDescription}/>
+                <Text className="font-bold text-gray-500 mb-1 ml-1">팀 소개 (선택)</Text>
+                <TextInput className="bg-gray-50 p-4 rounded-xl mb-8 border border-gray-200 h-24" multiline placeholder="팀 소개를 입력하세요." value={description} onChangeText={setDescription}/>
 
-                <TouchableOpacity onPress={submitTeam} style={tw`bg-blue-600 p-4 rounded-xl items-center mb-10`}><Text style={tw`text-white font-bold text-lg`}>완료</Text></TouchableOpacity>
+                <TouchableOpacity onPress={submitTeam} className="bg-blue-600 p-4 rounded-xl items-center mb-10"><Text className="text-white font-bold text-lg">완료</Text></TouchableOpacity>
                 
                 <Modal visible={showRegionModal} transparent animationType="fade">
-                    <View style={tw`flex-1 bg-black/50 justify-center p-5`}>
-                        <View style={tw`bg-white rounded-xl h-2/3 p-4`}>
-                            <Text style={tw`text-lg font-bold mb-4 text-center`}>지역 선택</Text>
+                    <View className="flex-1 bg-black/50 justify-center p-5">
+                        <View className="bg-white rounded-xl h-2/3 p-4">
+                            <Text className="text-lg font-bold mb-4 text-center">지역 선택</Text>
                             <ScrollView>
                                 {REGIONS.map(r => (
-                                    <TouchableOpacity key={r} onPress={() => { setSelectedRegion(r); setShowRegionModal(false) }} style={tw`p-4 border-b border-gray-100 items-center active:bg-gray-50`}>
-                                        <Text style={tw`text-base text-gray-800`}>{r}</Text>
+                                    <TouchableOpacity key={r} onPress={() => { setSelectedRegion(r); setShowRegionModal(false) }} className="p-4 border-b border-gray-100 items-center active:bg-gray-50">
+                                        <Text className="text-base text-gray-800">{r}</Text>
                                     </TouchableOpacity>
                                 ))}
                             </ScrollView>
-                            <TouchableOpacity onPress={() => setShowRegionModal(false)} style={tw`mt-4 p-3 bg-gray-100 rounded-lg items-center`}>
-                                <Text style={tw`text-gray-600 font-bold`}>닫기</Text>
+                            <TouchableOpacity onPress={() => setShowRegionModal(false)} className="mt-4 p-3 bg-gray-100 rounded-lg items-center">
+                                <Text className="text-gray-600 font-bold">닫기</Text>
                             </TouchableOpacity>
                         </View>
                     </View>

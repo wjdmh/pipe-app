@@ -6,7 +6,6 @@ import { FontAwesome5 } from '@expo/vector-icons';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../configs/firebaseConfig';
 import { useGuest, GuestPost } from '../../hooks/useGuest';
-import tw from 'twrnc';
 
 type UserProfile = {
     uid: string;
@@ -93,51 +92,51 @@ export default function GuestApplicantsScreen() {
         else Alert.alert('알림', '전화번호 정보가 없습니다.');
     };
 
-    if (loading) return <View style={tw`flex-1 justify-center items-center`}><ActivityIndicator color="#4f46e5"/></View>;
+    if (loading) return <View className="flex-1 justify-center items-center"><ActivityIndicator color="#4f46e5"/></View>;
 
     return (
-        <SafeAreaView style={tw`flex-1 bg-white`}>
-            <View style={tw`px-5 py-4 border-b border-gray-100 flex-row items-center`}>
+        <SafeAreaView className="flex-1 bg-white">
+            <View className="px-5 py-4 border-b border-gray-100 flex-row items-center">
                 <TouchableOpacity onPress={() => router.back()}><FontAwesome5 name="arrow-left" size={20} color="#191F28" /></TouchableOpacity>
-                <Text style={tw`text-lg font-bold ml-4 text-gray-900`}>신청자 관리</Text>
+                <Text className="text-lg font-bold ml-4 text-gray-900">신청자 관리</Text>
             </View>
 
-            <View style={tw`p-5 border-b border-gray-100 bg-gray-50`}>
-                <Text style={tw`text-gray-500 text-xs mb-1`}>모집 정보</Text>
-                <Text style={tw`text-lg font-bold text-gray-900`}>{post?.matchDate.split('T')[0]} / {post?.location}</Text>
-                <Text style={tw`text-indigo-600 font-bold text-sm`}>현재 지원자: {applicants.length}명</Text>
+            <View className="p-5 border-b border-gray-100 bg-gray-50">
+                <Text className="text-gray-500 text-xs mb-1">모집 정보</Text>
+                <Text className="text-lg font-bold text-gray-900">{post?.matchDate.split('T')[0]} / {post?.location}</Text>
+                <Text className="text-indigo-600 font-bold text-sm">현재 지원자: {applicants.length}명</Text>
             </View>
 
             <FlatList 
                 data={applicants}
                 keyExtractor={item => item.uid}
-                contentContainerStyle={tw`p-5`}
-                ListEmptyComponent={<Text style={tw`text-center text-gray-400 mt-10`}>아직 신청자가 없습니다.</Text>}
+                contentContainerClassName="p-5"
+                ListEmptyComponent={<Text className="text-center text-gray-400 mt-10">아직 신청자가 없습니다.</Text>}
                 renderItem={({ item }) => (
-                    <View style={tw`bg-white p-4 rounded-xl border border-gray-200 mb-3 flex-row justify-between items-center shadow-sm`}>
+                    <View className="bg-white p-4 rounded-xl border border-gray-200 mb-3 flex-row justify-between items-center shadow-sm">
                         <View>
-                            <View style={tw`flex-row items-center mb-1`}>
-                                <Text style={tw`text-lg font-bold text-gray-900 mr-2`}>{item.name}</Text>
-                                <View style={tw`bg-gray-100 px-2 py-0.5 rounded`}>
-                                    <Text style={tw`text-xs text-gray-600 font-bold`}>{item.position}</Text>
+                            <View className="flex-row items-center mb-1">
+                                <Text className="text-lg font-bold text-gray-900 mr-2">{item.name}</Text>
+                                <View className="bg-gray-100 px-2 py-0.5 rounded">
+                                    <Text className="text-xs text-gray-600 font-bold">{item.position}</Text>
                                 </View>
                             </View>
-                            <Text style={tw`text-gray-500 text-sm`}>{item.phone || '연락처 비공개'}</Text>
+                            <Text className="text-gray-500 text-sm">{item.phone || '연락처 비공개'}</Text>
                         </View>
                         
-                        <View style={tw`flex-row gap-2`}>
+                        <View className="flex-row gap-2">
                             <TouchableOpacity 
                                 onPress={() => handleCall(item.phone)}
-                                style={tw`w-10 h-10 bg-green-50 rounded-full items-center justify-center border border-green-100`}
+                                className="w-10 h-10 bg-green-50 rounded-full items-center justify-center border border-green-100"
                             >
                                 <FontAwesome5 name="phone-alt" size={16} color="#16a34a" />
                             </TouchableOpacity>
                             <TouchableOpacity 
                                 onPress={() => handleAccept(item)}
                                 disabled={processing}
-                                style={tw`px-4 h-10 bg-indigo-600 rounded-xl items-center justify-center shadow-sm`}
+                                className="px-4 h-10 bg-indigo-600 rounded-xl items-center justify-center shadow-sm"
                             >
-                                <Text style={tw`text-white font-bold text-sm`}>수락</Text>
+                                <Text className="text-white font-bold text-sm">수락</Text>
                             </TouchableOpacity>
                         </View>
                     </View>

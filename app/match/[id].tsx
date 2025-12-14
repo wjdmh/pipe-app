@@ -5,7 +5,6 @@ import { doc, getDoc, updateDoc, arrayUnion, arrayRemove, addDoc, collection } f
 import { auth, db } from '../../configs/firebaseConfig';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import tw from 'twrnc';
 import { sendPushNotification } from '../../utils/notificationHelper';
 
 const COLORS = {
@@ -180,87 +179,87 @@ export default function MatchDetailScreen() {
       return timeStr;
   };
 
-  if (loading) return <View style={tw`flex-1 justify-center items-center bg-[${COLORS.bg}]`}><ActivityIndicator /></View>;
-  if (!match) return <View style={tw`flex-1 justify-center items-center`}><Text>정보 없음</Text></View>;
+  if (loading) return <View className="flex-1 justify-center items-center bg-[#F2F4F6]"><ActivityIndicator /></View>;
+  if (!match) return <View className="flex-1 justify-center items-center"><Text>정보 없음</Text></View>;
 
   const isMyPost = userTeamId === match.hostId;
   const isApplied = userTeamId && match.applicants?.includes(userTeamId);
 
   return (
-    <SafeAreaView style={tw`flex-1 bg-[${COLORS.bg}]`} edges={['top']}>
+    <SafeAreaView className="flex-1 bg-[#F2F4F6]" edges={['top']}>
       <StatusBar barStyle="dark-content" />
-      <View style={tw`px-5 py-3 flex-row items-center justify-between bg-[${COLORS.bg}]`}>
-        <TouchableOpacity onPress={() => router.back()} style={tw`p-2 -ml-2 rounded-full`}>
+      <View className="px-5 py-3 flex-row items-center justify-between bg-[#F2F4F6]">
+        <TouchableOpacity onPress={() => router.back()} className="p-2 -ml-2 rounded-full">
             <FontAwesome5 name="arrow-left" size={20} color={COLORS.textMain} />
         </TouchableOpacity>
-        <Text style={tw`text-lg font-bold text-[${COLORS.textMain}]`}>매칭 상세</Text>
-        <View style={tw`w-8`} />
+        <Text className="text-lg font-bold text-[#191F28]">매칭 상세</Text>
+        <View className="w-8" />
       </View>
 
-      <ScrollView contentContainerStyle={tw`px-5 pt-2 pb-32`}>
-        <View style={tw`bg-white p-6 rounded-[24px] shadow-sm mb-4`}>
-            <View style={tw`flex-row gap-2 mb-4`}>
-                <View style={tw`bg-blue-50 px-2.5 py-1.5 rounded-lg`}>
-                    <Text style={tw`text-blue-600 text-xs font-bold`}>{match.type === '9man' ? '9인제' : '6인제'}</Text>
+      <ScrollView contentContainerClassName="px-5 pt-2 pb-32">
+        <View className="bg-white p-6 rounded-[24px] shadow-sm mb-4">
+            <View className="flex-row gap-2 mb-4">
+                <View className="bg-blue-50 px-2.5 py-1.5 rounded-lg">
+                    <Text className="text-blue-600 text-xs font-bold">{match.type === '9man' ? '9인제' : '6인제'}</Text>
                 </View>
-                <View style={tw`bg-gray-100 px-2.5 py-1.5 rounded-lg`}>
-                    <Text style={tw`text-gray-600 text-xs font-bold`}>{match.gender === 'male' ? '남자부' : match.gender === 'female' ? '여자부' : '혼성'}</Text>
+                <View className="bg-gray-100 px-2.5 py-1.5 rounded-lg">
+                    <Text className="text-gray-600 text-xs font-bold">{match.gender === 'male' ? '남자부' : match.gender === 'female' ? '여자부' : '혼성'}</Text>
                 </View>
                 {match.level && (
-                     <View style={tw`bg-orange-50 px-2.5 py-1.5 rounded-lg`}>
-                        <Text style={tw`text-orange-600 text-xs font-bold`}>{match.level}급</Text>
+                     <View className="bg-orange-50 px-2.5 py-1.5 rounded-lg">
+                        <Text className="text-orange-600 text-xs font-bold">{match.level}급</Text>
                     </View>
                 )}
             </View>
-            <Text style={tw`text-[26px] font-extrabold text-[${COLORS.textMain}] mb-1 leading-tight`}>{match.team}</Text>
-            <Text style={tw`text-base text-[${COLORS.textGray}]`}>{match.affiliation || '소속 정보 없음'}</Text>
+            <Text className="text-[26px] font-extrabold text-[#191F28] mb-1 leading-tight">{match.team}</Text>
+            <Text className="text-base text-[#8B95A1]">{match.affiliation || '소속 정보 없음'}</Text>
         </View>
 
-        <View style={tw`bg-white p-6 rounded-[24px] shadow-sm mb-4`}>
-            <Text style={tw`text-sm font-bold text-[${COLORS.textGray}] mb-5`}>MATCH INFO</Text>
-            <View style={tw`flex-row items-start mb-6`}>
-                <View style={tw`w-10 h-10 rounded-full bg-blue-50 items-center justify-center mr-4`}>
+        <View className="bg-white p-6 rounded-[24px] shadow-sm mb-4">
+            <Text className="text-sm font-bold text-[#8B95A1] mb-5">MATCH INFO</Text>
+            <View className="flex-row items-start mb-6">
+                <View className="w-10 h-10 rounded-full bg-blue-50 items-center justify-center mr-4">
                     <FontAwesome5 name="calendar-alt" size={18} color={COLORS.primary} />
                 </View>
-                <View style={tw`flex-1`}>
-                    <Text style={tw`text-xs text-[${COLORS.textGray}] mb-1`}>일시</Text>
-                    <Text style={tw`text-lg font-bold text-[${COLORS.textMain}]`}>{getFormattedDate(match.time)}</Text>
+                <View className="flex-1">
+                    <Text className="text-xs text-[#8B95A1] mb-1">일시</Text>
+                    <Text className="text-lg font-bold text-[#191F28]">{getFormattedDate(match.time)}</Text>
                 </View>
             </View>
-            <View style={tw`flex-row items-start`}>
-                <View style={tw`w-10 h-10 rounded-full bg-pink-50 items-center justify-center mr-4`}>
+            <View className="flex-row items-start">
+                <View className="w-10 h-10 rounded-full bg-pink-50 items-center justify-center mr-4">
                     <FontAwesome5 name="map-marker-alt" size={18} color="#E91E63" />
                 </View>
-                <View style={tw`flex-1`}>
-                    <Text style={tw`text-xs text-[${COLORS.textGray}] mb-1`}>장소</Text>
-                    <Text style={tw`text-lg font-bold text-[${COLORS.textMain}]`}>{match.loc}</Text>
+                <View className="flex-1">
+                    <Text className="text-xs text-[#8B95A1] mb-1">장소</Text>
+                    <Text className="text-lg font-bold text-[#191F28]">{match.loc}</Text>
                 </View>
             </View>
         </View>
 
-        <View style={tw`bg-white p-6 rounded-[24px] shadow-sm`}>
-            <Text style={tw`text-sm font-bold text-[${COLORS.textGray}] mb-3`}>특이사항</Text>
-            <Text style={tw`text-base text-[${COLORS.textSub}] leading-6`}>{match.note || '특이사항이 없습니다.'}</Text>
+        <View className="bg-white p-6 rounded-[24px] shadow-sm">
+            <Text className="text-sm font-bold text-[#8B95A1] mb-3">특이사항</Text>
+            <Text className="text-base text-[#4E5968] leading-6">{match.note || '특이사항이 없습니다.'}</Text>
         </View>
       </ScrollView>
 
-      <View style={tw`absolute bottom-0 w-full bg-white px-5 pt-4 pb-8 border-t border-gray-100`}>
+      <View className="absolute bottom-0 w-full bg-white px-5 pt-4 pb-8 border-t border-gray-100">
         {isMyPost ? (
-            <View style={tw`flex-row gap-3`}>
-                <TouchableOpacity onPress={() => router.push({ pathname: '/match/edit', params: { id: match.id } })} style={tw`flex-1 bg-[#F2F4F6] py-4 rounded-xl items-center`}>
-                    <Text style={tw`text-[${COLORS.textSub}] font-bold text-lg`}>수정</Text>
+            <View className="flex-row gap-3">
+                <TouchableOpacity onPress={() => router.push({ pathname: '/match/edit', params: { id: match.id } })} className="flex-1 bg-[#F2F4F6] py-4 rounded-xl items-center">
+                    <Text className="text-[#4E5968] font-bold text-lg">수정</Text>
                 </TouchableOpacity>
-                <TouchableOpacity onPress={handleDelete} disabled={isProcessing} style={tw`flex-1 bg-red-50 py-4 rounded-xl items-center`}>
-                    <Text style={tw`text-red-500 font-bold text-lg`}>삭제</Text>
+                <TouchableOpacity onPress={handleDelete} disabled={isProcessing} className="flex-1 bg-red-50 py-4 rounded-xl items-center">
+                    <Text className="text-red-500 font-bold text-lg">삭제</Text>
                 </TouchableOpacity>
             </View>
         ) : isApplied ? (
-            <TouchableOpacity onPress={handleCancelApply} disabled={isProcessing} style={tw`w-full bg-[#F2F4F6] py-4 rounded-2xl items-center`}>
-                <Text style={tw`text-[${COLORS.textSub}] font-bold text-lg`}>신청 취소하기</Text>
+            <TouchableOpacity onPress={handleCancelApply} disabled={isProcessing} className="w-full bg-[#F2F4F6] py-4 rounded-2xl items-center">
+                <Text className="text-[#4E5968] font-bold text-lg">신청 취소하기</Text>
             </TouchableOpacity>
         ) : (
-            <TouchableOpacity onPress={handleApply} disabled={isProcessing} style={tw`w-full bg-[${COLORS.primary}] py-4 rounded-2xl items-center shadow-lg shadow-blue-200`}>
-                {isProcessing ? <ActivityIndicator color="white" /> : <Text style={tw`text-white font-bold text-lg`}>매칭 신청하기</Text>}
+            <TouchableOpacity onPress={handleApply} disabled={isProcessing} className="w-full bg-[#3182F6] py-4 rounded-2xl items-center shadow-lg shadow-blue-200">
+                {isProcessing ? <ActivityIndicator color="white" /> : <Text className="text-white font-bold text-lg">매칭 신청하기</Text>}
             </TouchableOpacity>
         )}
       </View>

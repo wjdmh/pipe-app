@@ -5,7 +5,6 @@ import { db } from '../../configs/firebaseConfig';
 import { useRouter } from 'expo-router';
 import { FontAwesome } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import tw from 'twrnc';
 
 export default function AdminInquiries() {
   const router = useRouter();
@@ -56,38 +55,38 @@ export default function AdminInquiries() {
   };
 
   return (
-    <SafeAreaView style={tw`flex-1 bg-slate-900 px-5`}>
-      <View style={tw`flex-row items-center mb-6 pt-2`}>
-        <TouchableOpacity onPress={() => router.back()} style={tw`mr-4 bg-slate-800 p-2 rounded-lg`}>
+    <SafeAreaView className={`flex-1 bg-slate-900 px-5`}>
+      <View className={`flex-row items-center mb-6 pt-2`}>
+        <TouchableOpacity onPress={() => router.back()} className={`mr-4 bg-slate-800 p-2 rounded-lg`}>
             <FontAwesome name="arrow-left" size={16} color="white" />
         </TouchableOpacity>
-        <Text style={tw`text-2xl font-bold text-white`}>Q&A 수신함</Text>
+        <Text className={`text-2xl font-bold text-white`}>Q&A 수신함</Text>
       </View>
       
       {loading ? <ActivityIndicator color="white" /> : (
         <FlatList
           data={inquiries}
           keyExtractor={item => item.id}
-          ListEmptyComponent={<Text style={tw`text-slate-500 text-center mt-10`}>접수된 문의가 없습니다.</Text>}
+          ListEmptyComponent={<Text className={`text-slate-500 text-center mt-10`}>접수된 문의가 없습니다.</Text>}
           renderItem={({ item }) => (
-            <View style={tw`bg-slate-800 p-4 rounded-xl mb-3 border ${item.status === 'replied' ? 'border-green-600' : 'border-slate-700'}`}>
-                <View style={tw`flex-row justify-between mb-2`}>
-                    <Text style={tw`text-indigo-400 font-bold`}>{item.email}</Text>
-                    <Text style={tw`text-slate-500 text-xs`}>{item.createdAt?.split('T')[0]}</Text>
+            <View className={`bg-slate-800 p-4 rounded-xl mb-3 border ${item.status === 'replied' ? 'border-green-600' : 'border-slate-700'}`}>
+                <View className={`flex-row justify-between mb-2`}>
+                    <Text className={`text-indigo-400 font-bold`}>{item.email}</Text>
+                    <Text className={`text-slate-500 text-xs`}>{item.createdAt?.split('T')[0]}</Text>
                 </View>
-                <Text style={tw`text-white leading-5`}>{item.text}</Text>
+                <Text className={`text-white leading-5`}>{item.text}</Text>
                 
                 {item.status === 'replied' ? (
-                    <View style={tw`mt-3 bg-green-900/30 p-2 rounded-lg`}>
-                        <Text style={tw`text-green-400 text-xs font-bold`}>답변 완료: {item.reply}</Text>
+                    <View className={`mt-3 bg-green-900/30 p-2 rounded-lg`}>
+                        <Text className={`text-green-400 text-xs font-bold`}>답변 완료: {item.reply}</Text>
                     </View>
                 ) : (
-                    <View style={tw`mt-3 flex-row justify-end`}>
+                    <View className={`mt-3 flex-row justify-end`}>
                         <TouchableOpacity 
                             onPress={() => { setSelectedInquiry(item); setReplyModalVisible(true); }}
-                            style={tw`bg-indigo-600 px-4 py-2 rounded-lg`}
+                            className={`bg-indigo-600 px-4 py-2 rounded-lg`}
                         >
-                            <Text style={tw`text-white text-xs font-bold`}>답변하기</Text>
+                            <Text className={`text-white text-xs font-bold`}>답변하기</Text>
                         </TouchableOpacity>
                     </View>
                 )}
@@ -100,14 +99,14 @@ export default function AdminInquiries() {
       <Modal visible={replyModalVisible} transparent animationType="fade">
           <KeyboardAvoidingView 
             behavior={Platform.OS === "ios" ? "padding" : "height"}
-            style={tw`flex-1 justify-center bg-black/70 px-6`}
+            className={`flex-1 justify-center bg-black/70 px-6`}
           >
-              <View style={tw`bg-slate-800 p-6 rounded-2xl`}>
-                  <Text style={tw`text-white font-bold text-lg mb-4`}>답변 작성</Text>
-                  <Text style={tw`text-slate-400 text-xs mb-2`}>To: {selectedInquiry?.email}</Text>
+              <View className={`bg-slate-800 p-6 rounded-2xl`}>
+                  <Text className={`text-white font-bold text-lg mb-4`}>답변 작성</Text>
+                  <Text className={`text-slate-400 text-xs mb-2`}>To: {selectedInquiry?.email}</Text>
                   
                   <TextInput 
-                    style={tw`bg-slate-900 text-white p-4 rounded-xl border border-slate-700 h-32 mb-4`}
+                    className={`bg-slate-900 text-white p-4 rounded-xl border border-slate-700 h-32 mb-4`}
                     multiline
                     textAlignVertical="top"
                     value={replyText}
@@ -116,12 +115,12 @@ export default function AdminInquiries() {
                     placeholderTextColor="#64748b"
                   />
                   
-                  <View style={tw`flex-row gap-3`}>
-                      <TouchableOpacity onPress={() => setReplyModalVisible(false)} style={tw`flex-1 bg-slate-700 p-3 rounded-xl items-center`}>
-                          <Text style={tw`text-slate-300 font-bold`}>취소</Text>
+                  <View className={`flex-row gap-3`}>
+                      <TouchableOpacity onPress={() => setReplyModalVisible(false)} className={`flex-1 bg-slate-700 p-3 rounded-xl items-center`}>
+                          <Text className={`text-slate-300 font-bold`}>취소</Text>
                       </TouchableOpacity>
-                      <TouchableOpacity onPress={handleReply} style={tw`flex-1 bg-indigo-600 p-3 rounded-xl items-center`}>
-                          <Text style={tw`text-white font-bold`}>전송</Text>
+                      <TouchableOpacity onPress={handleReply} className={`flex-1 bg-indigo-600 p-3 rounded-xl items-center`}>
+                          <Text className={`text-white font-bold`}>전송</Text>
                       </TouchableOpacity>
                   </View>
               </View>

@@ -1,9 +1,6 @@
-// metro.config.js
-const { getDefaultConfig } = require('expo/metro-config');
+const { getDefaultConfig } = require("expo/metro-config");
+const { withNativeWind } = require("nativewind/metro");
 
 const config = getDefaultConfig(__dirname);
 
-// Firebase 등 최신 웹 라이브러리 호환을 위해 'mjs' 확장자 처리 추가
-config.resolver.sourceExts.push('mjs');
-
-module.exports = config;
+module.exports = withNativeWind(config, { input: "./global.css" });

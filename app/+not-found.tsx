@@ -1,20 +1,37 @@
-// app/+not-found.tsx
 import { Link, Stack } from 'expo-router';
-import { View, Text } from 'react-native';
-import tw from 'twrnc';
+import { StyleSheet, Text, View } from 'react-native';
 
 export default function NotFoundScreen() {
   return (
     <>
-      <Stack.Screen options={{ title: '페이지를 찾을 수 없음' }} />
-      <View style={tw`flex-1 items-center justify-center bg-white p-5`}>
-        <Text style={tw`text-xl font-bold text-gray-800 mb-4`}>
-          해당 페이지가 존재하지 않습니다.
-        </Text>
-        <Link href="/" style={tw`py-3 px-6 bg-blue-500 rounded-lg`}>
-          <Text style={tw`text-white font-bold`}>홈으로 돌아가기</Text>
+      <Stack.Screen options={{ title: 'Oops!' }} />
+      <View style={styles.container}>
+        <Text style={styles.title}>This screen doesn't exist.</Text>
+        <Link href="/" style={styles.link}>
+          <Text style={styles.linkText}>Go to home screen!</Text>
         </Link>
       </View>
     </>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  title: {
+    fontSize: 20,
+    fontWeight: 'bold',
+  },
+  link: {
+    marginTop: 15,
+    paddingVertical: 15,
+  },
+  linkText: {
+    fontSize: 14,
+    color: '#2e78b7',
+  },
+});

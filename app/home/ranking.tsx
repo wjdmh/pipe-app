@@ -5,7 +5,6 @@ import { db } from '../../configs/firebaseConfig';
 import { useRouter } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import tw from 'twrnc';
 
 // [Fix] 팀 데이터 타입 정의 (isDeleted 속성 추가)
 interface TeamRankInfo {
@@ -263,49 +262,49 @@ export default function RankingScreen() {
     let rankColor = COLORS.textSub;
     let icon = null;
 
-    if (rank === 1) { rankColor = '#FFD700'; icon = <FontAwesome5 name="crown" size={14} color="#FFD700" style={tw`mb-1`} />; }
+    if (rank === 1) { rankColor = '#FFD700'; icon = <FontAwesome5 name="crown" size={14} color="#FFD700" className="mb-1" />; }
     else if (rank === 2) { rankColor = '#C0C0C0'; } 
     else if (rank === 3) { rankColor = '#CD7F32'; }
 
     return (
-      <View style={tw`p-5 rounded-[24px] mb-3 flex-row items-center justify-between bg-white shadow-sm border border-[${COLORS.border}]`}>
-        <View style={tw`flex-row items-center flex-1`}>
-            <View style={tw`w-10 items-center justify-center mr-3`}>
+      <View className="p-5 rounded-[24px] mb-3 flex-row items-center justify-between bg-white shadow-sm border border-gray-200">
+        <View className="flex-row items-center flex-1">
+            <View className="w-10 items-center justify-center mr-3">
                 {icon}
-                <Text style={[tw`font-black text-xl italic`, { color: rankColor }]}>{rank}</Text>
+                <Text className="font-black text-xl italic" style={{ color: rankColor }}>{rank}</Text>
             </View>
-            <View style={tw`flex-1`}>
-                <Text style={tw`font-bold text-lg text-[${COLORS.textMain}] mb-0.5`} numberOfLines={1}>{item.name}</Text>
-                <View style={tw`flex-row items-center`}>
-                    <Text style={tw`text-sm text-[${COLORS.textCaption}] mr-2`}>{item.affiliation}</Text>
-                    {item.isDeleted && <View style={tw`bg-gray-200 px-1.5 rounded`}><Text style={tw`text-[10px] text-gray-500`}>해체됨</Text></View>}
+            <View className="flex-1">
+                <Text className="font-bold text-lg text-[#191F28] mb-0.5" numberOfLines={1}>{item.name}</Text>
+                <View className="flex-row items-center">
+                    <Text className="text-sm text-[#8B95A1] mr-2">{item.affiliation}</Text>
+                    {item.isDeleted && <View className="bg-gray-200 px-1.5 rounded"><Text className="text-[10px] text-gray-500">해체됨</Text></View>}
                 </View>
             </View>
         </View>
-        <View style={tw`items-end`}>
-            <Text style={[tw`font-extrabold text-xl`, { color: themeColor }]}>{item.stats.points}점</Text>
-            <Text style={tw`text-xs text-[${COLORS.textCaption}] font-medium`}>{item.stats.wins}승 {item.stats.losses}패</Text>
+        <View className="items-end">
+            <Text className="font-extrabold text-xl" style={{ color: themeColor }}>{item.stats.points}점</Text>
+            <Text className="text-xs text-[#8B95A1] font-medium">{item.stats.wins}승 {item.stats.losses}패</Text>
         </View>
       </View>
     );
   };
 
   return (
-    <SafeAreaView style={[tw`flex-1`, { backgroundColor: COLORS.background }]} edges={['top']}>
-      <View style={tw`px-5 py-3 flex-row items-center bg-[${COLORS.background}]`}>
-         <TouchableOpacity onPress={() => router.back()} style={tw`p-3 -ml-3 rounded-full`}>
+    <SafeAreaView className="flex-1" style={{ backgroundColor: COLORS.background }} edges={['top']}>
+      <View className="px-5 py-3 flex-row items-center" style={{ backgroundColor: COLORS.background }}>
+         <TouchableOpacity onPress={() => router.back()} className="p-3 -ml-3 rounded-full">
              <FontAwesome5 name="arrow-left" size={20} color={COLORS.textMain} />
          </TouchableOpacity>
-         <Text style={tw`text-xl font-extrabold text-[${COLORS.textMain}] ml-2`}>전체 순위</Text>
+         <Text className="text-xl font-extrabold ml-2" style={{ color: COLORS.textMain }}>전체 순위</Text>
       </View>
 
-      <View style={tw`px-5 mb-2`}>
-          <View style={tw`flex-row bg-gray-200 p-1 rounded-2xl mb-4`}>
-              <TouchableOpacity onPress={() => setActiveTab('male')} style={tw`flex-1 py-3 rounded-xl items-center ${activeTab === 'male' ? 'bg-white shadow-sm' : ''}`}>
-                  <Text style={tw`font-bold ${activeTab === 'male' ? 'text-[#3182F6]' : 'text-[#8B95A1]'}`}>남자부</Text>
+      <View className="px-5 mb-2">
+          <View className="flex-row bg-gray-200 p-1 rounded-2xl mb-4">
+              <TouchableOpacity onPress={() => setActiveTab('male')} className={`flex-1 py-3 rounded-xl items-center ${activeTab === 'male' ? 'bg-white shadow-sm' : ''}`}>
+                  <Text className={`font-bold ${activeTab === 'male' ? 'text-[#3182F6]' : 'text-[#8B95A1]'}`}>남자부</Text>
               </TouchableOpacity>
-              <TouchableOpacity onPress={() => setActiveTab('female')} style={tw`flex-1 py-3 rounded-xl items-center ${activeTab === 'female' ? 'bg-white shadow-sm' : ''}`}>
-                  <Text style={tw`font-bold ${activeTab === 'female' ? 'text-[#FF6B6B]' : 'text-[#8B95A1]'}`}>여자부</Text>
+              <TouchableOpacity onPress={() => setActiveTab('female')} className={`flex-1 py-3 rounded-xl items-center ${activeTab === 'female' ? 'bg-white shadow-sm' : ''}`}>
+                  <Text className={`font-bold ${activeTab === 'female' ? 'text-[#FF6B6B]' : 'text-[#8B95A1]'}`}>여자부</Text>
               </TouchableOpacity>
           </View>
       </View>
@@ -314,7 +313,7 @@ export default function RankingScreen() {
         data={rankingList}
         renderItem={renderRankItem}
         keyExtractor={(item, index) => item.id ? item.id.toString() : index.toString()}
-        contentContainerStyle={tw`px-5 pb-10`}
+        contentContainerClassName="px-5 pb-10"
         showsVerticalScrollIndicator={false}
       />
     </SafeAreaView>

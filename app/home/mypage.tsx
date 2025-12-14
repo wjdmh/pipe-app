@@ -5,7 +5,6 @@ import { doc, getDoc, collection, addDoc, updateDoc, runTransaction } from 'fire
 import { auth, db } from '../../configs/firebaseConfig';
 import { useRouter } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
-import tw from 'twrnc';
 
 export default function MyPageScreen() {
   const router = useRouter();
@@ -194,21 +193,21 @@ export default function MyPageScreen() {
   };
 
   return (
-    <ScrollView style={tw`flex-1 bg-white`} contentContainerStyle={tw`pt-12 px-6 pb-20`}>
-      <Text style={tw`text-2xl font-extrabold text-[#191F28] mb-8`}>마이페이지</Text>
+    <ScrollView className="flex-1 bg-white" contentContainerClassName="pt-12 px-6 pb-20">
+      <Text className="text-2xl font-extrabold text-[#191F28] mb-8">마이페이지</Text>
       
       {/* 프로필 카드 */}
-      <View style={tw`bg-[#F9FAFB] p-6 rounded-[24px] border border-gray-100 mb-6`}>
+      <View className="bg-[#F9FAFB] p-6 rounded-[24px] border border-gray-100 mb-6">
          {loadingUser ? <ActivityIndicator color="#4f46e5" /> : (
-             <View style={tw`flex-row items-center mb-4`}>
-                 <View style={tw`w-14 h-14 bg-blue-50 rounded-full items-center justify-center mr-4`}>
+             <View className="flex-row items-center mb-4">
+                 <View className="w-14 h-14 bg-blue-50 rounded-full items-center justify-center mr-4">
                      <FontAwesome5 name="user" size={24} color="#3182F6" />
                  </View>
                  <View>
-                     <Text style={tw`font-bold text-xl text-[#191F28]`}>{userData?.name || '이름 없음'}</Text>
-                     <Text style={tw`text-[#8B95A1] text-sm mt-0.5`}>{userData?.email}</Text>
-                     <Text style={tw`text-[#8B95A1] text-sm`}>{userData?.phoneNumber || userData?.phone || '전화번호 없음'}</Text>
-                     <Text style={tw`text-[#3182F6] text-xs font-bold mt-2`}>
+                     <Text className="font-bold text-xl text-[#191F28]">{userData?.name || '이름 없음'}</Text>
+                     <Text className="text-[#8B95A1] text-sm mt-0.5">{userData?.email}</Text>
+                     <Text className="text-[#8B95A1] text-sm">{userData?.phoneNumber || userData?.phone || '전화번호 없음'}</Text>
+                     <Text className="text-[#3182F6] text-xs font-bold mt-2">
                         {isAdmin ? '관리자(Admin)' : userData?.role === 'leader' ? '팀 대표자' : '일반 회원'}
                      </Text>
                  </View>
@@ -220,34 +219,34 @@ export default function MyPageScreen() {
                 setNewPhone(userData?.phoneNumber || userData?.phone || '');
                 setEditModalVisible(true);
             }}
-            style={tw`bg-white py-3 rounded-xl border border-gray-200 items-center shadow-sm`}
+            className="bg-white py-3 rounded-xl border border-gray-200 items-center shadow-sm"
          >
-             <Text style={tw`text-[#4E5968] font-bold text-sm`}>내 정보 수정</Text>
+             <Text className="text-[#4E5968] font-bold text-sm">내 정보 수정</Text>
          </TouchableOpacity>
       </View>
 
       {/* 관리자 메뉴 */}
       {isAdmin && (
-        <View style={tw`mb-8 border-t border-gray-100 pt-6`}>
-            <Text style={tw`font-bold text-[#8B95A1] mb-3 text-xs uppercase ml-1`}>ADMIN MENU</Text>
-            <View style={tw`flex-row gap-3`}>
-                <TouchableOpacity onPress={() => router.push('/admin/manager')} style={tw`flex-1 bg-[#333D4B] py-4 rounded-2xl items-center`}>
-                    <FontAwesome5 name="shield-alt" size={20} color="white" style={tw`mb-2`} />
-                    <Text style={tw`text-white font-bold text-xs`}>팀/분쟁 관리</Text>
+        <View className="mb-8 border-t border-gray-100 pt-6">
+            <Text className="font-bold text-[#8B95A1] mb-3 text-xs uppercase ml-1">ADMIN MENU</Text>
+            <View className="flex-row gap-3">
+                <TouchableOpacity onPress={() => router.push('/admin/manager')} className="flex-1 bg-[#333D4B] py-4 rounded-2xl items-center">
+                    <FontAwesome5 name="shield-alt" size={20} color="white" style={{ marginBottom: 8 }} />
+                    <Text className="text-white font-bold text-xs">팀/분쟁 관리</Text>
                 </TouchableOpacity>
-                <TouchableOpacity onPress={() => router.push('/admin/inquiries')} style={tw`flex-1 bg-[#3182F6] py-4 rounded-2xl items-center`}>
-                    <FontAwesome5 name="envelope" size={20} color="white" style={tw`mb-2`} />
-                    <Text style={tw`text-white font-bold text-xs`}>Q&A 확인</Text>
+                <TouchableOpacity onPress={() => router.push('/admin/inquiries')} className="flex-1 bg-[#3182F6] py-4 rounded-2xl items-center">
+                    <FontAwesome5 name="envelope" size={20} color="white" style={{ marginBottom: 8 }} />
+                    <Text className="text-white font-bold text-xs">Q&A 확인</Text>
                 </TouchableOpacity>
             </View>
         </View>
       )}
 
       {/* 문의하기 */}
-      <View style={tw`mb-8`}>
-        <Text style={tw`font-bold text-[#191F28] mb-3 ml-1`}>1:1 문의하기</Text>
+      <View className="mb-8">
+        <Text className="font-bold text-[#191F28] mb-3 ml-1">1:1 문의하기</Text>
         <TextInput 
-            style={tw`bg-[#F9FAFB] p-4 rounded-2xl border border-gray-100 text-base h-32 mb-3`}
+            className="bg-[#F9FAFB] p-4 rounded-2xl border border-gray-100 text-base h-32 mb-3"
             placeholder="이용 중 불편한 점이나 건의사항을 남겨주세요."
             multiline
             textAlignVertical="top"
@@ -257,21 +256,21 @@ export default function MyPageScreen() {
         <TouchableOpacity 
             onPress={handleSendInquiry}
             disabled={sending}
-            style={tw`bg-[#3182F6] py-4 rounded-xl items-center shadow-lg shadow-blue-200`}
+            className="bg-[#3182F6] py-4 rounded-xl items-center shadow-lg shadow-blue-200"
         >
-            {sending ? <ActivityIndicator color="white" /> : <Text style={tw`text-white font-bold`}>문의 보내기</Text>}
+            {sending ? <ActivityIndicator color="white" /> : <Text className="text-white font-bold">문의 보내기</Text>}
         </TouchableOpacity>
       </View>
 
       {/* 하단 링크 및 탈퇴 */}
-      <View style={tw`gap-3`}>
-        <View style={tw`flex-row gap-2 mt-4`}>
-            <TouchableOpacity onPress={handleLogout} style={tw`flex-1 flex-row justify-center items-center p-4 bg-gray-100 rounded-2xl`}>
-                <Text style={tw`text-gray-600 font-bold mr-2`}>로그아웃</Text>
+      <View className="gap-3">
+        <View className="flex-row gap-2 mt-4">
+            <TouchableOpacity onPress={handleLogout} className="flex-1 flex-row justify-center items-center p-4 bg-gray-100 rounded-2xl">
+                <Text className="text-gray-600 font-bold mr-2">로그아웃</Text>
                 <FontAwesome5 name="sign-out-alt" size={16} color="#4b5563" />
             </TouchableOpacity>
-            <TouchableOpacity onPress={handleWithdrawal} style={tw`flex-1 flex-row justify-center items-center p-4 bg-red-50 rounded-2xl`}>
-                <Text style={tw`text-red-500 font-bold mr-2`}>회원 탈퇴</Text>
+            <TouchableOpacity onPress={handleWithdrawal} className="flex-1 flex-row justify-center items-center p-4 bg-red-50 rounded-2xl">
+                <Text className="text-red-500 font-bold mr-2">회원 탈퇴</Text>
                 <FontAwesome5 name="user-times" size={16} color="#ef4444" />
             </TouchableOpacity>
         </View>
@@ -281,25 +280,25 @@ export default function MyPageScreen() {
       <Modal visible={editModalVisible} animationType="fade" transparent={true}>
           <KeyboardAvoidingView 
             behavior={Platform.OS === "ios" ? "padding" : "height"}
-            style={tw`flex-1 justify-center items-center bg-black/60 px-6`}
+            className="flex-1 justify-center items-center bg-black/60 px-6"
           >
-              <View style={tw`bg-white w-full rounded-3xl p-6`}>
-                  <Text style={tw`text-xl font-bold mb-6 text-center text-[#191F28]`}>내 정보 수정</Text>
+              <View className="bg-white w-full rounded-3xl p-6">
+                  <Text className="text-xl font-bold mb-6 text-center text-[#191F28]">내 정보 수정</Text>
                   
-                  <View style={tw`mb-4`}>
-                      <Text style={tw`text-xs font-bold text-[#8B95A1] mb-1 ml-1`}>이름 (대표자명)</Text>
+                  <View className="mb-4">
+                      <Text className="text-xs font-bold text-[#8B95A1] mb-1 ml-1">이름 (대표자명)</Text>
                       <TextInput 
-                        style={tw`bg-white border border-[#3182F6] p-4 rounded-xl text-[#191F28]`} 
+                        className="bg-white border border-[#3182F6] p-4 rounded-xl text-[#191F28]" 
                         value={newName} 
                         onChangeText={setNewName}
                         placeholder="이름을 입력하세요"
                       />
                   </View>
 
-                  <View style={tw`mb-6`}>
-                      <Text style={tw`text-xs font-bold text-[#8B95A1] mb-1 ml-1`}>전화번호</Text>
+                  <View className="mb-6">
+                      <Text className="text-xs font-bold text-[#8B95A1] mb-1 ml-1">전화번호</Text>
                       <TextInput 
-                        style={tw`bg-white border border-[#3182F6] p-4 rounded-xl text-[#191F28]`} 
+                        className="bg-white border border-[#3182F6] p-4 rounded-xl text-[#191F28]" 
                         value={newPhone} 
                         onChangeText={setNewPhone} 
                         keyboardType="phone-pad" 
@@ -307,12 +306,12 @@ export default function MyPageScreen() {
                       />
                   </View>
 
-                  <View style={tw`flex-row gap-3`}>
-                      <TouchableOpacity onPress={() => setEditModalVisible(false)} style={tw`flex-1 bg-gray-100 py-4 rounded-xl items-center`}>
-                          <Text style={tw`text-[#4E5968] font-bold`}>취소</Text>
+                  <View className="flex-row gap-3">
+                      <TouchableOpacity onPress={() => setEditModalVisible(false)} className="flex-1 bg-gray-100 py-4 rounded-xl items-center">
+                          <Text className="text-[#4E5968] font-bold">취소</Text>
                       </TouchableOpacity>
-                      <TouchableOpacity onPress={handleUpdateProfile} style={tw`flex-1 bg-[#3182F6] py-4 rounded-xl items-center`}>
-                          {updating ? <ActivityIndicator color="white"/> : <Text style={tw`text-white font-bold`}>저장</Text>}
+                      <TouchableOpacity onPress={handleUpdateProfile} className="flex-1 bg-[#3182F6] py-4 rounded-xl items-center">
+                          {updating ? <ActivityIndicator color="white"/> : <Text className="text-white font-bold">저장</Text>}
                       </TouchableOpacity>
                   </View>
               </View>

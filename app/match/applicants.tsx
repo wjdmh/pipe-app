@@ -4,7 +4,6 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { doc, getDoc, addDoc, collection, runTransaction } from 'firebase/firestore';
 import { db } from '../../configs/firebaseConfig';
 import { FontAwesome } from '@expo/vector-icons';
-import tw from 'twrnc';
 import { sendPushNotification } from '../../utils/notificationHelper';
 
 type TeamInfo = {
@@ -172,48 +171,48 @@ export default function ApplicantManageScreen() {
     ]);
   };
 
-  if (loading) return <View style={tw`flex-1 justify-center items-center bg-white`}><ActivityIndicator color="#3182F6" /></View>;
+  if (loading) return <View className="flex-1 justify-center items-center bg-white"><ActivityIndicator color="#3182F6" /></View>;
 
   return (
-    <View style={tw`flex-1 bg-white`}>
+    <View className="flex-1 bg-white">
       {/* 로딩 오버레이 */}
       {isProcessing && (
-        <View style={tw`absolute inset-0 bg-black/30 z-50 justify-center items-center`}>
+        <View className="absolute inset-0 bg-black/30 z-50 justify-center items-center">
             <ActivityIndicator size="large" color="#ffffff" />
-            <Text style={tw`text-white font-bold mt-4`}>매칭 확정 중...</Text>
+            <Text className="text-white font-bold mt-4">매칭 확정 중...</Text>
         </View>
       )}
 
-      <View style={tw`px-6 pt-14 pb-4 border-b border-slate-100 flex-row items-center bg-white`}>
-        <TouchableOpacity onPress={() => router.back()} style={tw`mr-4 p-1`}>
+      <View className="px-6 pt-14 pb-4 border-b border-slate-100 flex-row items-center bg-white">
+        <TouchableOpacity onPress={() => router.back()} className="mr-4 p-1">
           <FontAwesome name="arrow-left" size={20} color="#64748b" />
         </TouchableOpacity>
-        <Text style={tw`text-lg font-bold text-slate-800`}>신청자 목록 ({applicants.length})</Text>
+        <Text className="text-lg font-bold text-slate-800">신청자 목록 ({applicants.length})</Text>
       </View>
 
       <FlatList
         data={applicants}
         keyExtractor={item => item.id}
-        contentContainerStyle={tw`p-6 pb-20`}
+        contentContainerClassName="p-6 pb-20"
         ListEmptyComponent={
-            <View style={tw`items-center mt-20`}>
+            <View className="items-center mt-20">
                 <FontAwesome name="inbox" size={48} color="#E2E8F0" />
-                <Text style={tw`text-center text-slate-400 mt-4`}>아직 신청한 팀이 없습니다.</Text>
+                <Text className="text-center text-slate-400 mt-4">아직 신청한 팀이 없습니다.</Text>
             </View>
         }
         renderItem={({ item }) => (
-          <View style={tw`bg-white p-5 rounded-2xl border border-slate-100 shadow-sm mb-4 flex-row justify-between items-center`}>
+          <View className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm mb-4 flex-row justify-between items-center">
             <View>
-              <View style={tw`flex-row items-center mb-1.5`}>
-                <Text style={tw`font-bold text-lg text-slate-800 mr-2`}>{item.name}</Text>
-                <View style={tw`bg-slate-100 px-2 py-0.5 rounded text-xs`}>
-                    <Text style={tw`text-slate-500 text-xs font-bold`}>{item.level}급</Text>
+              <View className="flex-row items-center mb-1.5">
+                <Text className="font-bold text-lg text-slate-800 mr-2">{item.name}</Text>
+                <View className="bg-slate-100 px-2 py-0.5 rounded text-xs">
+                    <Text className="text-slate-500 text-xs font-bold">{item.level}급</Text>
                 </View>
               </View>
-              <Text style={tw`text-slate-500 text-sm mb-1`}>{item.affiliation}</Text>
-              <View style={tw`flex-row items-center`}>
-                  <Text style={tw`text-xs text-slate-400 mr-2`}>전적</Text>
-                  <Text style={tw`text-indigo-500 text-xs font-bold`}>
+              <Text className="text-slate-500 text-sm mb-1">{item.affiliation}</Text>
+              <View className="flex-row items-center">
+                  <Text className="text-xs text-slate-400 mr-2">전적</Text>
+                  <Text className="text-indigo-500 text-xs font-bold">
                     {item.stats?.total > 0 
                         ? `${item.stats.wins}승 ${item.stats.total - item.stats.wins}패 (${Math.round((item.stats.wins/item.stats.total)*100)}%)` 
                         : '기록 없음'}
@@ -224,9 +223,9 @@ export default function ApplicantManageScreen() {
             <TouchableOpacity
               onPress={() => handleAccept(item)}
               disabled={isProcessing}
-              style={tw`bg-indigo-600 px-5 py-2.5 rounded-xl shadow-sm active:scale-95`}
+              className="bg-indigo-600 px-5 py-2.5 rounded-xl shadow-sm active:scale-95"
             >
-              <Text style={tw`text-white font-bold text-sm`}>수락</Text>
+              <Text className="text-white font-bold text-sm">수락</Text>
             </TouchableOpacity>
           </View>
         )}

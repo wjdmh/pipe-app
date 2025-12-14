@@ -5,7 +5,6 @@ import { auth, db } from '../../configs/firebaseConfig';
 import { useRouter } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import tw from 'twrnc';
 
 type NotificationData = {
   id: string;
@@ -54,31 +53,31 @@ export default function NotificationScreen() {
   };
 
   return (
-    <SafeAreaView style={tw`flex-1 bg-white`}>
-        <View style={tw`px-5 py-4 border-b border-gray-100 flex-row items-center`}>
-            <TouchableOpacity onPress={() => router.back()} style={tw`mr-4`}><FontAwesome5 name="arrow-left" size={20} color="#333D4B" /></TouchableOpacity>
-            <Text style={tw`text-xl font-extrabold text-[#191F28]`}>알림 센터</Text>
+    <SafeAreaView className="flex-1 bg-white">
+        <View className="px-5 py-4 border-b border-gray-100 flex-row items-center">
+            <TouchableOpacity onPress={() => router.back()} className="mr-4"><FontAwesome5 name="arrow-left" size={20} color="#333D4B" /></TouchableOpacity>
+            <Text className="text-xl font-extrabold text-[#191F28]">알림 센터</Text>
         </View>
-        {loading ? <ActivityIndicator style={tw`mt-10`} /> : (
+        {loading ? <ActivityIndicator className="mt-10" /> : (
             <FlatList
                 data={notifications}
                 keyExtractor={item => item.id}
-                contentContainerStyle={tw`p-5`}
+                contentContainerClassName="p-5"
                 ListEmptyComponent={
-                    <View style={tw`items-center mt-20`}>
+                    <View className="items-center mt-20">
                         <FontAwesome5 name="bell-slash" size={40} color="#cbd5e1" />
-                        <Text style={tw`text-[#8B95A1] mt-4`}>새로운 알림이 없습니다.</Text>
+                        <Text className="text-[#8B95A1] mt-4">새로운 알림이 없습니다.</Text>
                     </View>
                 }
                 renderItem={({ item }) => {
                     const icon = getIcon(item.type);
                     return (
-                        <TouchableOpacity onPress={() => handlePress(item)} style={tw`flex-row bg-white p-4 rounded-2xl mb-3 border border-gray-100 shadow-sm items-start`}>
-                            <View style={tw`w-10 h-10 rounded-full bg-gray-50 items-center justify-center mr-3`}><FontAwesome5 name={icon.name} size={18} color={icon.color} /></View>
-                            <View style={tw`flex-1`}>
-                                <Text style={tw`font-bold text-[#191F28] mb-1`}>{item.title}</Text>
-                                <Text style={tw`text-[#4E5968] text-sm leading-5`} numberOfLines={2}>{item.message}</Text>
-                                <Text style={tw`text-[#8B95A1] text-xs mt-2`}>{item.createdAt.split('T')[0]}</Text>
+                        <TouchableOpacity onPress={() => handlePress(item)} className="flex-row bg-white p-4 rounded-2xl mb-3 border border-gray-100 shadow-sm items-start">
+                            <View className="w-10 h-10 rounded-full bg-gray-50 items-center justify-center mr-3"><FontAwesome5 name={icon.name} size={18} color={icon.color} /></View>
+                            <View className="flex-1">
+                                <Text className="font-bold text-[#191F28] mb-1">{item.title}</Text>
+                                <Text className="text-[#4E5968] text-sm leading-5" numberOfLines={2}>{item.message}</Text>
+                                <Text className="text-[#8B95A1] text-xs mt-2">{item.createdAt.split('T')[0]}</Text>
                             </View>
                         </TouchableOpacity>
                     );
@@ -86,17 +85,17 @@ export default function NotificationScreen() {
             />
         )}
         <Modal visible={!!selectedNoti} transparent animationType="fade">
-            <View style={tw`flex-1 justify-center items-center bg-black/60 px-6`}>
-                <View style={tw`bg-white w-full rounded-2xl p-6 max-h-[70%]`}>
-                    <View style={tw`mb-4`}>
-                        <Text style={tw`text-lg font-bold text-[#191F28] mb-2`}>{selectedNoti?.title}</Text>
-                        <Text style={tw`text-xs text-[#8B95A1]`}>{selectedNoti?.createdAt.split('T')[0]}</Text>
+            <View className="flex-1 justify-center items-center bg-black/60 px-6">
+                <View className="bg-white w-full rounded-2xl p-6 max-h-[70%]">
+                    <View className="mb-4">
+                        <Text className="text-lg font-bold text-[#191F28] mb-2">{selectedNoti?.title}</Text>
+                        <Text className="text-xs text-[#8B95A1]">{selectedNoti?.createdAt.split('T')[0]}</Text>
                     </View>
-                    <ScrollView style={tw`mb-6`}>
-                        <Text style={tw`text-[#4E5968] text-base leading-6`}>{selectedNoti?.message}</Text>
+                    <ScrollView className="mb-6">
+                        <Text className="text-[#4E5968] text-base leading-6">{selectedNoti?.message}</Text>
                     </ScrollView>
-                    <TouchableOpacity onPress={() => setSelectedNoti(null)} style={tw`bg-[#3182F6] py-3 rounded-xl items-center`}>
-                        <Text style={tw`text-white font-bold`}>닫기</Text>
+                    <TouchableOpacity onPress={() => setSelectedNoti(null)} className="bg-[#3182F6] py-3 rounded-xl items-center">
+                        <Text className="text-white font-bold">닫기</Text>
                     </TouchableOpacity>
                 </View>
             </View>

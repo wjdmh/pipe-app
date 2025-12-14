@@ -4,7 +4,6 @@ import { useRouter } from 'expo-router';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { auth } from '../../configs/firebaseConfig';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import tw from 'twrnc';
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -41,22 +40,22 @@ export default function LoginScreen() {
   const isValid = email.length > 0 && password.length > 0;
 
   return (
-    <SafeAreaView style={tw`flex-1 bg-white`}>
+    <SafeAreaView className="flex-1 bg-white">
       {/* [Web Fix] 웹에서는 behavior를 사용하지 않음 */}
       <KeyboardAvoidingView 
         behavior={Platform.OS === "ios" ? "padding" : undefined}
-        style={tw`flex-1`}
+        className="flex-1"
       >
-        <ScrollView contentContainerStyle={tw`flex-grow px-6 pt-10`} keyboardShouldPersistTaps="handled">
-          <View style={tw`mb-10`}>
-            <Text style={tw`text-2xl font-bold text-[#191F28] mb-2 leading-8`}>
+        <ScrollView contentContainerClassName="flex-grow px-6 pt-10" keyboardShouldPersistTaps="handled">
+          <View className="mb-10">
+            <Text className="text-2xl font-bold text-[#191F28] mb-2 leading-8">
               이메일로 로그인
             </Text>
           </View>
 
-          <View style={tw`gap-4`}>
+          <View className="gap-4">
             <TextInput
-              style={tw`w-full bg-[#F2F4F6] p-4 rounded-xl text-lg text-[#333D4B]`}
+              className="w-full bg-[#F2F4F6] p-4 rounded-xl text-lg text-[#333D4B]"
               placeholder="이메일"
               placeholderTextColor="#8B95A1"
               autoCapitalize="none"
@@ -68,7 +67,7 @@ export default function LoginScreen() {
             />
 
             <TextInput
-              style={tw`w-full bg-[#F2F4F6] p-4 rounded-xl text-lg text-[#333D4B]`}
+              className="w-full bg-[#F2F4F6] p-4 rounded-xl text-lg text-[#333D4B]"
               placeholder="비밀번호"
               placeholderTextColor="#8B95A1"
               secureTextEntry
@@ -77,21 +76,22 @@ export default function LoginScreen() {
             />
           </View>
 
-          <TouchableOpacity onPress={() => router.push('/auth/signup')} style={tw`mt-6`}>
-            <Text style={tw`text-[#8B95A1] text-sm text-center underline`}>회원가입</Text>
+          <TouchableOpacity onPress={() => router.push('/auth/signup')} className="mt-6">
+            <Text className="text-[#8B95A1] text-sm text-center underline">회원가입</Text>
           </TouchableOpacity>
         </ScrollView>
 
-        <View style={tw`p-4 border-t border-[#F2F4F6]`}>
+        <View className="p-4 border-t border-[#F2F4F6]">
             <TouchableOpacity
               onPress={handleLogin}
               disabled={!isValid || loading}
-              style={tw`w-full py-4 rounded-xl items-center ${isValid ? 'bg-[#3182F6]' : 'bg-[#E5E8EB]'}`}
+              // 조건부 스타일: 버튼 활성화/비활성화 색상 변경
+              className={`w-full py-4 rounded-xl items-center ${isValid ? 'bg-[#3182F6]' : 'bg-[#E5E8EB]'}`}
             >
               {loading ? (
                 <ActivityIndicator color="white" />
               ) : (
-                <Text style={tw`text-white font-bold text-lg ${isValid ? '' : 'text-[#8B95A1]'}`}>
+                <Text className={`text-white font-bold text-lg ${isValid ? '' : 'text-[#8B95A1]'}`}>
                   로그인
                 </Text>
               )}

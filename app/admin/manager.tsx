@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, Alert, TextInput, ActivityIndicator, Modal, KeyboardAvoidingView, Platform } from 'react-native';
 import { collection, query, where, getDocs, updateDoc, doc, runTransaction, getDoc, orderBy, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../configs/firebaseConfig';
-import tw from 'twrnc';
 import { FontAwesome5 } from '@expo/vector-icons';
 
 export default function AdminManager() {
@@ -301,16 +300,16 @@ export default function AdminManager() {
   }
 
   return (
-    <View style={tw`flex-1 bg-slate-900 pt-12 px-5`}>
-      <View style={tw`flex-row justify-between items-center mb-4`}>
-          <Text style={tw`text-2xl font-bold text-white`}>🕵️ 관리자 페이지</Text>
-          <TouchableOpacity onPress={loadData} style={tw`bg-slate-800 p-2 rounded-lg`}><FontAwesome5 name="sync" size={16} color="white" /></TouchableOpacity>
+    <View className="flex-1 bg-slate-900 pt-12 px-5">
+      <View className="flex-row justify-between items-center mb-4">
+          <Text className="text-2xl font-bold text-white">🕵️ 관리자 페이지</Text>
+          <TouchableOpacity onPress={loadData} className="bg-slate-800 p-2 rounded-lg"><FontAwesome5 name="sync" size={16} color="white" /></TouchableOpacity>
       </View>
       
-      <View style={tw`flex-row bg-slate-800 p-1 rounded-xl mb-6`}>
+      <View className="flex-row bg-slate-800 p-1 rounded-xl mb-6">
         {['dispute', 'recruiting', 'teams'].map(tab => (
-            <TouchableOpacity key={tab} onPress={() => setActiveTab(tab as any)} style={tw`flex-1 py-3 rounded-lg items-center ${activeTab === tab ? 'bg-indigo-600' : ''}`}>
-                <Text style={tw`text-white font-bold text-xs`}>
+            <TouchableOpacity key={tab} onPress={() => setActiveTab(tab as any)} className={`flex-1 py-3 rounded-lg items-center ${activeTab === tab ? 'bg-indigo-600' : ''}`}>
+                <Text className="text-white font-bold text-xs">
                     {tab === 'dispute' ? '🚨 분쟁' : tab === 'recruiting' ? '📢 모집' : '🛡️ 팀'} 
                     {tab === 'dispute' ? ` (${disputes.length})` : tab === 'recruiting' ? ` (${recruitings.length})` : ` (${teams.length})`}
                 </Text>
@@ -318,27 +317,27 @@ export default function AdminManager() {
         ))}
       </View>
 
-      {loading ? <ActivityIndicator color="white" style={tw`mt-10`} /> : (
-        <ScrollView contentContainerStyle={tw`pb-20`}>
+      {loading ? <ActivityIndicator color="white" className="mt-10" /> : (
+        <ScrollView contentContainerClassName="pb-20">
           {/* TAB 1: 분쟁 */}
           {activeTab === 'dispute' && (
-            disputes.length === 0 ? <Text style={tw`text-slate-500 text-center mt-10`}>접수된 분쟁이 없습니다.</Text> :
+            disputes.length === 0 ? <Text className="text-slate-500 text-center mt-10">접수된 분쟁이 없습니다.</Text> :
             disputes.map(m => (
-              <TouchableOpacity key={m.id} onPress={() => handleSelectDispute(m)} style={tw`bg-slate-800 p-4 rounded-xl mb-3 border ${selectedDisputeId === m.id ? 'border-indigo-500 bg-slate-700' : 'border-red-500'}`}>
-                <Text style={tw`text-red-400 font-bold mb-1`}>[이의제기]</Text>
-                <Text style={tw`text-white font-bold text-lg`}>{m.team}</Text>
-                <Text style={tw`text-slate-400 mb-2`}>{formatTimeSimple(m.time)} | {m.loc}</Text>
+              <TouchableOpacity key={m.id} onPress={() => handleSelectDispute(m)} className={`bg-slate-800 p-4 rounded-xl mb-3 border ${selectedDisputeId === m.id ? 'border-indigo-500 bg-slate-700' : 'border-red-500'}`}>
+                <Text className="text-red-400 font-bold mb-1">[이의제기]</Text>
+                <Text className="text-white font-bold text-lg">{m.team}</Text>
+                <Text className="text-slate-400 mb-2">{formatTimeSimple(m.time)} | {m.loc}</Text>
                 {selectedDisputeId === m.id && (
-                    <View style={tw`mt-3 bg-slate-900 p-3 rounded-lg`}>
-                        <View style={tw`flex-row justify-between mb-4`}><Text style={tw`text-indigo-400 text-xs`}>Host: {contactInfo?.host}</Text><Text style={tw`text-pink-400 text-xs`}>Guest: {contactInfo?.guest}</Text></View>
-                        <View style={tw`flex-row items-center justify-between mb-4`}>
-                            <TextInput style={tw`w-12 h-10 bg-slate-800 border border-slate-600 rounded text-white text-center font-bold`} value={adminScoreHost} onChangeText={setAdminScoreHost} keyboardType="number-pad"/>
-                            <Text style={tw`text-white font-bold`}>:</Text>
-                            <TextInput style={tw`w-12 h-10 bg-slate-800 border border-slate-600 rounded text-white text-center font-bold`} value={adminScoreGuest} onChangeText={setAdminScoreGuest} keyboardType="number-pad"/>
+                    <View className="mt-3 bg-slate-900 p-3 rounded-lg">
+                        <View className="flex-row justify-between mb-4"><Text className="text-indigo-400 text-xs">Host: {contactInfo?.host}</Text><Text className="text-pink-400 text-xs">Guest: {contactInfo?.guest}</Text></View>
+                        <View className="flex-row items-center justify-between mb-4">
+                            <TextInput className="w-12 h-10 bg-slate-800 border border-slate-600 rounded text-white text-center font-bold" value={adminScoreHost} onChangeText={setAdminScoreHost} keyboardType="number-pad"/>
+                            <Text className="text-white font-bold">:</Text>
+                            <TextInput className="w-12 h-10 bg-slate-800 border border-slate-600 rounded text-white text-center font-bold" value={adminScoreGuest} onChangeText={setAdminScoreGuest} keyboardType="number-pad"/>
                         </View>
-                        <View style={tw`gap-2`}>
-                            <TouchableOpacity onPress={() => forceFinalize(m)} style={tw`bg-green-600 p-3 rounded-lg items-center`}><Text style={tw`text-white font-bold`}>결과 확정</Text></TouchableOpacity>
-                            <TouchableOpacity onPress={() => deleteMatch(m.id)} style={tw`bg-red-600 p-3 rounded-lg items-center`}><Text style={tw`text-white font-bold`}>기록 삭제</Text></TouchableOpacity>
+                        <View className="gap-2">
+                            <TouchableOpacity onPress={() => forceFinalize(m)} className="bg-green-600 p-3 rounded-lg items-center"><Text className="text-white font-bold">결과 확정</Text></TouchableOpacity>
+                            <TouchableOpacity onPress={() => deleteMatch(m.id)} className="bg-red-600 p-3 rounded-lg items-center"><Text className="text-white font-bold">기록 삭제</Text></TouchableOpacity>
                         </View>
                     </View>
                 )}
@@ -348,15 +347,15 @@ export default function AdminManager() {
 
           {/* TAB 2: 모집 */}
           {activeTab === 'recruiting' && (
-            recruitings.length === 0 ? <Text style={tw`text-slate-500 text-center mt-10`}>모집 중인 경기가 없습니다.</Text> :
+            recruitings.length === 0 ? <Text className="text-slate-500 text-center mt-10">모집 중인 경기가 없습니다.</Text> :
             recruitings.map(m => (
-                <TouchableOpacity key={m.id} onPress={() => handleSelectRecruiting(m)} style={tw`bg-slate-800 p-4 rounded-xl mb-3 border border-slate-700`}>
-                    <View style={tw`flex-row justify-between`}>
-                        <Text style={tw`text-indigo-400 font-bold`}>{m.team}</Text>
-                        <Text style={tw`text-slate-500 text-xs`}>{m.createdAt ? m.createdAt.split('T')[0] : '날짜없음'}</Text>
+                <TouchableOpacity key={m.id} onPress={() => handleSelectRecruiting(m)} className="bg-slate-800 p-4 rounded-xl mb-3 border border-slate-700">
+                    <View className="flex-row justify-between">
+                        <Text className="text-indigo-400 font-bold">{m.team}</Text>
+                        <Text className="text-slate-500 text-xs">{m.createdAt ? m.createdAt.split('T')[0] : '날짜없음'}</Text>
                     </View>
-                    <Text style={tw`text-white font-bold mt-1`}>{formatTimeSimple(m.time)}</Text>
-                    <Text style={tw`text-slate-400 text-xs`}>{m.loc}</Text>
+                    <Text className="text-white font-bold mt-1">{formatTimeSimple(m.time)}</Text>
+                    <Text className="text-slate-400 text-xs">{m.loc}</Text>
                 </TouchableOpacity>
             ))
           )}
@@ -364,13 +363,13 @@ export default function AdminManager() {
           {/* TAB 3: 팀 */}
           {activeTab === 'teams' && (
             teams.map(t => (
-              <TouchableOpacity key={t.id} onPress={() => handleSelectTeam(t)} style={tw`bg-slate-800 p-4 rounded-xl mb-3 flex-row justify-between items-center border border-slate-700`}>
+              <TouchableOpacity key={t.id} onPress={() => handleSelectTeam(t)} className="bg-slate-800 p-4 rounded-xl mb-3 flex-row justify-between items-center border border-slate-700">
                 <View>
-                    <View style={tw`flex-row items-center mb-1`}>
-                        <Text style={tw`text-white font-bold text-lg mr-2`}>{t.name}</Text>
-                        {t.kusfId ? <View style={tw`bg-blue-900 px-2 py-0.5 rounded`}><Text style={tw`text-blue-300 text-[10px] font-bold`}>KUSF</Text></View> : <View style={tw`bg-gray-700 px-2 py-0.5 rounded`}><Text style={tw`text-gray-300 text-[10px] font-bold`}>자체생성</Text></View>}
+                    <View className="flex-row items-center mb-1">
+                        <Text className="text-white font-bold text-lg mr-2">{t.name}</Text>
+                        {t.kusfId ? <View className="bg-blue-900 px-2 py-0.5 rounded"><Text className="text-blue-300 text-[10px] font-bold">KUSF</Text></View> : <View className="bg-gray-700 px-2 py-0.5 rounded"><Text className="text-gray-300 text-[10px] font-bold">자체생성</Text></View>}
                     </View>
-                    <Text style={tw`text-indigo-300 text-xs`}>{t.stats?.wins||0}승 {t.stats?.losses||0}패 ({t.stats?.points||0}점)</Text>
+                    <Text className="text-indigo-300 text-xs">{t.stats?.wins||0}승 {t.stats?.losses||0}패 ({t.stats?.points||0}점)</Text>
                 </View>
                 <FontAwesome5 name="chevron-right" size={16} color="#64748b" />
               </TouchableOpacity>
@@ -381,26 +380,26 @@ export default function AdminManager() {
 
       {/* 모달들 (팀 수정 / 매치 수정) */}
       <Modal visible={teamModalVisible} animationType="slide" presentationStyle="pageSheet">
-          <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={tw`flex-1 bg-slate-900 p-6 pt-10`}>
+          <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} className="flex-1 bg-slate-900 p-6 pt-10">
               <ScrollView>
-                <View style={tw`flex-row justify-between items-center mb-8`}>
-                    <Text style={tw`text-2xl font-bold text-white`}>팀 데이터 수정</Text>
+                <View className="flex-row justify-between items-center mb-8">
+                    <Text className="text-2xl font-bold text-white">팀 데이터 수정</Text>
                     <TouchableOpacity onPress={() => setTeamModalVisible(false)}><FontAwesome5 name="times" size={24} color="white" /></TouchableOpacity>
                 </View>
                 {selectedTeam && (
                     <View>
-                        <Text style={tw`text-3xl font-bold text-indigo-400 mb-1`}>{selectedTeam.name}</Text>
-                        <Text style={tw`text-slate-400 mb-6`}>{selectedTeam.affiliation} ({selectedTeam.level}급)</Text>
-                        {captainStatus === 'ghost' && <View style={tw`bg-red-900/50 border border-red-500 p-4 rounded-xl mb-6`}><Text style={tw`text-red-300 font-bold mb-1`}>유령 팀 감지됨</Text><Text style={tw`text-red-200 text-xs`}>대표자가 탈퇴했습니다. 삭제를 권장합니다.</Text></View>}
+                        <Text className="text-3xl font-bold text-indigo-400 mb-1">{selectedTeam.name}</Text>
+                        <Text className="text-slate-400 mb-6">{selectedTeam.affiliation} ({selectedTeam.level}급)</Text>
+                        {captainStatus === 'ghost' && <View className="bg-red-900/50 border border-red-500 p-4 rounded-xl mb-6"><Text className="text-red-300 font-bold mb-1">유령 팀 감지됨</Text><Text className="text-red-200 text-xs">대표자가 탈퇴했습니다. 삭제를 권장합니다.</Text></View>}
                         
-                        <View style={tw`bg-slate-800 p-5 rounded-2xl mb-6`}>
-                            <Text style={tw`text-white font-bold mb-4 border-b border-slate-700 pb-2`}>📊 전적 강제 수정</Text>
-                            <View style={tw`flex-row justify-between mb-3`}><View style={tw`w-[48%]`}> <Text style={tw`text-slate-400 text-xs mb-1`}>승리</Text> <TextInput style={tw`bg-slate-900 text-white p-3 rounded-lg border border-slate-600`} keyboardType="number-pad" value={editStats.wins} onChangeText={(t)=>setEditStats({...editStats,wins:t})} /> </View> <View style={tw`w-[48%]`}> <Text style={tw`text-slate-400 text-xs mb-1`}>패배</Text> <TextInput style={tw`bg-slate-900 text-white p-3 rounded-lg border border-slate-600`} keyboardType="number-pad" value={editStats.losses} onChangeText={(t)=>setEditStats({...editStats,losses:t})} /> </View></View>
-                            <View style={tw`flex-row justify-between mb-6`}><View style={tw`w-[48%]`}> <Text style={tw`text-slate-400 text-xs mb-1`}>승점</Text> <TextInput style={tw`bg-slate-900 text-white p-3 rounded-lg border border-slate-600`} keyboardType="number-pad" value={editStats.points} onChangeText={(t)=>setEditStats({...editStats,points:t})} /> </View> <View style={tw`w-[48%]`}> <Text style={tw`text-slate-400 text-xs mb-1`}>총 경기</Text> <TextInput style={tw`bg-slate-900 text-white p-3 rounded-lg border border-slate-600`} keyboardType="number-pad" value={editStats.total} onChangeText={(t)=>setEditStats({...editStats,total:t})} /> </View></View>
-                            <TouchableOpacity onPress={updateTeamStats} style={tw`bg-indigo-600 p-4 rounded-xl items-center`}><Text style={tw`text-white font-bold`}>전적 저장</Text></TouchableOpacity>
+                        <View className="bg-slate-800 p-5 rounded-2xl mb-6">
+                            <Text className="text-white font-bold mb-4 border-b border-slate-700 pb-2">📊 전적 강제 수정</Text>
+                            <View className="flex-row justify-between mb-3"><View className="w-[48%]"> <Text className="text-slate-400 text-xs mb-1">승리</Text> <TextInput className="bg-slate-900 text-white p-3 rounded-lg border border-slate-600" keyboardType="number-pad" value={editStats.wins} onChangeText={(t)=>setEditStats({...editStats,wins:t})} /> </View> <View className="w-[48%]"> <Text className="text-slate-400 text-xs mb-1">패배</Text> <TextInput className="bg-slate-900 text-white p-3 rounded-lg border border-slate-600" keyboardType="number-pad" value={editStats.losses} onChangeText={(t)=>setEditStats({...editStats,losses:t})} /> </View></View>
+                            <View className="flex-row justify-between mb-6"><View className="w-[48%]"> <Text className="text-slate-400 text-xs mb-1">승점</Text> <TextInput className="bg-slate-900 text-white p-3 rounded-lg border border-slate-600" keyboardType="number-pad" value={editStats.points} onChangeText={(t)=>setEditStats({...editStats,points:t})} /> </View> <View className="w-[48%]"> <Text className="text-slate-400 text-xs mb-1">총 경기</Text> <TextInput className="bg-slate-900 text-white p-3 rounded-lg border border-slate-600" keyboardType="number-pad" value={editStats.total} onChangeText={(t)=>setEditStats({...editStats,total:t})} /> </View></View>
+                            <TouchableOpacity onPress={updateTeamStats} className="bg-indigo-600 p-4 rounded-xl items-center"><Text className="text-white font-bold">전적 저장</Text></TouchableOpacity>
                         </View>
-                        {captainStatus === 'active' && <View style={tw`bg-slate-800 p-5 rounded-2xl mb-6`}><Text style={tw`text-slate-400 text-xs font-bold mb-2`}>대표 연락처</Text><Text style={tw`text-white text-lg`}>{teamCaptain?.phoneNumber || '번호 없음'}</Text><Text style={tw`text-slate-500 text-sm`}>{teamCaptain?.email}</Text></View>}
-                        <TouchableOpacity onPress={deleteTeam} style={tw`bg-red-600/20 border border-red-600 p-4 rounded-xl items-center mb-10`}><Text style={tw`text-red-500 font-bold`}>팀 삭제</Text></TouchableOpacity>
+                        {captainStatus === 'active' && <View className="bg-slate-800 p-5 rounded-2xl mb-6"><Text className="text-slate-400 text-xs font-bold mb-2">대표 연락처</Text><Text className="text-white text-lg">{teamCaptain?.phoneNumber || '번호 없음'}</Text><Text className="text-slate-500 text-sm">{teamCaptain?.email}</Text></View>}
+                        <TouchableOpacity onPress={deleteTeam} className="bg-red-600/20 border border-red-600 p-4 rounded-xl items-center mb-10"><Text className="text-red-500 font-bold">팀 삭제</Text></TouchableOpacity>
                     </View>
                 )}
               </ScrollView>
@@ -408,17 +407,17 @@ export default function AdminManager() {
       </Modal>
 
       <Modal visible={editMatchModalVisible} animationType="slide" transparent={true}>
-          <View style={tw`flex-1 justify-center bg-black/70 px-5`}>
-              <View style={tw`bg-slate-800 p-6 rounded-2xl w-full`}>
-                  <Text style={tw`text-xl font-bold text-white mb-4`}>모집 공고 관리</Text>
-                  <Text style={tw`text-slate-400 text-xs mb-1`}>작성자 연락처</Text><Text style={tw`text-indigo-400 text-lg font-bold mb-4`}>{hostContact}</Text>
-                  <Text style={tw`text-slate-400 text-xs mb-1`}>시간</Text><TextInput style={tw`bg-slate-900 text-white p-3 rounded-lg border border-slate-600 mb-3`} value={matchEditForm.time} onChangeText={(t)=>setMatchEditForm({...matchEditForm,time:t})} />
-                  <Text style={tw`text-slate-400 text-xs mb-1`}>장소</Text><TextInput style={tw`bg-slate-900 text-white p-3 rounded-lg border border-slate-600 mb-3`} value={matchEditForm.loc} onChangeText={(t)=>setMatchEditForm({...matchEditForm,loc:t})} />
-                  <Text style={tw`text-slate-400 text-xs mb-1`}>비고</Text><TextInput style={tw`bg-slate-900 text-white p-3 rounded-lg border border-slate-600 mb-6`} value={matchEditForm.note} onChangeText={(t)=>setMatchEditForm({...matchEditForm,note:t})} />
-                  <View style={tw`gap-3`}>
-                      <TouchableOpacity onPress={updateMatchInfo} style={tw`bg-indigo-600 p-4 rounded-xl items-center`}><Text style={tw`text-white font-bold`}>수정사항 저장</Text></TouchableOpacity>
-                      <TouchableOpacity onPress={() => deleteMatch(selectedMatch.id)} style={tw`bg-red-600 p-4 rounded-xl items-center`}><Text style={tw`text-white font-bold`}>공고 취소</Text></TouchableOpacity>
-                      <TouchableOpacity onPress={() => setEditMatchModalVisible(false)} style={tw`bg-slate-700 p-4 rounded-xl items-center`}><Text style={tw`text-slate-300 font-bold`}>닫기</Text></TouchableOpacity>
+          <View className="flex-1 justify-center bg-black/70 px-5">
+              <View className="bg-slate-800 p-6 rounded-2xl w-full">
+                  <Text className="text-xl font-bold text-white mb-4">모집 공고 관리</Text>
+                  <Text className="text-slate-400 text-xs mb-1">작성자 연락처</Text><Text className="text-indigo-400 text-lg font-bold mb-4">{hostContact}</Text>
+                  <Text className="text-slate-400 text-xs mb-1">시간</Text><TextInput className="bg-slate-900 text-white p-3 rounded-lg border border-slate-600 mb-3" value={matchEditForm.time} onChangeText={(t)=>setMatchEditForm({...matchEditForm,time:t})} />
+                  <Text className="text-slate-400 text-xs mb-1">장소</Text><TextInput className="bg-slate-900 text-white p-3 rounded-lg border border-slate-600 mb-3" value={matchEditForm.loc} onChangeText={(t)=>setMatchEditForm({...matchEditForm,loc:t})} />
+                  <Text className="text-slate-400 text-xs mb-1">비고</Text><TextInput className="bg-slate-900 text-white p-3 rounded-lg border border-slate-600 mb-6" value={matchEditForm.note} onChangeText={(t)=>setMatchEditForm({...matchEditForm,note:t})} />
+                  <View className="gap-3">
+                      <TouchableOpacity onPress={updateMatchInfo} className="bg-indigo-600 p-4 rounded-xl items-center"><Text className="text-white font-bold">수정사항 저장</Text></TouchableOpacity>
+                      <TouchableOpacity onPress={() => deleteMatch(selectedMatch.id)} className="bg-red-600 p-4 rounded-xl items-center"><Text className="text-white font-bold">공고 취소</Text></TouchableOpacity>
+                      <TouchableOpacity onPress={() => setEditMatchModalVisible(false)} className="bg-slate-700 p-4 rounded-xl items-center"><Text className="text-slate-300 font-bold">닫기</Text></TouchableOpacity>
                   </View>
               </View>
           </View>

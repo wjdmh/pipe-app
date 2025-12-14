@@ -1,33 +1,20 @@
-// app/_layout.tsx
-import '../shim'; // 👈 [핵심] 무조건 가장 윗줄에 있어야 합니다! (경로 주의
-// app/_layout.tsx
-import { Platform } from 'react-native';
-
-// [Web Polyfill] Firebase 및 브라우저 호환성 패치
-if (Platform.OS === 'web' && typeof window !== 'undefined') {
-  // @ts-ignore
-  window._frameTimestamp = null;
-}
-
-import { Stack } from "expo-router";
-import { View } from "react-native";
-import { getResponsiveContainer, getWebBackground } from "../utils/platformHelper";
-import tw from 'twrnc';
+import "../shim"
+import "../global.css"; // 스타일 파일 연결
+import { Stack } from 'expo-router';
+import { View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
+// 아래 두 함수는 사용자님이 만드신 파일에서 가져옵니다. 경로가 맞는지 확인해주세요.
+import { getResponsiveContainer, getWebBackground } from "../utils/platformHelper";
 
 export default function RootLayout() {
-  
-  const screenOptions = {
-    headerStyle: { backgroundColor: 'white' },
-    headerTitleStyle: { fontWeight: 'bold' as const },
-    headerShadowVisible: false,
-    contentStyle: { backgroundColor: 'white' }
-  };
+  // 기본 화면 옵션 설정
+  const screenOptions = { headerShown: false };
 
   return (
-    <View style={tw`${getWebBackground()}`}>
+    // 기존의 tw 문법을 제거하고 함수 결과를 바로 className이나 style로 받도록 처리
+    <View className={getWebBackground()}>
       <StatusBar style="auto" />
-      <View style={tw`${getResponsiveContainer()}`}>
+      <View className={getResponsiveContainer()}>
         <Stack screenOptions={screenOptions}>
           <Stack.Screen name="home" options={{ headerShown: false }} />
           <Stack.Screen name="index" options={{ headerShown: false }} />
