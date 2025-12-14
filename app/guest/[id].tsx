@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, Alert, Platform, Share } from 'react-native';
+import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { doc, getDoc } from 'firebase/firestore';
@@ -51,12 +51,35 @@ export default function GuestDetailScreen() {
       if(!post) return;
       setIsProcessing(true);
       
-      // 이미 신청했으면 취소, 아니면 신청
       if (isApplied) await cancelApplication(post.id);
       else await applyForGuest(post);
       
-      await loadPost(); // 상태 업데이트
+      await loadPost();
       setIsProcessing(false);
+  };
+
+  // [기능 추가] 공유하기 기능
+  const handleShare = async () => {
+    if (!post) return;
+    const url = Platform.OS === 'web' ? window.location.href : `https://pipe-app.com/guest/${post.id}`;
+    
+    if (Platform.OS === 'web') {
+        try {
+            await navigator.clipboard.writeText(url);
+            Alert.alert('복사 완료', '링크가 클립보드에 복사되었습니다.');
+        } catch (err) {
+            Alert.alert('오류', '링크 복사에 실패했습니다.');
+        }
+    } else {
+        try {
+            await Share.share({
+                message: `[Pipe] ${post.hostTeamName} 게스트 모집 확인하기`,
+                url: url,
+            });
+        } catch (error) {
+            // ignore
+        }
+    }
   };
 
   if (loading) return <View className="flex-1 justify-center items-center"><ActivityIndicator /></View>;
@@ -65,7 +88,6 @@ export default function GuestDetailScreen() {
   const isMyPost = post.hostCaptainId === auth.currentUser?.uid;
   const isApplied = post.applicants?.includes(auth.currentUser?.uid || '');
   
-  // 날짜/시간 포맷팅
   let dateStr = post.matchDate;
   let timeStr = '';
   if (post.matchDate.includes('T')) {
@@ -74,14 +96,24 @@ export default function GuestDetailScreen() {
       timeStr = `${d.getHours()}시`;
   }
 
+  // [SEO] 동적 타이틀 설정
+  const pageTitle = `게스트 모집 - ${post.hostTeamName}`;
+
   return (
     <SafeAreaView className="flex-1 bg-white">
+      {/* [SEO] 브라우저 탭 제목 */}
+      <Stack.Screen options={{ title: pageTitle }} />
+
       <View className="px-5 py-4 border-b border-gray-100 flex-row items-center justify-between">
         <TouchableOpacity onPress={() => router.back()} className="p-2 -ml-2">
             <FontAwesome5 name="arrow-left" size={20} color="#191F28" />
         </TouchableOpacity>
         <Text className="text-lg font-bold text-gray-900">모집 상세</Text>
-        <View className="w-8" />
+        
+        {/* [UI] 공유 버튼 */}
+        <TouchableOpacity onPress={handleShare} className="p-2 -mr-2">
+            <FontAwesome5 name="share-alt" size={20} color="#191F28" />
+        </TouchableOpacity>
       </View>
 
       <ScrollView contentContainerClassName="p-6 pb-32">
@@ -126,7 +158,6 @@ export default function GuestDetailScreen() {
       <View className="absolute bottom-0 w-full bg-white px-5 pt-4 pb-8 border-t border-gray-100">
         {isMyPost ? (
             <View className="flex-row gap-3">
-                {/* [Issue 1 Solution] 신청자 관리 페이지로 이동 */}
                 <TouchableOpacity onPress={() => router.push({ pathname: '/guest/applicants', params: { postId: post.id } })} className="flex-1 bg-slate-800 py-4 rounded-xl items-center">
                     <Text className="text-white font-bold">신청자 확인 ({post.applicants?.length || 0})</Text>
                 </TouchableOpacity>

@@ -93,7 +93,6 @@ export default function SignupScreen() {
          <Text className="text-xl font-bold ml-2 text-[#191F28]">회원가입</Text>
       </View>
 
-      {/* [Web Fix] KeyboardAvoidingView 조건부 적용 및 ScrollView 설정 */}
       <KeyboardAvoidingView 
         behavior={Platform.OS === "ios" ? "padding" : undefined}
         className="flex-1"
@@ -108,16 +107,40 @@ export default function SignupScreen() {
             </View>
 
             <Text className="text-sm font-bold text-gray-500 mb-1 ml-1">이메일</Text>
-            <TextInput className="bg-gray-50 p-4 rounded-xl mb-4 border border-gray-200 text-base" placeholder="이메일 주소" keyboardType="email-address" autoCapitalize="none" value={email} onChangeText={setEmail} />
+            <TextInput 
+              className="bg-gray-50 p-4 rounded-xl mb-4 border border-gray-200 text-base" 
+              placeholder="이메일 주소" 
+              keyboardType="email-address" 
+              autoCapitalize="none" 
+              value={email} 
+              onChangeText={setEmail} 
+            />
 
             <Text className="text-sm font-bold text-gray-500 mb-1 ml-1">비밀번호</Text>
-            <TextInput className="bg-gray-50 p-4 rounded-xl mb-4 border border-gray-200 text-base" placeholder="비밀번호 (6자 이상)" secureTextEntry value={password} onChangeText={setPassword} />
+            <TextInput 
+              className="bg-gray-50 p-4 rounded-xl mb-4 border border-gray-200 text-base" 
+              placeholder="비밀번호 (6자 이상)" 
+              secureTextEntry 
+              value={password} 
+              onChangeText={setPassword} 
+            />
 
             <Text className="text-sm font-bold text-gray-500 mb-1 ml-1">휴대폰 번호</Text>
-            <TextInput className="bg-gray-50 p-4 rounded-xl mb-4 border border-gray-200 text-base" placeholder="숫자만 입력" keyboardType="phone-pad" value={phone} onChangeText={setPhone} />
+            <TextInput 
+              className="bg-gray-50 p-4 rounded-xl mb-4 border border-gray-200 text-base" 
+              placeholder="숫자만 입력" 
+              keyboardType="phone-pad" 
+              value={phone} 
+              onChangeText={setPhone} 
+            />
 
             <Text className="text-sm font-bold text-gray-500 mb-1 ml-1">이름</Text>
-            <TextInput className="bg-gray-50 p-4 rounded-xl mb-4 border border-gray-200 text-base" placeholder="실명" value={name} onChangeText={setName} />
+            <TextInput 
+              className="bg-gray-50 p-4 rounded-xl mb-4 border border-gray-200 text-base" 
+              placeholder="실명" 
+              value={name} 
+              onChangeText={setName} 
+            />
 
             <Text className="text-sm font-bold text-gray-500 mb-1 ml-1">성별</Text>
             <View className="flex-row mb-4">

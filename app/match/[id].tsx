@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, Alert, ActivityIndicator, StatusBar } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { View, Text, ScrollView, TouchableOpacity, Alert, ActivityIndicator, StatusBar, Platform, Share } from 'react-native';
+import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { doc, getDoc, updateDoc, arrayUnion, arrayRemove, addDoc, collection } from 'firebase/firestore';
 import { auth, db } from '../../configs/firebaseConfig';
 import { FontAwesome5 } from '@expo/vector-icons';
@@ -81,7 +81,6 @@ export default function MatchDetailScreen() {
 
   const sendNotification = async (targetUid: string, type: string, title: string, msg: string) => {
       try {
-          // DB 알림
           await addDoc(collection(db, "notifications"), {
               userId: targetUid,
               type, title, message: msg,
@@ -90,7 +89,6 @@ export default function MatchDetailScreen() {
               isRead: false
           });
 
-          // 푸시 알림 (New)
           const userSnap = await getDoc(doc(db, "users", targetUid));
           if (userSnap.exists() && userSnap.data().pushToken) {
               await sendPushNotification(userSnap.data().pushToken, title, msg, { link: '/home/locker' });
@@ -162,6 +160,30 @@ export default function MatchDetailScreen() {
       ]);
   };
 
+  // [기능 추가] 공유하기 기능
+  const handleShare = async () => {
+    if (!match) return;
+    const url = Platform.OS === 'web' ? window.location.href : `https://pipe-app.com/match/${match.id}`;
+    
+    if (Platform.OS === 'web') {
+        try {
+            await navigator.clipboard.writeText(url);
+            Alert.alert('복사 완료', '링크가 클립보드에 복사되었습니다.');
+        } catch (err) {
+            Alert.alert('오류', '링크 복사에 실패했습니다.');
+        }
+    } else {
+        try {
+            await Share.share({
+                message: `[Pipe] ${match.team}팀 매치 신청하러 가기`,
+                url: url,
+            });
+        } catch (error) {
+            // ignore
+        }
+    }
+  };
+
   const getFormattedDate = (timeStr: string) => {
       const d = new Date(timeStr);
       if (!isNaN(d.getTime()) && timeStr.includes('T')) {
@@ -185,15 +207,26 @@ export default function MatchDetailScreen() {
   const isMyPost = userTeamId === match.hostId;
   const isApplied = userTeamId && match.applicants?.includes(userTeamId);
 
+  // [SEO] 동적 타이틀 설정
+  const pageTitle = `${match.team} - 매치 상세`;
+
   return (
     <SafeAreaView className="flex-1 bg-[#F2F4F6]" edges={['top']}>
       <StatusBar barStyle="dark-content" />
+      
+      {/* [SEO] 웹 브라우저 탭 제목 변경 */}
+      <Stack.Screen options={{ title: pageTitle }} />
+
       <View className="px-5 py-3 flex-row items-center justify-between bg-[#F2F4F6]">
         <TouchableOpacity onPress={() => router.back()} className="p-2 -ml-2 rounded-full">
             <FontAwesome5 name="arrow-left" size={20} color={COLORS.textMain} />
         </TouchableOpacity>
         <Text className="text-lg font-bold text-[#191F28]">매칭 상세</Text>
-        <View className="w-8" />
+        
+        {/* [UI] 공유 버튼 추가 */}
+        <TouchableOpacity onPress={handleShare} className="p-2 -mr-2 rounded-full">
+            <FontAwesome5 name="share-alt" size={20} color={COLORS.textMain} />
+        </TouchableOpacity>
       </View>
 
       <ScrollView contentContainerClassName="px-5 pt-2 pb-32">

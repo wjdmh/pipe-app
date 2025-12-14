@@ -7,6 +7,13 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { FontAwesome5 } from '@expo/vector-icons';
 
+// [Helper] 로컬 시간 ISO 문자열 변환 (웹 input용)
+const toLocalISOString = (date: Date) => {
+  const offset = date.getTimezoneOffset() * 60000; //ms
+  const localISOTime = (new Date(date.getTime() - offset)).toISOString().slice(0, 16);
+  return localISOTime;
+};
+
 // [Modified] 애니메이션 뷰: style과 className 분리 적용
 const FadeInView = ({ children, delay = 0 }: { children: React.ReactNode, delay?: number }) => {
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -18,7 +25,6 @@ const FadeInView = ({ children, delay = 0 }: { children: React.ReactNode, delay?
     ]).start();
   }, []);
   
-  // marginBottom: 32 -> className="mb-8"
   return (
     <Animated.View 
       className="mb-8" 
@@ -93,14 +99,15 @@ export default function EditMatchScreen() {
   const formatDateKr = (d: Date) => `${d.getMonth() + 1}월 ${d.getDate()}일`;
   const formatTimeKr = (d: Date) => `${d.getHours() >= 12 ? '오후' : '오전'} ${d.getHours() % 12 || 12}시 ${d.getMinutes() > 0 ? `${d.getMinutes()}분` : ''}`;
 
-  // [Web Fix] 날짜 변경 핸들러
+  // [Mobile] 날짜 변경 핸들러
   const handleDateChange = (event: any, selectedDate?: Date) => {
-    const currentDate = selectedDate || date;
-    if (Platform.OS === 'web') {
-        setDate(currentDate);
-    } else {
-        setTempDate(currentDate);
-    }
+    if (selectedDate) setTempDate(selectedDate);
+  };
+
+  // [Web] 날짜 변경 핸들러
+  const handleWebDateChange = (e: any) => {
+      const val = e.target.value;
+      if (val) setDate(new Date(val));
   };
 
   const sendUpdateNotification = async (targetTeamIds: string[]) => {
@@ -155,7 +162,6 @@ export default function EditMatchScreen() {
         <View className="w-8" />
       </View>
 
-      {/* [Web Fix] KeyboardAvoidingView behavior 수정 */}
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} className="flex-1">
         <ScrollView ref={scrollViewRef} contentContainerClassName="px-6 pt-2 pb-32" showsVerticalScrollIndicator={false}>
           <FadeInView>
@@ -181,17 +187,25 @@ export default function EditMatchScreen() {
           <FadeInView delay={100}>
               <Text className="text-lg font-bold text-[#333D4B] mb-3">3. 일시</Text>
               
-              {/* [Web Fix] 날짜 선택 UI 분기 */}
+              {/* [Web Fix] 날짜 선택 UI 분기 (input type="datetime-local" 사용) */}
               {Platform.OS === 'web' ? (
-                  <View className="bg-white p-4 rounded-2xl border border-transparent shadow-sm">
-                      <DateTimePicker 
-                          value={date} 
-                          mode="datetime" 
-                          display="default" 
-                          onChange={handleDateChange} 
-                          style={{ height: 40 }} 
-                      />
-                  </View>
+                   <View className="bg-white p-4 rounded-2xl border border-transparent shadow-sm">
+                       {React.createElement('input', {
+                           type: 'datetime-local',
+                           value: toLocalISOString(date),
+                           onChange: handleWebDateChange,
+                           style: {
+                               border: 'none',
+                               width: '100%',
+                               height: '40px',
+                               fontSize: '16px',
+                               color: '#191F28',
+                               backgroundColor: 'transparent',
+                               outline: 'none',
+                               cursor: 'pointer'
+                           }
+                       })}
+                   </View>
               ) : (
                   <TouchableOpacity onPress={() => { setTempDate(date); setShowDateModal(true); }} className="bg-white p-5 rounded-2xl border border-transparent shadow-sm">
                     <Text className="text-2xl font-bold text-[#3182F6]">{formatDateKr(date)} {formatTimeKr(date)}</Text>

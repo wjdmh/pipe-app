@@ -236,9 +236,6 @@ export default function GuestWriteScreen() {
             <TouchableOpacity onPress={handleSubmit} disabled={loading} className="bg-indigo-600 py-4 rounded-xl items-center shadow-lg shadow-indigo-200">
             {loading ? <ActivityIndicator color="white" /> : <Text className="text-white font-bold text-lg">모집 등록</Text>}
             </TouchableOpacity>
-            
-            {/* 아까 테스트용으로 넣으셨던 부분입니다. 필요 없으시면 지우세요! */}
-            <Text className="bg-red-500 text-5xl p-10 mt-10 text-white text-center font-bold">여기보세요!!!!</Text>
         </ScrollView>
       </KeyboardAvoidingView>
 

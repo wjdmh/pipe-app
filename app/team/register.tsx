@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, Alert, ScrollView, ActivityIndicator, FlatList, Modal, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, Alert, ScrollView, ActivityIndicator, FlatList, KeyboardAvoidingView, Platform, Dimensions } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { FontAwesome5 } from '@expo/vector-icons';
@@ -228,7 +228,7 @@ export default function TeamRegister() {
 
   return (
     <SafeAreaView className="flex-1 bg-white">
-      <View className="px-5 py-3 border-b border-gray-100 flex-row items-center">
+      <View className="px-5 py-3 border-b border-gray-100 flex-row items-center z-10 bg-white">
         <TouchableOpacity onPress={() => router.back()} className="p-2 -ml-2">
           <FontAwesome5 name="arrow-left" size={20} color="#191F28" />
         </TouchableOpacity>
@@ -237,10 +237,9 @@ export default function TeamRegister() {
         </Text>
       </View>
 
-      {/* [Web Fix] KeyboardAvoidingView 추가: 웹 브라우저 호환성 확보 */}
       <KeyboardAvoidingView 
         behavior={Platform.OS === "ios" ? "padding" : undefined}
-        className="flex-1"
+        className="flex-1 relative"
       >
         {/* SEARCH VIEW */}
         {step === 'SEARCH' && (
@@ -325,25 +324,28 @@ export default function TeamRegister() {
                 <TextInput className="bg-gray-50 p-4 rounded-xl mb-8 border border-gray-200 h-24" multiline placeholder="팀 소개를 입력하세요." value={description} onChangeText={setDescription}/>
 
                 <TouchableOpacity onPress={submitTeam} className="bg-blue-600 p-4 rounded-xl items-center mb-10"><Text className="text-white font-bold text-lg">완료</Text></TouchableOpacity>
-                
-                <Modal visible={showRegionModal} transparent animationType="fade">
-                    <View className="flex-1 bg-black/50 justify-center p-5">
-                        <View className="bg-white rounded-xl h-2/3 p-4">
-                            <Text className="text-lg font-bold mb-4 text-center">지역 선택</Text>
-                            <ScrollView>
-                                {REGIONS.map(r => (
-                                    <TouchableOpacity key={r} onPress={() => { setSelectedRegion(r); setShowRegionModal(false) }} className="p-4 border-b border-gray-100 items-center active:bg-gray-50">
-                                        <Text className="text-base text-gray-800">{r}</Text>
-                                    </TouchableOpacity>
-                                ))}
-                            </ScrollView>
-                            <TouchableOpacity onPress={() => setShowRegionModal(false)} className="mt-4 p-3 bg-gray-100 rounded-lg items-center">
-                                <Text className="text-gray-600 font-bold">닫기</Text>
-                            </TouchableOpacity>
-                        </View>
-                    </View>
-                </Modal>
             </ScrollView>
+        )}
+
+        {/* [Web Fix] Custom Modal Overlay (웹 호환성 해결) */}
+        {showRegionModal && (
+            <View className="absolute top-0 bottom-0 left-0 right-0 bg-black/50 justify-center items-center z-50 p-5">
+                <View className="bg-white w-full max-w-sm rounded-2xl h-2/3 shadow-2xl overflow-hidden">
+                    <View className="p-4 border-b border-gray-100 flex-row justify-between items-center bg-gray-50">
+                        <Text className="text-lg font-bold text-gray-800">지역 선택</Text>
+                        <TouchableOpacity onPress={() => setShowRegionModal(false)} className="bg-gray-200 px-3 py-1 rounded-lg">
+                             <Text className="text-xs font-bold text-gray-600">닫기</Text>
+                        </TouchableOpacity>
+                    </View>
+                    <ScrollView contentContainerClassName="p-2">
+                        {REGIONS.map(r => (
+                            <TouchableOpacity key={r} onPress={() => { setSelectedRegion(r); setShowRegionModal(false) }} className="p-4 border-b border-gray-50 items-center active:bg-blue-50 rounded-xl">
+                                <Text className={`text-base font-medium ${selectedRegion === r ? 'text-blue-600 font-bold' : 'text-gray-700'}`}>{r}</Text>
+                            </TouchableOpacity>
+                        ))}
+                    </ScrollView>
+                </View>
+            </View>
         )}
       </KeyboardAvoidingView>
     </SafeAreaView>

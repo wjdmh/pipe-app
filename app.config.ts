@@ -2,12 +2,12 @@
 import { ExpoConfig, ConfigContext } from 'expo/config';
 
 export default ({ config }: ConfigContext): ExpoConfig => {
-  // 💡 핵심 전략: 환경 변수(IS_DEV)가 없으면 배포 모드로 간주하고 baseUrl 적용
-  const isDev = process.env.NODE_ENV === 'development';
-  const baseUrl = isDev ? '' : '/pipe-app'; 
+  // GitHub Pages 배포를 위한 Base URL 설정
+  // 로컬 개발(npx expo start)시에는 자동으로 무시되므로 안전하게 설정 가능
+  const baseUrl = '/pipe-app'; 
 
   return {
-    ...config, // 기존 설정 상속
+    ...config,
     name: "Pipe",
     slug: "pipe-app",
     version: "1.0.0",
@@ -47,7 +47,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     ],
     experiments: {
       "typedRoutes": true,
-      // 👇 환경에 따라 자동으로 경로 설정 (수동 수정 불필요!)
+      // 👇 GitHub Pages 서브 경로 배포를 위해 필수 설정
       "baseUrl": baseUrl 
     }
   };
