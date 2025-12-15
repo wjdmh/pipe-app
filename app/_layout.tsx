@@ -1,5 +1,5 @@
-import "../shim";
-import "../global.css"; // 스타일 파일 연결
+import "../global.css"; // 👈 1등: 스타일이 가장 먼저 로드되어야 함
+import "../shim";       // 👈 2등: 그 다음 폴리필(TextEncoder 등) 로드
 import { Stack } from 'expo-router';
 import { View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
@@ -17,8 +17,7 @@ export default function RootLayout() {
       {/* 반응형 컨테이너 (웹에서는 중앙 정렬 & 최대 너비 500px) */}
       <View className={getResponsiveContainer()}>
         
-        {/* [수정됨] Stack 컴포넌트는 style 속성을 받지 못하므로,
-            flex: 1을 가진 View로 감싸서 내부가 꽉 차게 만듭니다. */}
+        {/* 내부를 꽉 채우기 위한 뷰 */}
         <View style={{ flex: 1, width: '100%', height: '100%' }}>
           <Stack screenOptions={screenOptions}>
             {/* 하단 탭이 있는 홈 화면 */}
