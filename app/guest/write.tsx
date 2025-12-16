@@ -17,15 +17,24 @@ const toLocalISOString = (date: Date) => {
   return localISOTime;
 };
 
+// [Helper] 안전한 알림 함수 (웹/앱 호환)
+const safeAlert = (title: string, message: string, onConfirm?: () => void) => {
+    if (Platform.OS === 'web') {
+        window.alert(`${title}\n\n${message}`);
+        if (onConfirm) onConfirm();
+    } else {
+        Alert.alert(title, message, [{ text: '확인', onPress: onConfirm }]);
+    }
+};
+
 export default function GuestWriteScreen() {
   const router = useRouter();
-  // [New Feature] 수정 모드 지원을 위해 id 파라미터 수신
   const { id } = useLocalSearchParams();
   const isEditMode = !!id;
 
   const { createPost } = useGuest();
   const [loading, setLoading] = useState(false);
-  const [fetching, setFetching] = useState(!!id); // 데이터 로딩 상태
+  const [fetching, setFetching] = useState(!!id);
 
   const [date, setDate] = useState(new Date());
   const [tempDate, setTempDate] = useState(new Date()); 
@@ -38,7 +47,7 @@ export default function GuestWriteScreen() {
   const [isFree, setIsFree] = useState(false);
   const [description, setDescription] = useState('');
 
-  // [New Feature] 수정 모드일 때 기존 데이터 불러오기
+  // 수정 모드 데이터 불러오기
   useEffect(() => {
       if (isEditMode && typeof id === 'string') {
           const loadData = async () => {
@@ -50,11 +59,7 @@ export default function GuestWriteScreen() {
                       setPositions(data.positions || []);
                       setGender(data.gender);
                       setDescription(data.description);
-                      
-                      // 시간 설정
                       if (data.matchDate) setDate(new Date(data.matchDate));
-                      
-                      // 회비 설정
                       if (data.fee === '0' || data.fee === '무료') {
                           setIsFree(true);
                           setFee('');
@@ -62,12 +67,11 @@ export default function GuestWriteScreen() {
                           setFee(data.fee);
                       }
                   } else {
-                      Alert.alert('오류', '존재하지 않는 게시글입니다.');
-                      router.back();
+                      safeAlert('오류', '존재하지 않는 게시글입니다.', () => router.back());
                   }
               } catch (e) {
                   console.error(e);
-                  Alert.alert('오류', '데이터를 불러오지 못했습니다.');
+                  safeAlert('오류', '데이터를 불러오지 못했습니다.');
               } finally {
                   setFetching(false);
               }
@@ -89,19 +93,13 @@ export default function GuestWriteScreen() {
     return `${ampm} ${formatHour}시 ${min > 0 ? `${min}분` : ''}`;
   };
 
-  // [Mobile] 날짜 변경 핸들러
   const handleDateChange = (event: any, selectedDate?: Date) => {
-    if (selectedDate) {
-        setTempDate(selectedDate);
-    }
+    if (selectedDate) setTempDate(selectedDate);
   };
 
-  // [Web] 날짜 변경 핸들러
   const handleWebDateChange = (e: any) => {
       const val = e.target.value;
-      if (val) {
-          setDate(new Date(val));
-      }
+      if (val) setDate(new Date(val));
   };
 
   const togglePosition = (pos: string) => {
@@ -125,16 +123,21 @@ export default function GuestWriteScreen() {
   };
 
   const handleSubmit = async () => {
-    if (!location || positions.length === 0 || (!isFree && !fee)) return Alert.alert('알림', '필수 정보를 입력해주세요.');
+    // 1. 필수 입력 검증
+    if (!location.trim()) return safeAlert('필수 입력', '경기 장소를 입력해주세요.');
+    if (positions.length === 0) return safeAlert('필수 입력', '모집할 포지션을 하나 이상 선택해주세요.');
+    if (!isFree && !fee) return safeAlert('필수 입력', '참가비를 입력하거나 "참가비 없음"을 선택해주세요.');
     
-    // [Fix] 과거 날짜 방지 (Priority 1 재적용)
-    if (date < new Date()) {
-        return Alert.alert('알림', '이미 지나간 날짜는 선택할 수 없어요.');
+    // 2. 날짜 검증 (현재 시간보다 이전인지 체크)
+    const now = new Date();
+    // 5분의 여유 시간은 둠 (작성하는 동안 시간이 흐를 수 있으므로)
+    if (date.getTime() < now.getTime() - 5 * 60 * 1000) {
+        return safeAlert('날짜 확인', '이미 지나간 시간입니다.\n미래의 시간을 선택해주세요.');
     }
     
     setLoading(true);
     try {
-      // [New Feature] 수정 모드 처리
+      // 수정 모드
       if (isEditMode && typeof id === 'string') {
           await updateDoc(doc(db, "guest_posts", id), {
               matchDate: date.toISOString(),
@@ -143,22 +146,25 @@ export default function GuestWriteScreen() {
               gender,
               fee: isFree ? '0' : fee,
               description,
-              updatedAt: new Date().toISOString() // 수정일시 기록
+              updatedAt: new Date().toISOString()
           });
           
-          Alert.alert('수정 완료', '게시글이 수정되었습니다.', [
-              { text: '확인', onPress: () => router.back() }
-          ]);
+          safeAlert('수정 완료', '게시글이 성공적으로 수정되었습니다.', () => router.back());
           return;
       }
 
-      // 기존 생성 모드 처리
+      // 생성 모드
       let teamId = 'individual';
       let teamName = '개인 모집';
+      let hostUid = auth.currentUser?.uid;
 
-      if (auth.currentUser) {
-        const userSnap = await getDoc(doc(db, "users", auth.currentUser.uid));
-        if (userSnap.exists()) {
+      if (!hostUid) {
+          setLoading(false);
+          return safeAlert('인증 필요', '로그인이 필요합니다.');
+      }
+
+      const userSnap = await getDoc(doc(db, "users", hostUid));
+      if (userSnap.exists()) {
             const uData = userSnap.data();
             if (uData.teamId) {
                 teamId = uData.teamId;
@@ -167,13 +173,12 @@ export default function GuestWriteScreen() {
             } else if (uData.name) {
                 teamName = `${uData.name} (개인)`;
             }
-        }
       }
 
       const success = await createPost({
         hostTeamId: teamId,
         hostTeamName: teamName,
-        hostCaptainId: auth.currentUser!.uid,
+        hostCaptainId: hostUid,
         matchDate: date.toISOString(),
         location,
         positions,
@@ -183,12 +188,14 @@ export default function GuestWriteScreen() {
       });
 
       if (success) {
-        Alert.alert('등록 완료', '용병 모집글이 등록되었습니다.', [
-            { text: '확인', onPress: () => router.back() }
-        ]);
+        safeAlert('등록 완료', '용병 모집글이 등록되었습니다.\n많은 지원자가 오길 바랄게요!', () => router.back());
+      } else {
+        throw new Error("Create Failed");
       }
+
     } catch (e) {
-      Alert.alert('오류', '처리 중 문제가 발생했습니다.');
+      console.error(e);
+      safeAlert('등록 실패', '일시적인 오류가 발생했습니다.\n잠시 후 다시 시도해주세요.');
     } finally {
       setLoading(false);
     }
@@ -203,7 +210,6 @@ export default function GuestWriteScreen() {
         className="flex-1"
       >
         <ScrollView contentContainerClassName="p-6 pb-20" showsVerticalScrollIndicator={false}>
-            {/* Title 변경 */}
             <View className="mb-8">
                 <Text className="text-2xl font-extrabold text-gray-900 mb-2">{isEditMode ? '모집글 수정하기' : '게스트 모집하기'}</Text>
                 <Text className="text-gray-500 text-sm">{isEditMode ? '변경할 내용을 입력해주세요.' : '함께 운동할 멤버를 찾아보세요.'}</Text>
@@ -244,17 +250,8 @@ export default function GuestWriteScreen() {
                         type: 'datetime-local',
                         value: toLocalISOString(date),
                         onChange: handleWebDateChange,
-                        min: toLocalISOString(new Date()), // [Fix] 과거 날짜 방지
-                        style: {
-                            border: 'none',
-                            width: '100%',
-                            height: '40px',
-                            fontSize: '16px',
-                            color: '#111827',
-                            backgroundColor: 'transparent',
-                            outline: 'none',
-                            cursor: 'pointer'
-                        }
+                        min: toLocalISOString(new Date()), 
+                        style: { border: 'none', width: '100%', height: '40px', fontSize: '16px', color: '#111827', backgroundColor: 'transparent', outline: 'none' }
                     })}
                 </View>
             ) : (
@@ -276,7 +273,7 @@ export default function GuestWriteScreen() {
             )}
 
             <Text className="font-bold text-gray-500 mb-2">장소</Text>
-            <TextInput className="bg-gray-50 p-4 rounded-xl border border-gray-200 mb-6" placeholder="정확한 주소를 입력해주세요" value={location} onChangeText={setLocation} />
+            <TextInput className="bg-gray-50 p-4 rounded-xl border border-gray-200 mb-6" placeholder="예: 서울 강남구 역삼동 체육관" value={location} onChangeText={setLocation} />
 
             <Text className="font-bold text-gray-500 mb-2">참가비</Text>
             <View className="flex-row gap-2 mb-6">
@@ -297,10 +294,21 @@ export default function GuestWriteScreen() {
             </View>
 
             <Text className="font-bold text-gray-500 mb-2">상세 내용</Text>
-            <TextInput className="bg-gray-50 p-4 rounded-xl border border-gray-200 h-24 mb-8" multiline placeholder="실력, 분위기 등 추가 정보를 입력하세요." value={description} onChangeText={setDescription} textAlignVertical="top" />
+            <TextInput className="bg-gray-50 p-4 rounded-xl border border-gray-200 h-24 mb-8" multiline placeholder="팀 실력, 분위기 등 상세 정보를 적어주세요." value={description} onChangeText={setDescription} textAlignVertical="top" />
 
-            <TouchableOpacity onPress={handleSubmit} disabled={loading} className="bg-indigo-600 py-4 rounded-xl items-center shadow-lg shadow-indigo-200">
-                {loading ? <ActivityIndicator color="white" /> : <Text className="text-white font-bold text-lg">{isEditMode ? '수정 완료' : '모집 등록'}</Text>}
+            <TouchableOpacity 
+                onPress={handleSubmit} 
+                disabled={loading} 
+                className={`py-4 rounded-xl items-center shadow-lg ${loading ? 'bg-gray-400' : 'bg-indigo-600 shadow-indigo-200'}`}
+            >
+                {loading ? (
+                    <View className="flex-row items-center gap-2">
+                        <ActivityIndicator color="white" />
+                        <Text className="text-white font-bold text-lg">처리 중...</Text>
+                    </View>
+                ) : (
+                    <Text className="text-white font-bold text-lg">{isEditMode ? '수정 완료' : '모집 등록'}</Text>
+                )}
             </TouchableOpacity>
         </ScrollView>
       </KeyboardAvoidingView>
