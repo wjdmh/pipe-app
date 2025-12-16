@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Alert } from 'react-native';
+import { Alert, Platform } from 'react-native';
 import { doc, updateDoc, collection, addDoc, getDoc, runTransaction } from 'firebase/firestore';
 import { db } from '../configs/firebaseConfig';
 import { sendPushNotification } from '../utils/notificationHelper';
@@ -7,26 +7,37 @@ import { sendPushNotification } from '../utils/notificationHelper';
 export const useMatchResult = () => {
   const [isProcessing, setIsProcessing] = useState(false);
 
+  // [Web Fix] 웹 환경 호환성을 위한 Alert 래퍼
+  const safeAlert = (title: string, msg: string) => {
+    if (Platform.OS === 'web') {
+        // 웹 브라우저의 기본 알림창 사용
+        window.alert(`${title}\n${msg}`);
+    } else {
+        // 네이티브 앱의 알림창 사용
+        Alert.alert(title, msg);
+    }
+  };
+
   // 1. 결과 제출 (Submit)
   const submitResult = async (matchId: string, myScore: number, opScore: number, myTeamId: string, matchData: any) => {
     if (isProcessing) return false;
     
     if (isNaN(myScore) || isNaN(opScore)) {
-      Alert.alert('점수 입력', '숫자만 입력할 수 있어요.');
+      safeAlert('점수 입력', '숫자만 입력할 수 있어요.');
       return false;
     }
     if (myScore < 0 || opScore < 0) {
-      Alert.alert('점수 입력', '0점 이상으로 입력해주세요.');
+      safeAlert('점수 입력', '0점 이상으로 입력해주세요.');
       return false;
     }
     
     // [Domain Rule] 배구는 무승부가 없음
     if (myScore === opScore) {
-        Alert.alert('점수 확인', '점수가 동점이에요. 듀스 룰을 확인해주세요.');
+        safeAlert('점수 확인', '점수가 동점이에요. 듀스 룰을 확인해주세요.');
         return false;
     }
     if (myScore < opScore) {
-      Alert.alert('결과 입력', '승리한 팀이 결과를 입력해주세요.');
+      safeAlert('결과 입력', '승리한 팀이 결과를 입력해주세요.');
       return false;
     }
 
@@ -79,11 +90,11 @@ export const useMatchResult = () => {
         }
       }
       
-      Alert.alert('입력 완료', '상대 팀에게 확인을 요청했어요.');
+      safeAlert('입력 완료', '상대 팀에게 확인을 요청했어요.');
       return true;
     } catch (e: any) {
       console.error("Submit Result Error:", e);
-      Alert.alert('전송 실패', e.message || '결과 전송에 실패했어요. 다시 시도해주세요.');
+      safeAlert('전송 실패', e.message || '결과 전송에 실패했어요. 다시 시도해주세요.');
       return false;
     } finally {
       setIsProcessing(false);
@@ -95,7 +106,7 @@ export const useMatchResult = () => {
     if (isProcessing) return;
     
     if (matchData.result.submitterId === myTeamId) {
-      Alert.alert('승인 대기', '상대 팀의 확인을 기다리고 있어요.');
+      safeAlert('승인 대기', '상대 팀의 확인을 기다리고 있어요.');
       return;
     }
 
@@ -188,12 +199,12 @@ export const useMatchResult = () => {
         }
       } catch (notiErr) { console.warn("Noti failed", notiErr); }
 
-      Alert.alert('확정 완료', '경기 결과가 확정됐어요.');
+      safeAlert('확정 완료', '경기 결과가 확정됐어요.');
       return true;
 
     } catch (e: any) {
       console.error("Approve Result Error:", e);
-      Alert.alert('승인 실패', typeof e === 'string' ? e : '처리에 실패했어요. 잠시 후 다시 시도해주세요.');
+      safeAlert('승인 실패', typeof e === 'string' ? e : '처리에 실패했어요. 잠시 후 다시 시도해주세요.');
       return false;
     } finally {
       setIsProcessing(false);
@@ -210,10 +221,10 @@ export const useMatchResult = () => {
         "result.status": 'dispute',
         disputedAt: new Date().toISOString()
       });
-      Alert.alert('접수 완료', '점수 정정 요청이 접수됐어요. 관리자가 확인 후 연락드릴게요.');
+      safeAlert('접수 완료', '점수 정정 요청이 접수됐어요. 관리자가 확인 후 연락드릴게요.');
       return true;
     } catch (e: any) {
-      Alert.alert('요청 실패', '잠시 후 다시 시도해주세요.');
+      safeAlert('요청 실패', '잠시 후 다시 시도해주세요.');
       return false;
     } finally {
       setIsProcessing(false);

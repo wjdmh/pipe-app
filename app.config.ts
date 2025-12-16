@@ -1,10 +1,9 @@
-// app.config.ts
 import { ExpoConfig, ConfigContext } from 'expo/config';
 
 export default ({ config }: ConfigContext): ExpoConfig => {
-  // GitHub Pages 배포를 위한 Base URL 설정
-  // 로컬 개발(npx expo start)시에는 자동으로 무시되므로 안전하게 설정 가능
-  const baseUrl = '/pipe-app'; 
+  // [Web Fix] GitHub Pages 배포를 위한 서브 경로 설정
+  // 주의: 저장소 이름 뒤에 반드시 슬래시(/)를 붙여야 경로 오류를 방지할 수 있습니다.
+  const baseUrl = '/pipe-app/'; 
 
   return {
     ...config,
@@ -47,7 +46,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     ],
     experiments: {
       "typedRoutes": true,
-      // 👇 GitHub Pages 서브 경로 배포를 위해 필수 설정
+      // 👇 GitHub Pages 하위 경로 배포 설정 (엑박 방지 핵심 코드)
       "baseUrl": baseUrl 
     }
   };

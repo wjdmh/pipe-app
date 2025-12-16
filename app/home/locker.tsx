@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, TextInput, Alert, ActivityIndicator, Modal, FlatList } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, TextInput, Alert, ActivityIndicator, Modal, FlatList, Platform } from 'react-native';
 import { doc, getDoc, updateDoc, collection, query, where, onSnapshot, arrayRemove, arrayUnion, addDoc, runTransaction } from 'firebase/firestore';
 import { auth, db } from '../../configs/firebaseConfig';
 import { FontAwesome5 } from '@expo/vector-icons';
@@ -61,6 +61,15 @@ export default function LockerScreen() {
   const [selectedMatchDetail, setSelectedMatchDetail] = useState<{match: MatchData, opponentName: string, opponentPhone: string} | null>(null);
 
   const { isProcessing, submitResult, approveResult, disputeResult } = useMatchResult();
+
+  // [Web Fix] 웹 환경을 위한 Alert 래퍼
+  const safeAlert = (title: string, msg: string) => {
+    if (Platform.OS === 'web') {
+      window.alert(`${title}\n${msg}`);
+    } else {
+      Alert.alert(title, msg);
+    }
+  };
 
   const findCaptainId = async (teamId: string) => {
       try {
@@ -173,9 +182,9 @@ export default function LockerScreen() {
                   updatedAt: new Date().toISOString()
               });
           });
-          Alert.alert('팀원 승인', `${req.name}님이 팀에 합류했어요!`);
+          safeAlert('팀원 승인', `${req.name}님이 팀에 합류했어요!`);
       } catch (e: any) { 
-          Alert.alert('오류', typeof e === 'string' ? e : '승인 처리에 실패했어요.'); 
+          safeAlert('오류', typeof e === 'string' ? e : '승인 처리에 실패했어요.'); 
       }
   };
 
@@ -183,41 +192,51 @@ export default function LockerScreen() {
       if (!isCaptain || !myTeamId) return;
       try {
         await updateDoc(doc(db, "teams", myTeamId), { joinRequests: arrayRemove(req) });
-      } catch(e) { Alert.alert('오류', '거절 실패'); }
+      } catch(e) { safeAlert('오류', '거절 실패'); }
   };
 
   const handleKickMember = async (player: Player) => {
       if (!isCaptain || !myTeamId || !player.uid) return;
-      Alert.alert('내보내기', '이 선수를 팀에서 내보낼까요?', [
-          { text: '취소' },
-          { text: '내보내기', style: 'destructive', onPress: async () => {
-              try {
-                  await runTransaction(db, async (transaction) => {
-                      const teamRef = doc(db, "teams", myTeamId);
-                      const userRef = doc(db, "users", player.uid!);
 
-                      const teamDoc = await transaction.get(teamRef);
-                      const userDoc = await transaction.get(userRef);
+      const executeKick = async () => {
+          try {
+              await runTransaction(db, async (transaction) => {
+                  const teamRef = doc(db, "teams", myTeamId);
+                  const userRef = doc(db, "users", player.uid!);
 
-                      if (!teamDoc.exists()) throw "팀 데이터 오류";
+                  const teamDoc = await transaction.get(teamRef);
+                  const userDoc = await transaction.get(userRef);
 
-                      transaction.update(teamRef, { 
-                          roster: arrayRemove(player), 
-                          members: arrayRemove(player.uid) 
-                      });
+                  if (!teamDoc.exists()) throw "팀 데이터 오류";
 
-                      if (userDoc.exists()) {
-                          transaction.update(userRef, { 
-                              teamId: null, 
-                              role: 'guest',
-                              updatedAt: new Date().toISOString()
-                          });
-                      }
+                  transaction.update(teamRef, { 
+                      roster: arrayRemove(player), 
+                      members: arrayRemove(player.uid) 
                   });
-                  Alert.alert('완료', '선수를 방출했어요.');
-              } catch (e) { Alert.alert('오류', '처리에 실패했습니다.'); }
-          }}
-      ]);
+
+                  if (userDoc.exists()) {
+                      transaction.update(userRef, { 
+                          teamId: null, 
+                          role: 'guest',
+                          updatedAt: new Date().toISOString()
+                      });
+                  }
+              });
+              safeAlert('완료', '선수를 방출했어요.');
+          } catch (e) { safeAlert('오류', '처리에 실패했습니다.'); }
+      };
+
+      // [Web Fix] Platform 별 분기 처리
+      if (Platform.OS === 'web') {
+          if (window.confirm(`${player.name} 선수를 정말 팀에서 내보낼까요?`)) {
+              executeKick();
+          }
+      } else {
+          Alert.alert('내보내기', '이 선수를 팀에서 내보낼까요?', [
+              { text: '취소' },
+              { text: '내보내기', style: 'destructive', onPress: executeKick }
+          ]);
+      }
   };
 
   const handleAddManualPlayer = async () => {
@@ -228,11 +247,10 @@ export default function LockerScreen() {
           roster: arrayUnion(newPlayer)
       });
       setNewPlayerName('');
-      Alert.alert('등록 완료', '선수가 추가되었어요.');
-    } catch (e) { Alert.alert('오류', '선수 등록 실패'); }
+      safeAlert('등록 완료', '선수가 추가되었어요.');
+    } catch (e) { safeAlert('오류', '선수 등록 실패'); }
   };
 
-  // ✅ [Critical Fix] 데이터 무결성을 보장하는 수동 선수 삭제
   const handleDeleteManualPlayer = async (pid: number) => {
     if (!myTeamId) return;
     try {
@@ -252,9 +270,8 @@ export default function LockerScreen() {
             transaction.update(teamRef, { roster: updatedRoster });
         });
     } catch (e: any) {
-        // 무시해도 되는 에러(이미 삭제됨)가 아니라면 알림 표시
         if (e !== "이미 삭제된 선수입니다.") {
-            Alert.alert('오류', '삭제 처리에 실패했습니다.');
+            safeAlert('오류', '삭제 처리에 실패했습니다.');
         }
     }
   };
@@ -279,24 +296,32 @@ export default function LockerScreen() {
 
   const acceptMatch = async (guestTeamId: string) => {
     if (!selectedMatchId) return;
-    Alert.alert('매칭 확정', '이 팀과 경기를 진행할까요?', [
-      { text: '취소' },
-      { text: '확정', onPress: async () => {
-          try {
-            await updateDoc(doc(db, "matches", selectedMatchId), { 
-                status: 'matched', 
-                guestId: guestTeamId, 
-                applicants: [] 
-            });
-            const guestCaptainId = await findCaptainId(guestTeamId);
-            if (guestCaptainId) await sendNotification(guestCaptainId, 'match_upcoming', '매칭 성사!', '호스트가 매칭을 수락했어요.');
-            
-            setApplicantModalVisible(false);
-            Alert.alert('완료', '매칭이 성사되었어요!');
-          } catch (e) { Alert.alert('오류', '문제가 발생했어요.'); }
-        } 
-      }
-    ]);
+
+    const executeAccept = async () => {
+        try {
+          await updateDoc(doc(db, "matches", selectedMatchId), { 
+              status: 'matched', 
+              guestId: guestTeamId, 
+              applicants: [] 
+          });
+          const guestCaptainId = await findCaptainId(guestTeamId);
+          if (guestCaptainId) await sendNotification(guestCaptainId, 'match_upcoming', '매칭 성사!', '호스트가 매칭을 수락했어요.');
+          
+          setApplicantModalVisible(false);
+          safeAlert('완료', '매칭이 성사되었어요!');
+        } catch (e) { safeAlert('오류', '문제가 발생했어요.'); }
+    };
+
+    if (Platform.OS === 'web') {
+        if (window.confirm('이 팀과 경기를 확정하시겠습니까?')) {
+            executeAccept();
+        }
+    } else {
+        Alert.alert('매칭 확정', '이 팀과 경기를 진행할까요?', [
+            { text: '취소' },
+            { text: '확정', onPress: executeAccept }
+        ]);
+    }
   };
 
   const handleMatchDetail = async (match: MatchData) => {
@@ -315,14 +340,27 @@ export default function LockerScreen() {
           }
           setSelectedMatchDetail({ match: match, opponentName: tData.name, opponentPhone: phone });
           setMatchDetailModalVisible(true);
-      } catch (e) { Alert.alert('오류', '상대 정보를 불러올 수 없어요.'); }
+      } catch (e) { safeAlert('오류', '상대 정보를 불러올 수 없어요.'); }
   };
 
   const handleApprove = (match: any) => {
-    Alert.alert('경기 결과 확인', '상대 팀이 입력한 점수가 맞나요?', [
-      { text: '점수가 달라요', style: 'destructive', onPress: () => disputeResult(match.id) },
-      { text: '맞아요', onPress: () => approveResult(match, myTeamId!) }
-    ]);
+    // [Web Fix] 복잡한 분기 처리 (이의제기/승인)
+    if (Platform.OS === 'web') {
+        const isCorrect = window.confirm('상대 팀이 입력한 점수가 맞나요?\n[확인]을 누르면 승인됩니다.');
+        if (isCorrect) {
+            approveResult(match, myTeamId!);
+        } else {
+            const wantDispute = window.confirm('점수가 다른가요?\n[확인]을 누르면 이의 제기가 접수됩니다.');
+            if (wantDispute) {
+                disputeResult(match.id);
+            }
+        }
+    } else {
+        Alert.alert('경기 결과 확인', '상대 팀이 입력한 점수가 맞나요?', [
+            { text: '점수가 달라요', style: 'destructive', onPress: () => disputeResult(match.id) },
+            { text: '맞아요', onPress: () => approveResult(match, myTeamId!) }
+        ]);
+    }
   };
 
   const handleSubmitResult = async () => {
@@ -504,8 +542,10 @@ export default function LockerScreen() {
       
       {/* 1. 레벨 변경 모달 */}
       <Modal visible={showLevelModal} transparent animationType="fade">
+          {/* [Web Fix] 모달 배경 컨테이너가 중앙 정렬을 보장하도록 수정 */}
           <View className="flex-1 justify-center items-center bg-black/50 px-6">
-              <View className="bg-white w-full rounded-2xl p-6">
+              {/* [Web Fix] max-w-[500px] 추가하여 PC에서 너무 넓어지는 것 방지 */}
+              <View className="bg-white w-full max-w-[500px] rounded-2xl p-6">
                   <Text className="text-lg font-bold mb-4 text-[#191F28] text-center">팀 수준 변경</Text>
                   <View className="flex-row justify-between mb-2">
                       {LEVELS.map(lvl => (
@@ -522,7 +562,8 @@ export default function LockerScreen() {
       {/* 2. 신청자 관리 모달 */}
       <Modal visible={applicantModalVisible} animationType="slide" transparent={true}>
         <View className="flex-1 justify-end bg-black/50">
-            <View className="bg-white rounded-t-3xl p-6 min-h-[50%]">
+            {/* [Web Fix] 중앙 정렬 및 최대 너비 제한으로 PC 뷰 대응 */}
+            <View className="bg-white rounded-t-3xl p-6 min-h-[50%] w-full max-w-[500px] self-center">
                 <Text className="text-xl font-bold mb-4">신청 팀 목록</Text>
                 <FlatList data={applicantsData} keyExtractor={item => item.id} renderItem={({item}) => ( <View className="flex-row justify-between items-center bg-[#F9FAFB] p-4 rounded-2xl mb-3"> <View><Text className="font-bold text-lg text-[#191F28]">{item.name}</Text><Text className="text-sm text-[#8B95A1]">{item.affiliation} ({item.level}급)</Text></View> <TouchableOpacity onPress={() => acceptMatch(item.id)} className="bg-[#3182F6] px-4 py-2 rounded-xl"><Text className="text-white font-bold">수락</Text></TouchableOpacity> </View> )} />
                 <TouchableOpacity onPress={() => setApplicantModalVisible(false)} className="mt-4 bg-gray-200 p-4 rounded-xl items-center"><Text className="font-bold text-gray-600">닫기</Text></TouchableOpacity>
@@ -533,7 +574,7 @@ export default function LockerScreen() {
       {/* 3. 경기 결과 입력 모달 */}
       <Modal visible={resultModalVisible} animationType="fade" transparent={true}>
         <View className="flex-1 justify-center items-center bg-black/50 px-6">
-            <View className="bg-white w-full rounded-3xl p-6">
+            <View className="bg-white w-full max-w-[500px] rounded-3xl p-6">
                 <Text className={`${TYPOGRAPHY.h2} mb-2 text-center`}>경기 결과 입력</Text>
                 <Text className="text-xs text-[#3182F6] font-bold mb-6 text-center">승리한 팀이 결과를 입력해주세요</Text>
                 <View className="flex-row justify-between items-center mb-8">
@@ -552,7 +593,7 @@ export default function LockerScreen() {
       {/* 4. 경기 상세 모달 (상대 연락처) */}
       <Modal visible={matchDetailModalVisible} transparent animationType="fade">
           <View className="flex-1 justify-center items-center bg-black/60 px-6">
-              <View className="bg-white w-full rounded-2xl p-6">
+              <View className="bg-white w-full max-w-[500px] rounded-2xl p-6">
                   <Text className="text-xl font-bold mb-4 text-[#191F28] text-center">경기 상세</Text>
                   <View className="mb-4 p-4 bg-[#F9FAFB] rounded-xl"><Text className="text-xs text-[#8B95A1] mb-1">상대 팀</Text><Text className="text-lg font-bold text-[#3182F6]">{selectedMatchDetail?.opponentName}</Text></View>
                   <View className="mb-6 p-4 bg-[#F9FAFB] rounded-xl"><Text className="text-xs text-[#8B95A1] mb-1">대표 연락처</Text><Text className="text-lg font-bold text-[#191F28]">{selectedMatchDetail?.opponentPhone}</Text></View>
@@ -564,7 +605,9 @@ export default function LockerScreen() {
 
       {/* 5. 팀 상세 정보 (전적 히스토리) */}
       <Modal visible={teamDetailModalVisible} animationType="slide" presentationStyle="pageSheet">
-          <View className="flex-1 bg-white p-6 pt-10">
+          {/* [Web Fix] pageSheet가 웹에서는 전체화면이므로 레이아웃 제한 필요 */}
+          <View className="flex-1 bg-white items-center justify-center">
+            <View className="w-full h-full max-w-[500px] bg-white p-6 pt-10">
               <View className="flex-row justify-between items-center mb-8">
                   <Text className="text-2xl font-extrabold text-[#191F28]">팀 전적 기록</Text>
                   <TouchableOpacity onPress={() => setTeamDetailModalVisible(false)} className="bg-gray-100 p-2 rounded-full"><FontAwesome5 name="times" size={20} color="#64748b" /></TouchableOpacity>
@@ -586,6 +629,7 @@ export default function LockerScreen() {
                 }} 
                 ListEmptyComponent={<Text className="text-center text-[#8B95A1] mt-4">완료된 경기 기록이 없습니다.</Text>} 
               />
+            </View>
           </View>
       </Modal>
 

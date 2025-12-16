@@ -39,39 +39,49 @@ export const Button = ({
 }: ButtonProps) => {
   let bgClass = '';
   let textClass = '';
+  let hoverClass = '';
 
   // Tailwind Class 문자열 생성
   switch (variant) {
     case 'primary': 
       bgClass = `bg-[${COLORS.primary}]`; 
       textClass = 'text-white'; 
+      // [Web Fix] 마우스 호버 시 약간 투명하게
+      hoverClass = 'hover:opacity-90';
       break;
     case 'secondary': 
       bgClass = 'bg-white border border-gray-200'; 
       textClass = `text-[${COLORS.textSub}]`; 
+      // [Web Fix] 마우스 호버 시 연한 회색 배경
+      hoverClass = 'hover:bg-gray-50';
       break;
     case 'danger': 
-      // NativeWind에서 투명도 적용: /10, /20
       bgClass = `bg-[${COLORS.danger}]/10 border border-[${COLORS.danger}]/20`; 
       textClass = `text-[${COLORS.danger}]`; 
+      // [Web Fix] 마우스 호버 시 붉은 배경 조금 더 진하게
+      hoverClass = 'hover:bg-red-100';
       break;
     case 'ghost': 
       bgClass = 'bg-transparent'; 
       textClass = `text-[${COLORS.textSub}]`; 
+      // [Web Fix] 마우스 호버 시 버튼 영역 표시
+      hoverClass = 'hover:bg-gray-100';
       break;
   }
 
-  // disabled 상태일 때 스타일 덮어쓰기
+  // disabled 상태일 때 스타일 덮어쓰기 및 호버 제거
   if (disabled) {
     bgClass = 'bg-gray-200 border-gray-200 opacity-50';
+    hoverClass = ''; 
   }
 
   return (
     <TouchableOpacity
       onPress={onPress}
       disabled={disabled || isLoading}
-      // className 조합: 기본 레이아웃 + 배경색 + 사이즈 + (외부 style은 style prop으로 전달)
-      className={`flex-row justify-center items-center shadow-sm active:opacity-80 ${bgClass} ${SIZES[size]}`}
+      // className 조합: 기본 레이아웃 + 배경색 + 호버 효과 + 사이즈 + (외부 style)
+      // active:opacity-80은 모바일 터치감 유지를 위해 남겨둠
+      className={`flex-row justify-center items-center shadow-sm active:opacity-80 ${bgClass} ${hoverClass} ${SIZES[size]}`}
       style={style}
       {...props}
     >

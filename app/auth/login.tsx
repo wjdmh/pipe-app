@@ -24,6 +24,12 @@ export default function LoginScreen() {
       let title = '로그인 실패';
       let msg = '이메일 또는 비밀번호를 확인해주세요.';
       
+      // [Web Fix] 웹에서는 Alert 대신 window.alert를 사용하는 것이 안전하지만, 
+      // 로직 흐름상 여기서는 일단 기본 Alert를 사용하되, 
+      // 이전 단계에서 제공한 safeAlert 패턴을 적용해도 좋습니다. 
+      // (현재는 React Native Web이 Alert를 window.alert로 폴리필해주므로 
+      // 단순 텍스트 알림은 크리티컬하지 않으나, 버튼 커스텀이 없으므로 안전합니다.)
+      
       if (error.code === 'auth/invalid-email') {
         msg = '이메일 형식이 올바르지 않아요.';
       }
@@ -31,7 +37,11 @@ export default function LoginScreen() {
         msg = '이메일 또는 비밀번호가 정확하지 않아요.';
       }
       
-      Alert.alert(title, msg);
+      if (Platform.OS === 'web') {
+        window.alert(`${title}\n${msg}`);
+      } else {
+        Alert.alert(title, msg);
+      }
     } finally {
       setLoading(false);
     }
@@ -41,9 +51,14 @@ export default function LoginScreen() {
 
   return (
     <SafeAreaView className="flex-1 bg-white">
-      {/* [Web Fix] 웹에서는 behavior를 사용하지 않음 */}
+      {/* [Web Fix] 
+        웹 브라우저(특히 모바일 사파리/크롬)는 키보드 등장 시 
+        자체적으로 뷰포트를 리사이징하므로 KeyboardAvoidingView가 불필요하거나 
+        오동작(이중 밀림)을 유발합니다. 따라서 웹에서는 비활성화합니다.
+      */}
       <KeyboardAvoidingView 
         behavior={Platform.OS === "ios" ? "padding" : undefined}
+        enabled={Platform.OS !== 'web'}
         className="flex-1"
       >
         <ScrollView contentContainerClassName="flex-grow px-6 pt-10" keyboardShouldPersistTaps="handled">
@@ -62,7 +77,8 @@ export default function LoginScreen() {
               keyboardType="email-address"
               value={email}
               onChangeText={setEmail}
-              // [Web Fix] autoFocus는 모바일에서 키보드가 즉시 올라와 불편할 수 있으므로 웹에서만 추천
+              // [Web Fix] autoFocus는 모바일 앱에서는 키보드가 갑자기 튀어나와 UX를 해칠 수 있지만
+              // 웹에서는 로그인 페이지 진입 시 바로 입력하는 것이 표준 UX입니다.
               autoFocus={Platform.OS === 'web'}
             />
 

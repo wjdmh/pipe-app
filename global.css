@@ -1,6 +1,32 @@
-/* wjdmh/pipe-app/pipe-app-master/global.css */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* ❌ 제가 아까 추가하라고 했던 html, body 설정은 삭제해주세요! */
+/* 👇 [Web Fix] 웹 배포 시 폰트 404 에러 방지를 위한 강제 주입 */
+/* 앱(JS)이 로컬 파일을 찾지 못하더라도, CSS가 CDN에서 폰트를 미리 로드하여 연결해줍니다. */
+
+@font-face {
+  font-family: 'FontAwesome';
+  src: url('https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/fonts/fontawesome-webfont.ttf') format('truetype');
+}
+
+@font-face {
+  font-family: 'FontAwesome5Free-Regular';
+  src: url('https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/webfonts/fa-regular-400.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'FontAwesome5Free-Solid';
+  src: url('https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/webfonts/fa-solid-900.ttf') format('truetype');
+  font-weight: 900;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'FontAwesome5Brands-Regular';
+  src: url('https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/webfonts/fa-brands-400.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+}

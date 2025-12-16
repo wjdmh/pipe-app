@@ -56,7 +56,6 @@ export default function HomeLayout() {
       {/* 숨김 페이지들 */}
       <Tabs.Screen name="ranking" options={{ href: null }} />
       <Tabs.Screen name="notification" options={{ href: null }} /> 
-      <Tabs.Screen name="settings" options={{ href: null }} />
     </Tabs>
   );
 }
