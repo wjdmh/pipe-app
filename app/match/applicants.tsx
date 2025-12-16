@@ -71,8 +71,9 @@ export default function ApplicantManageScreen() {
     }
   };
 
-  // [Upgraded] DB 저장 + 푸시 발송 통합 함수
-  const sendNotification = async (targetUid: string, type: string, title: string, msg: string) => {
+  // [Upgraded] 링크 파라미터를 지원하도록 개선된 알림 전송 함수
+  // link의 기본값을 '매칭 탭'으로 설정하여, 별도 지정 없어도 올바른 곳으로 이동하게 함
+  const sendNotification = async (targetUid: string, type: string, title: string, msg: string, link: string = '/home/locker?initialTab=matches') => {
       if (!targetUid) return;
       try {
           // 1. Firestore 내 알림 센터 저장
@@ -81,7 +82,7 @@ export default function ApplicantManageScreen() {
               type, 
               title, 
               message: msg,
-              link: `/home/locker`,
+              link, // 동적으로 받은 링크 저장
               createdAt: new Date().toISOString(),
               isRead: false
           });
@@ -91,7 +92,7 @@ export default function ApplicantManageScreen() {
           if (userSnap.exists()) {
               const token = userSnap.data().pushToken;
               if (token) {
-                  await sendPushNotification(token, title, msg, { link: '/home/locker' });
+                  await sendPushNotification(token, title, msg, { link }); // 푸시 데이터에도 링크 포함
               }
           }
       } catch (e) { console.warn("알림 전송 실패 (Non-blocking):", e); }
@@ -134,7 +135,7 @@ export default function ApplicantManageScreen() {
 
             // --- 트랜잭션 성공 후 알림 발송 ---
             
-            // 1. 수락된 팀에게 알림 (성공)
+            // 1. 수락된 팀에게 알림 (성공) -> 기본 링크(매칭 탭) 사용
             await sendNotification(
                 team.captainId,
                 'match_upcoming', // 아이콘 타입
@@ -142,7 +143,7 @@ export default function ApplicantManageScreen() {
                 `신청하신 경기가 매칭되었습니다! 상대 팀 연락처를 확인하세요.`
             );
 
-            // 2. 탈락한 팀들에게 알림 (실패)
+            // 2. 탈락한 팀들에게 알림 (실패) -> 마찬가지로 확인을 위해 매칭 탭으로 이동
             const rejectedTeams = applicants.filter(t => t.id !== team.id);
             const notifyPromises = rejectedTeams.map(rejected => 
                 sendNotification(

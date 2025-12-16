@@ -41,113 +41,137 @@ export default function MyPageScreen() {
     }
   }
 
-  const handleLogout = async () => {
-    Alert.alert('로그아웃', '정말 로그아웃 하시겠습니까?', [
-        { text: '취소', style: 'cancel' },
-        { text: '로그아웃', style: 'destructive', onPress: async () => {
-            try {
-                await signOut(auth);
-                router.replace('/');
-            } catch (e) { Alert.alert('오류', '로그아웃 실패'); }
-        }}
-    ]);
+  // --- [Logic Refactoring] 실제 로그아웃 동작 함수 ---
+  const executeLogout = async () => {
+    try {
+        await signOut(auth);
+        router.replace('/');
+    } catch (e) { 
+        Alert.alert('오류', '로그아웃 실패'); 
+    }
   };
 
-  // ✅ [수정됨] 데이터 무결성을 보장하는 안전한 탈퇴 로직
-  const handleWithdrawal = async () => {
+  // ✅ [수정됨] 웹/앱 호환성을 갖춘 로그아웃 핸들러
+  const handleLogout = () => {
+    if (Platform.OS === 'web') {
+        // 웹: 브라우저 기본 confirm 사용
+        if (window.confirm('정말 로그아웃 하시겠습니까?')) {
+            executeLogout();
+        }
+    } else {
+        // 앱: React Native Alert 사용
+        Alert.alert('로그아웃', '정말 로그아웃 하시겠습니까?', [
+            { text: '취소', style: 'cancel' },
+            { text: '로그아웃', style: 'destructive', onPress: executeLogout }
+        ]);
+    }
+  };
+
+  // --- [Logic Refactoring] 실제 탈퇴 동작 함수 (핵심 로직) ---
+  const executeWithdrawal = async () => {
     const user = auth.currentUser;
     if (!user) return;
 
-    Alert.alert(
-        '회원 탈퇴', 
-        '정말 탈퇴하시겠습니까?\n\n팀 대표인 경우 팀이 해체되며, 모든 팀원은 자동으로 소속이 해제됩니다.', 
-        [
-            { text: '취소', style: 'cancel' },
-            { 
-                text: '탈퇴하기', 
-                style: 'destructive', 
-                onPress: async () => {
-                    try {
-                        // 1. Firestore 데이터 정리 (트랜잭션)
-                        await runTransaction(db, async (transaction) => {
-                            // 유저 데이터 확인
-                            const userRef = doc(db, "users", user.uid);
-                            const userSnap = await transaction.get(userRef);
-                            if (!userSnap.exists()) return; // 이미 삭제됨
+    try {
+        // 1. Firestore 데이터 정리 (트랜잭션)
+        await runTransaction(db, async (transaction) => {
+            // 유저 데이터 확인
+            const userRef = doc(db, "users", user.uid);
+            const userSnap = await transaction.get(userRef);
+            if (!userSnap.exists()) return; // 이미 삭제됨
 
-                            const uData = userSnap.data();
+            const uData = userSnap.data();
 
-                            // 소속 팀이 있는 경우 처리
-                            if (uData.teamId) {
-                                const teamRef = doc(db, "teams", uData.teamId);
-                                const teamSnap = await transaction.get(teamRef);
+            // 소속 팀이 있는 경우 처리
+            if (uData.teamId) {
+                const teamRef = doc(db, "teams", uData.teamId);
+                const teamSnap = await transaction.get(teamRef);
 
-                                if (teamSnap.exists()) {
-                                    const teamData = teamSnap.data();
+                if (teamSnap.exists()) {
+                    const teamData = teamSnap.data();
 
-                                    // Case A: 팀 대표가 탈퇴하는 경우 -> 팀 해체 & 팀원 구조
-                                    if (uData.role === 'leader') {
-                                        const memberIds = teamData.members || [];
-                                        
-                                        // 다른 팀원들의 teamId를 null로 초기화 (유령 팀 방지)
-                                        for (const memberUid of memberIds) {
-                                            if (memberUid === user.uid) continue;
-                                            const memberRef = doc(db, "users", memberUid);
-                                            transaction.update(memberRef, { 
-                                                teamId: null, 
-                                                role: 'guest',
-                                                updatedAt: new Date().toISOString()
-                                            });
-                                        }
-                                        // 팀 삭제
-                                        transaction.delete(teamRef);
-                                    } 
-                                    // Case B: 일반 팀원이 탈퇴하는 경우 -> 명단에서 본인 제거
-                                    else {
-                                        const newMembers = (teamData.members || []).filter((uid: string) => uid !== user.uid);
-                                        const newRoster = (teamData.roster || []).filter((p: any) => p.uid !== user.uid);
-                                        
-                                        transaction.update(teamRef, { 
-                                            members: newMembers,
-                                            roster: newRoster
-                                        });
-                                    }
-                                }
-                            }
-
-                            // 유저 데이터 최종 삭제
-                            transaction.delete(userRef);
-                        });
-
-                        console.log("Firestore Cleanup Success");
-
-                        // 2. Firebase Auth 계정 영구 삭제
-                        await deleteUser(user);
+                    // Case A: 팀 대표가 탈퇴하는 경우 -> 팀 해체 & 팀원 구조
+                    if (uData.role === 'leader') {
+                        const memberIds = teamData.members || [];
                         
-                        Alert.alert('탈퇴 완료', '회원 탈퇴가 안전하게 처리되었습니다.');
-                        router.replace('/');
-
-                    } catch (e: any) {
-                        console.error("Withdrawal Error:", e);
-                        
-                        // 재로그인 필요 에러 처리
-                        if (e.code === 'auth/requires-recent-login') {
-                            Alert.alert(
-                                '보안 인증 필요', 
-                                '안전한 탈퇴를 위해 본인 확인이 필요합니다.\n로그아웃 후 다시 로그인하여 시도해주세요.',
-                                [{ text: '확인', onPress: async () => {
-                                    await signOut(auth);
-                                    router.replace('/');
-                                }}]
-                            );
-                        } else {
-                            Alert.alert('오류', '탈퇴 처리 중 문제가 발생했습니다.\n관리자에게 문의해주세요.');
+                        // 다른 팀원들의 teamId를 null로 초기화 (유령 팀 방지)
+                        for (const memberUid of memberIds) {
+                            if (memberUid === user.uid) continue;
+                            const memberRef = doc(db, "users", memberUid);
+                            transaction.update(memberRef, { 
+                                teamId: null, 
+                                role: 'guest',
+                                updatedAt: new Date().toISOString()
+                            });
                         }
+                        // 팀 삭제
+                        transaction.delete(teamRef);
+                    } 
+                    // Case B: 일반 팀원이 탈퇴하는 경우 -> 명단에서 본인 제거
+                    else {
+                        const newMembers = (teamData.members || []).filter((uid: string) => uid !== user.uid);
+                        const newRoster = (teamData.roster || []).filter((p: any) => p.uid !== user.uid);
+                        
+                        transaction.update(teamRef, { 
+                            members: newMembers,
+                            roster: newRoster
+                        });
                     }
                 }
             }
-        ]
-    );
+
+            // 유저 데이터 최종 삭제
+            transaction.delete(userRef);
+        });
+
+        console.log("Firestore Cleanup Success");
+
+        // 2. Firebase Auth 계정 영구 삭제
+        await deleteUser(user);
+        
+        // [Alert 처리] 웹/앱 분기 없이 완료 메시지는 띄움
+        if (Platform.OS === 'web') {
+            window.alert('회원 탈퇴가 안전하게 처리되었습니다.');
+        } else {
+            Alert.alert('탈퇴 완료', '회원 탈퇴가 안전하게 처리되었습니다.');
+        }
+        router.replace('/');
+
+    } catch (e: any) {
+        console.error("Withdrawal Error:", e);
+        
+        // 재로그인 필요 에러 처리
+        if (e.code === 'auth/requires-recent-login') {
+            const msg = '안전한 탈퇴를 위해 본인 확인이 필요합니다.\n로그아웃 후 다시 로그인하여 시도해주세요.';
+            if (Platform.OS === 'web') {
+                window.alert(msg);
+                await executeLogout();
+            } else {
+                Alert.alert('보안 인증 필요', msg, [{ text: '확인', onPress: executeLogout }]);
+            }
+        } else {
+            const errorMsg = '탈퇴 처리 중 문제가 발생했습니다.\n관리자에게 문의해주세요.';
+            if (Platform.OS === 'web') window.alert(errorMsg);
+            else Alert.alert('오류', errorMsg);
+        }
+    }
+  };
+
+  // ✅ [수정됨] 웹/앱 호환성을 갖춘 탈퇴 핸들러
+  const handleWithdrawal = () => {
+    const title = '회원 탈퇴';
+    const message = '정말 탈퇴하시겠습니까?\n\n팀 대표인 경우 팀이 해체되며, 모든 팀원은 자동으로 소속이 해제됩니다.';
+
+    if (Platform.OS === 'web') {
+        if (window.confirm(`${title}\n${message}`)) {
+            executeWithdrawal();
+        }
+    } else {
+        Alert.alert(title, message, [
+            { text: '취소', style: 'cancel' },
+            { text: '탈퇴하기', style: 'destructive', onPress: executeWithdrawal }
+        ]);
+    }
   };
 
   const handleSendInquiry = async () => {

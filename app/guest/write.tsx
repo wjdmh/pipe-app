@@ -1,10 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, TouchableOpacity, ScrollView, Alert, ActivityIndicator, Modal, KeyboardAvoidingView, Platform } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { FontAwesome5 } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { auth, db } from '../../configs/firebaseConfig';
 import { useGuest } from '../../hooks/useGuest';
 
@@ -19,8 +19,13 @@ const toLocalISOString = (date: Date) => {
 
 export default function GuestWriteScreen() {
   const router = useRouter();
+  // [New Feature] 수정 모드 지원을 위해 id 파라미터 수신
+  const { id } = useLocalSearchParams();
+  const isEditMode = !!id;
+
   const { createPost } = useGuest();
   const [loading, setLoading] = useState(false);
+  const [fetching, setFetching] = useState(!!id); // 데이터 로딩 상태
 
   const [date, setDate] = useState(new Date());
   const [tempDate, setTempDate] = useState(new Date()); 
@@ -32,6 +37,44 @@ export default function GuestWriteScreen() {
   const [fee, setFee] = useState('');
   const [isFree, setIsFree] = useState(false);
   const [description, setDescription] = useState('');
+
+  // [New Feature] 수정 모드일 때 기존 데이터 불러오기
+  useEffect(() => {
+      if (isEditMode && typeof id === 'string') {
+          const loadData = async () => {
+              try {
+                  const docSnap = await getDoc(doc(db, "guest_posts", id));
+                  if (docSnap.exists()) {
+                      const data = docSnap.data();
+                      setLocation(data.location);
+                      setPositions(data.positions || []);
+                      setGender(data.gender);
+                      setDescription(data.description);
+                      
+                      // 시간 설정
+                      if (data.matchDate) setDate(new Date(data.matchDate));
+                      
+                      // 회비 설정
+                      if (data.fee === '0' || data.fee === '무료') {
+                          setIsFree(true);
+                          setFee('');
+                      } else {
+                          setFee(data.fee);
+                      }
+                  } else {
+                      Alert.alert('오류', '존재하지 않는 게시글입니다.');
+                      router.back();
+                  }
+              } catch (e) {
+                  console.error(e);
+                  Alert.alert('오류', '데이터를 불러오지 못했습니다.');
+              } finally {
+                  setFetching(false);
+              }
+          };
+          loadData();
+      }
+  }, [id]);
 
   const formatDateKr = (d: Date) => {
     const days = ['일', '월', '화', '수', '목', '금', '토'];
@@ -84,12 +127,32 @@ export default function GuestWriteScreen() {
   const handleSubmit = async () => {
     if (!location || positions.length === 0 || (!isFree && !fee)) return Alert.alert('알림', '필수 정보를 입력해주세요.');
     
+    // [Fix] 과거 날짜 방지 (Priority 1 재적용)
     if (date < new Date()) {
         return Alert.alert('알림', '이미 지나간 날짜는 선택할 수 없어요.');
     }
     
     setLoading(true);
     try {
+      // [New Feature] 수정 모드 처리
+      if (isEditMode && typeof id === 'string') {
+          await updateDoc(doc(db, "guest_posts", id), {
+              matchDate: date.toISOString(),
+              location,
+              positions,
+              gender,
+              fee: isFree ? '0' : fee,
+              description,
+              updatedAt: new Date().toISOString() // 수정일시 기록
+          });
+          
+          Alert.alert('수정 완료', '게시글이 수정되었습니다.', [
+              { text: '확인', onPress: () => router.back() }
+          ]);
+          return;
+      }
+
+      // 기존 생성 모드 처리
       let teamId = 'individual';
       let teamName = '개인 모집';
 
@@ -125,11 +188,13 @@ export default function GuestWriteScreen() {
         ]);
       }
     } catch (e) {
-      Alert.alert('오류', '등록 중 문제가 발생했습니다.');
+      Alert.alert('오류', '처리 중 문제가 발생했습니다.');
     } finally {
       setLoading(false);
     }
   };
+
+  if (fetching) return <View className="flex-1 justify-center items-center bg-white"><ActivityIndicator size="large" color="#4F46E5"/></View>;
 
   return (
     <SafeAreaView className="flex-1 bg-white" edges={['bottom']}>
@@ -138,10 +203,10 @@ export default function GuestWriteScreen() {
         className="flex-1"
       >
         <ScrollView contentContainerClassName="p-6 pb-20" showsVerticalScrollIndicator={false}>
-            {/* Title 추가 */}
+            {/* Title 변경 */}
             <View className="mb-8">
-                <Text className="text-2xl font-extrabold text-gray-900 mb-2">게스트 모집하기</Text>
-                <Text className="text-gray-500 text-sm">함께 운동할 멤버를 찾아보세요.</Text>
+                <Text className="text-2xl font-extrabold text-gray-900 mb-2">{isEditMode ? '모집글 수정하기' : '게스트 모집하기'}</Text>
+                <Text className="text-gray-500 text-sm">{isEditMode ? '변경할 내용을 입력해주세요.' : '함께 운동할 멤버를 찾아보세요.'}</Text>
             </View>
 
             <Text className="font-bold text-gray-500 mb-2">필요 포지션</Text>
@@ -179,6 +244,7 @@ export default function GuestWriteScreen() {
                         type: 'datetime-local',
                         value: toLocalISOString(date),
                         onChange: handleWebDateChange,
+                        min: toLocalISOString(new Date()), // [Fix] 과거 날짜 방지
                         style: {
                             border: 'none',
                             width: '100%',
@@ -234,7 +300,7 @@ export default function GuestWriteScreen() {
             <TextInput className="bg-gray-50 p-4 rounded-xl border border-gray-200 h-24 mb-8" multiline placeholder="실력, 분위기 등 추가 정보를 입력하세요." value={description} onChangeText={setDescription} textAlignVertical="top" />
 
             <TouchableOpacity onPress={handleSubmit} disabled={loading} className="bg-indigo-600 py-4 rounded-xl items-center shadow-lg shadow-indigo-200">
-            {loading ? <ActivityIndicator color="white" /> : <Text className="text-white font-bold text-lg">모집 등록</Text>}
+                {loading ? <ActivityIndicator color="white" /> : <Text className="text-white font-bold text-lg">{isEditMode ? '수정 완료' : '모집 등록'}</Text>}
             </TouchableOpacity>
         </ScrollView>
       </KeyboardAvoidingView>

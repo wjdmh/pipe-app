@@ -16,7 +16,10 @@ export default function TeamRegister() {
   const [loading, setLoading] = useState(false);
   
   const [userInfo, setUserInfo] = useState<any>(null);
+  
+  // [Modified] KUSF 팀 매핑 정보와 커스텀 팀 리스트 분리 관리
   const [registeredTeamsMap, setRegisteredTeamsMap] = useState<{[key: string]: any}>({});
+  const [customTeams, setCustomTeams] = useState<any[]>([]);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedGender, setSelectedGender] = useState<'male' | 'female'>('male');
@@ -48,53 +51,102 @@ export default function TeamRegister() {
     } catch (e) { console.error("User Fetch Error", e); }
   };
 
+  // [Modified] DB에서 팀 정보를 가져와서 KUSF 팀과 커스텀 팀으로 분류
   const fetchRegisteredTeams = async () => {
       try {
         const q = query(collection(db, "teams"));
         const snapshot = await getDocs(q);
+        
         const map: {[key: string]: any} = {};
+        const customList: any[] = [];
+
         snapshot.forEach(doc => {
             const data = doc.data();
-            if (data.kusfId) map[data.kusfId] = { ...data, docId: doc.id };
+            // KUSF ID가 있으면 맵에 등록
+            if (data.kusfId) {
+                map[data.kusfId] = { ...data, docId: doc.id };
+            } 
+            // KUSF ID가 없고 삭제되지 않은 팀은 커스텀 팀 목록에 추가
+            else if (!data.isDeleted) {
+                customList.push({
+                    id: doc.id, // Firestore ID를 고유 ID로 사용
+                    name: data.name,
+                    affiliation: data.affiliation || '자체생성',
+                    gender: data.gender,
+                    stats: data.stats || { wins: 0, losses: 0, points: 0, total: 0 },
+                    isCustom: true, // 커스텀 팀 플래그
+                    ...data
+                });
+            }
         });
+        
         setRegisteredTeamsMap(map);
+        setCustomTeams(customList);
       } catch (e) { console.error("Teams Fetch Error", e); }
   };
 
-  // KUSF 팀 목록 필터링
-  const filteredTeams = KUSF_TEAMS.filter(team => {
-    return team.gender === selectedGender && (team.name.includes(searchQuery) || team.affiliation.includes(searchQuery));
+  // [Modified] 통합 검색 필터링 (KUSF 팀 + 커스텀 팀)
+  const filteredTeams = [...KUSF_TEAMS, ...customTeams].filter(team => {
+    const isGenderMatch = team.gender === selectedGender;
+    const isSearchMatch = team.name.includes(searchQuery) || team.affiliation.includes(searchQuery);
+    return isGenderMatch && isSearchMatch;
   });
 
-  const onSelectExistingTeam = async (kusfTeam: any) => {
-    const existingData = registeredTeamsMap[kusfTeam.id];
+  // [Modified] 팀 선택 핸들러 (통합 로직)
+  const onSelectExistingTeam = async (team: any) => {
+    let existingData = null;
 
-    // Case 1: 이미 등록된 팀이 활성화된 경우
+    if (team.isCustom) {
+        // 커스텀 팀인 경우 선택된 객체 자체가 DB 데이터임
+        existingData = { ...team, docId: team.id };
+    } else {
+        // KUSF 팀인 경우 DB 맵에서 조회
+        existingData = registeredTeamsMap[team.id];
+    }
+
+    // Case 1: 이미 등록된 팀이 활성화된 경우 (가입 신청)
     if (existingData && !existingData.isDeleted && existingData.captainId) {
-        Alert.alert('가입 신청', `'${existingData.name}' 팀은 이미 활동 중입니다.\n팀원으로 가입 신청을 보내시겠습니까?`, [
-            { text: '취소', style: 'cancel' },
-            { text: '신청 보내기', onPress: () => sendJoinRequest(existingData) }
-        ]);
+        // 웹 호환성 고려 (Optional)
+        const confirmMsg = `'${existingData.name}' 팀은 이미 활동 중입니다.\n팀원으로 가입 신청을 보내시겠습니까?`;
+        
+        if (Platform.OS === 'web') {
+            if (window.confirm(confirmMsg)) sendJoinRequest(existingData);
+        } else {
+            Alert.alert('가입 신청', confirmMsg, [
+                { text: '취소', style: 'cancel' },
+                { text: '신청 보내기', onPress: () => sendJoinRequest(existingData) }
+            ]);
+        }
         return;
     }
     
     // Case 2: 등록되었으나 비활성(삭제됨/대표없음) -> 이어받기
     if (existingData) {
-        Alert.alert('팀 이어받기', '현재 활동하지 않는 팀입니다. 대표자가 되어 팀을 운영하시겠습니까?', [
-            { text: '취소', style: 'cancel' },
-            { text: '이어받기', onPress: () => {
-                setTargetTeam(kusfTeam); setTeamName(kusfTeam.name);
-                setIsReclaiming(true); setReclaimDocId(existingData.docId);
-                if(existingData.region) setSelectedRegion(existingData.region);
-                setStep('VERIFY');
-            }}
-        ]);
+        const confirmMsg = '현재 활동하지 않는 팀입니다. 대표자가 되어 팀을 운영하시겠습니까?';
+        
+        const proceedReclaim = () => {
+            setTargetTeam(team); 
+            setTeamName(team.name);
+            setIsReclaiming(true); 
+            setReclaimDocId(existingData.docId);
+            if(existingData.region) setSelectedRegion(existingData.region);
+            setStep('VERIFY');
+        };
+
+        if (Platform.OS === 'web') {
+            if (window.confirm(confirmMsg)) proceedReclaim();
+        } else {
+            Alert.alert('팀 이어받기', confirmMsg, [
+                { text: '취소', style: 'cancel' },
+                { text: '이어받기', onPress: proceedReclaim }
+            ]);
+        }
         return;
     }
 
-    // Case 3: 신규 등록
-    setTargetTeam(kusfTeam);
-    setTeamName(kusfTeam.name);
+    // Case 3: 신규 등록 (KUSF 팀인데 DB에 없는 경우)
+    setTargetTeam(team);
+    setTeamName(team.name);
     setIsReclaiming(false);
     setStep('VERIFY');
   };
@@ -125,32 +177,58 @@ export default function TeamRegister() {
               });
           });
 
-          Alert.alert('신청 완료', '가입 신청을 보냈습니다.\n대표자가 승인하면 팀원으로 등록됩니다.', [
-              { text: '확인', onPress: () => router.replace('/home') }
-          ]);
+          const successMsg = '가입 신청을 보냈습니다.\n대표자가 승인하면 팀원으로 등록됩니다.';
+          if(Platform.OS === 'web') {
+              window.alert(successMsg);
+              router.replace('/home');
+          } else {
+              Alert.alert('신청 완료', successMsg, [
+                  { text: '확인', onPress: () => router.replace('/home') }
+              ]);
+          }
       } catch (e: any) {
-          Alert.alert('오류', typeof e === 'string' ? e : '가입 신청 중 문제가 발생했습니다.');
+          const errMsg = typeof e === 'string' ? e : '가입 신청 중 문제가 발생했습니다.';
+          if(Platform.OS === 'web') window.alert(errMsg);
+          else Alert.alert('오류', errMsg);
       } finally {
           setLoading(false);
       }
   };
 
+  // [Modified] 보안성 강화: 테스트 모드임을 명시
   const sendVerificationCode = async () => {
-      if (!email.includes('@')) return Alert.alert('오류', '올바른 이메일 형식이 아닙니다.');
+      if (!email.includes('@')) {
+          const msg = '올바른 이메일 형식이 아닙니다.';
+          return Platform.OS === 'web' ? window.alert(msg) : Alert.alert('오류', msg);
+      }
+      
       setTimeout(() => {
-          setGeneratedCode("000000"); 
+          const mockCode = "123456"; // 고정된 테스트 코드
+          setGeneratedCode(mockCode); 
           setIsCodeSent(true); 
-          Alert.alert('발송 완료', '인증코드: 000000 (테스트)');
+          
+          const msg = `[테스트 모드]\n인증메일 발송 기능은 준비 중입니다.\n인증코드 [${mockCode}]를 입력해주세요.`;
+          if (Platform.OS === 'web') {
+              window.alert(msg);
+          } else {
+              Alert.alert('발송 완료', msg);
+          }
       }, 500);
   };
 
   const verifyAndGoToInfo = () => {
-      if(inputCode !== generatedCode) return Alert.alert('오류', '인증코드가 틀립니다.');
+      if(inputCode !== generatedCode) {
+          const msg = '인증코드가 틀립니다.';
+          return Platform.OS === 'web' ? window.alert(msg) : Alert.alert('오류', msg);
+      }
       setStep('INFO_FORM');
   };
 
   const submitTeam = async () => {
-      if (!teamName || !selectedRegion) return Alert.alert('오류', '팀 이름과 지역은 필수입니다.');
+      if (!teamName || !selectedRegion) {
+          const msg = '팀 이름과 지역은 필수입니다.';
+          return Platform.OS === 'web' ? window.alert(msg) : Alert.alert('오류', msg);
+      }
       if (!auth.currentUser) return;
       
       setLoading(true);
@@ -181,7 +259,7 @@ export default function TeamRegister() {
                 members: [userUid], 
                 roster: [me],
                 joinRequests: [],
-                kusfId: targetTeam ? targetTeam.id : null,
+                kusfId: targetTeam && !targetTeam.isCustom ? targetTeam.id : null, // 커스텀 팀은 kusfId 없음
                 stats: targetTeam ? targetTeam.stats : { wins: 0, losses: 0, points: 0, total: 0 },
                 level: 'C',
                 createdAt: new Date().toISOString(),
@@ -213,14 +291,21 @@ export default function TeamRegister() {
             });
         });
         
-        Alert.alert('성공', '팀 등록이 완료되었습니다!', [
-            { text: '확인', onPress: () => router.replace('/home') }
-        ]);
+        const successMsg = '팀 등록이 완료되었습니다!';
+        if(Platform.OS === 'web') {
+            window.alert(successMsg);
+            router.replace('/home');
+        } else {
+            Alert.alert('성공', successMsg, [
+                { text: '확인', onPress: () => router.replace('/home') }
+            ]);
+        }
 
       } catch(e: any) { 
           console.error("Team Create Error:", e);
           const msg = typeof e === 'string' ? e : (e.message || '팀 등록에 실패했습니다.');
-          Alert.alert('오류', msg); 
+          if(Platform.OS === 'web') window.alert(msg);
+          else Alert.alert('오류', msg); 
       } finally { 
           setLoading(false); 
       }
@@ -262,8 +347,20 @@ export default function TeamRegister() {
                     contentContainerClassName="px-5 pb-32"
                     keyboardShouldPersistTaps="handled"
                     renderItem={({item}) => {
-                        const existing = registeredTeamsMap[item.id];
-                        const isActive = existing && !existing.isDeleted && existing.captainId;
+                        // [Modified] 렌더링 시 커스텀 팀 처리 로직 추가
+                        let isActive = false;
+                        let isReclaimable = false;
+
+                        if (item.isCustom) {
+                            // 커스텀 팀은 목록에 떴다는 것 자체가 이미 등록된 상태임 (활성 여부는 isDeleted로 판단)
+                            isActive = !item.isDeleted; // 사실 isDeleted=true는 필터링되므로 항상 true일 것임
+                        } else {
+                            // KUSF 팀은 DB 맵핑 확인
+                            const existing = registeredTeamsMap[item.id];
+                            isActive = existing && !existing.isDeleted && existing.captainId;
+                            isReclaimable = existing && (!existing.captainId || existing.isDeleted); // 비활성 KUSF 팀
+                        }
+
                         return (
                             <TouchableOpacity onPress={() => onSelectExistingTeam(item)} className={`p-4 mb-3 rounded-xl border ${isActive ? 'bg-blue-50 border-blue-200' : 'bg-white border-gray-200'} shadow-sm`}>
                                 <View className="flex-row justify-between items-center">
@@ -273,8 +370,11 @@ export default function TeamRegister() {
                                     </View>
                                     {isActive ? (
                                         <View className="bg-blue-100 px-2 py-1 rounded"><Text className="text-xs font-bold text-blue-600">가입신청 가능</Text></View>
-                                    ) : (
+                                    ) : isReclaimable ? (
                                         <Text className="text-xs text-green-600 font-bold">이어받기 가능</Text>
+                                    ) : (
+                                        // KUSF 팀인데 DB에 없는 경우
+                                        <Text className="text-xs text-gray-400 font-bold">신규 등록 가능</Text>
                                     )}
                                 </View>
                             </TouchableOpacity>

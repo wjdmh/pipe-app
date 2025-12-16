@@ -10,7 +10,7 @@ import {
   KeyboardAvoidingView, 
   Animated, 
   Modal, 
-  Pressable, // [Change] TouchableWithoutFeedback 대체
+  Pressable, 
   ScrollView,
   LogBox
 } from 'react-native';
@@ -52,7 +52,7 @@ const SelectCard = ({ label, subLabel, icon, selected, onPress }: { label: strin
       onPress={onPress}
       onPressIn={handlePressIn} 
       onPressOut={handlePressOut}
-      style={{ flex: 1 }} // Pressable은 기본 스타일이 없으므로 flex: 1 명시
+      style={{ flex: 1 }}
     >
       <Animated.View 
         className={`flex-1 p-5 rounded-2xl border shadow-sm items-center justify-center h-36 ${selected ? 'bg-indigo-50 border-[#4F46E5] shadow-indigo-100' : 'bg-white border-gray-100'}`}
@@ -114,10 +114,31 @@ export default function WriteMatchScreen() {
       if (val) setDate(new Date(val));
   };
 
+  // [Web Helper] Alert 처리
+  const safeAlert = (title: string, msg: string, options?: any) => {
+    if (Platform.OS === 'web') {
+        window.alert(`${title}\n${msg}`);
+        // 웹에서는 Alert 버튼 콜백이 즉시 실행되지 않으므로, 
+        // 확인 버튼이 있는 경우 흐름상 필요한 동작을 여기서 수행하거나 
+        // window.confirm을 써야 하지만, 여기서는 단순 알림이므로 alert 사용
+        if (options && options[0] && options[0].onPress) {
+            options[0].onPress();
+        }
+    } else {
+        Alert.alert(title, msg, options);
+    }
+  };
+
   const handleSubmit = async () => {
-    if (!type) return Alert.alert('정보 입력', '경기 방식을 선택해주세요.');
-    if (!gender) return Alert.alert('정보 입력', '성별을 선택해주세요.');
-    if (!place.trim()) return Alert.alert('정보 입력', '경기 장소를 입력해주세요.');
+    if (!type) return safeAlert('정보 입력', '경기 방식을 선택해주세요.');
+    if (!gender) return safeAlert('정보 입력', '성별을 선택해주세요.');
+    if (!place.trim()) return safeAlert('정보 입력', '경기 장소를 입력해주세요.');
+
+    // [Fix] 과거 시간 선택 방지 (Validation)
+    const now = new Date();
+    if (date < now) {
+        return safeAlert('시간 확인', '이미 지나간 시간입니다. 미래의 시간을 선택해주세요.');
+    }
 
     setLoading(true);
     try {
@@ -130,9 +151,15 @@ export default function WriteMatchScreen() {
       const userData = userSnap.data();
       
       if (!userData?.teamId) {
-        Alert.alert('팀 등록 필요', '팀 프로필이 없어요. 팀을 먼저 등록해주세요.', [
-            { text: '등록하기', onPress: () => router.replace('/team/register') }
-        ]);
+        if (Platform.OS === 'web') {
+            if(window.confirm('팀 프로필이 없어요. 팀을 먼저 등록해주세요.')) {
+                router.replace('/team/register');
+            }
+        } else {
+            Alert.alert('팀 등록 필요', '팀 프로필이 없어요. 팀을 먼저 등록해주세요.', [
+                { text: '등록하기', onPress: () => router.replace('/team/register') }
+            ]);
+        }
         return;
       }
 
@@ -159,12 +186,12 @@ export default function WriteMatchScreen() {
         isDeleted: false
       });
 
-      Alert.alert('작성 완료', '매칭 공고가 등록되었습니다.', [
+      safeAlert('작성 완료', '매칭 공고가 등록되었습니다.', [
         { text: '확인', onPress: () => router.back() }
       ]);
 
     } catch (error: any) {
-      Alert.alert('등록 실패', error.message || '오류가 발생했습니다.');
+      safeAlert('등록 실패', error.message || '오류가 발생했습니다.');
     } finally {
       setLoading(false);
     }
@@ -230,6 +257,8 @@ export default function WriteMatchScreen() {
                             type: 'datetime-local',
                             value: toLocalISOString(date),
                             onChange: handleWebDateChange,
+                            // [Fix] 웹에서 과거 날짜 선택 불가 처리
+                            min: toLocalISOString(new Date()),
                             style: {
                                 border: 'none', width: '100%', height: '30px', fontSize: '16px',
                                 color: '#111827', backgroundColor: 'transparent', outline: 'none', cursor: 'pointer'
