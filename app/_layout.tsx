@@ -8,38 +8,30 @@ import { useEffect } from 'react';
 import { useFonts } from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
 
-// 스플래시 유지 (앱 로딩 전 깜빡임 방지)
+// 스플래시 유지
 SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
-  // 👇 [최종 해결책: 이원화 전략]
-  // 웹(Web): 빈 객체({})를 전달하여 JS가 로컬 파일을 찾는 것을 막습니다. (404 에러 원천 차단)
-  // 앱(Native): 기존처럼 로컬 에셋(require)을 사용하여 정상 로딩합니다.
-  const [loaded, error] = useFonts(
-    Platform.OS === 'web' 
-      ? {} 
-      : {
-          "FontAwesome": require("@expo/vector-icons/build/vendor/react-native-vector-icons/Fonts/FontAwesome.ttf"),
-          "FontAwesome5Free-Solid": require("@expo/vector-icons/build/vendor/react-native-vector-icons/Fonts/FontAwesome5_Solid.ttf"),
-          "FontAwesome5Free-Regular": require("@expo/vector-icons/build/vendor/react-native-vector-icons/Fonts/FontAwesome5_Regular.ttf"),
-          "FontAwesome5Brands-Regular": require("@expo/vector-icons/build/vendor/react-native-vector-icons/Fonts/FontAwesome5_Brands.ttf"),
-        }
-  );
+  // [수정 포인트] node_modules가 아닌, 직접 복사한 '로컬 폰트 파일'을 불러옵니다.
+  // 이렇게 하면 배포 시 경로에 'node_modules'가 포함되지 않아 404 에러가 사라집니다.
+  const [loaded, error] = useFonts({
+    "FontAwesome": require("../assets/fonts/FontAwesome.ttf"),
+    "FontAwesome5Free-Solid": require("../assets/fonts/FontAwesome5_Solid.ttf"),
+    "FontAwesome5Free-Regular": require("../assets/fonts/FontAwesome5_Regular.ttf"),
+    "FontAwesome5Brands-Regular": require("../assets/fonts/FontAwesome5_Brands.ttf"),
+  });
 
   useEffect(() => {
     if (error) console.error("Font loading error:", error);
   }, [error]);
 
-  // 로드 완료 시점 처리
   useEffect(() => {
-    // 웹 환경이거나, 네이티브 폰트 로드가 끝나면 스플래시 화면을 숨깁니다.
-    if (Platform.OS === 'web' || loaded) {
+    if (loaded || error) {
       SplashScreen.hideAsync();
     }
-  }, [loaded]);
+  }, [loaded, error]);
 
-  // 앱(Native)에서는 로딩될 때까지 기다리지만, 웹은 즉시 통과시킵니다.
-  if (Platform.OS !== 'web' && !loaded) {
+  if (!loaded && !error) {
     return null;
   }
 

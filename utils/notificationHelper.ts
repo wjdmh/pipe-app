@@ -4,14 +4,16 @@ import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
 
-// 알림 핸들러 설정
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-  } as Notifications.NotificationBehavior),
-});
+// [수정] 웹이 아닐 때만 알림 핸들러 설정 (웹 콘솔 경고 방지)
+if (Platform.OS !== 'web') {
+  Notifications.setNotificationHandler({
+    handleNotification: async () => ({
+      shouldShowAlert: true,
+      shouldPlaySound: true,
+      shouldSetBadge: false,
+    } as Notifications.NotificationBehavior),
+  });
+}
 
 // 푸시 알림 권한 요청 및 토큰 가져오기
 export async function registerForPushNotificationsAsync() {

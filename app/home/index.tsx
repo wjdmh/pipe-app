@@ -1,8 +1,8 @@
 // app/home/index.tsx
 import React, { useEffect, useState, useRef } from 'react';
-import { View, Text, FlatList, TouchableOpacity, ActivityIndicator, RefreshControl, StatusBar, Pressable, Animated } from 'react-native';
+// [수정] Platform import 추가
+import { View, Text, FlatList, TouchableOpacity, ActivityIndicator, RefreshControl, StatusBar, Pressable, Animated, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
-// 👇 [추가] onAuthStateChanged import
 import { onAuthStateChanged } from 'firebase/auth'; 
 import { collection, query, orderBy, where, limit, startAfter, getDocs, doc, getDoc, QueryDocumentSnapshot, DocumentData } from 'firebase/firestore';
 import { auth, db } from '../../configs/firebaseConfig';
@@ -12,7 +12,6 @@ import { COLORS, TYPOGRAPHY } from '../../configs/theme';
 import { Card } from '../../components/Card';
 import { KUSF_TEAMS } from './ranking';
 
-// ... (Team, MatchData interface 등 기존 코드 유지) ...
 interface Team {
   id: string;
   name: string;
@@ -35,13 +34,19 @@ type MatchData = {
   isDeleted?: boolean;
 };
 
-// ... (AnimatedCard, FilterChip, RankingCard 컴포넌트 기존 코드 유지) ...
+// [수정] useNativeDriver 옵션을 플랫폼에 따라 분기 처리 (웹 오류 해결)
 const AnimatedCard = ({ children, onPress, className, style }: { children: React.ReactNode, onPress: () => void, className?: string, style?: any }) => {
   const scaleValue = useRef(new Animated.Value(1)).current;
+  // 웹에서는 false, 앱에서는 true
+  const useNativeDriver = Platform.OS !== 'web';
+
   return (
-    <Pressable onPressIn={() => Animated.spring(scaleValue, { toValue: 0.98, useNativeDriver: true, speed: 20 }).start()} 
-               onPressOut={() => Animated.spring(scaleValue, { toValue: 1, useNativeDriver: true, speed: 20 }).start()} 
-               onPress={onPress} style={{ width: '100%' }}>
+    <Pressable 
+      onPressIn={() => Animated.spring(scaleValue, { toValue: 0.98, useNativeDriver, speed: 20 }).start()} 
+      onPressOut={() => Animated.spring(scaleValue, { toValue: 1, useNativeDriver, speed: 20 }).start()} 
+      onPress={onPress} 
+      style={{ width: '100%' }}
+    >
       <Animated.View className={className} style={[style, { transform: [{ scale: scaleValue }] }]}>{children}</Animated.View>
     </Pressable>
   );
@@ -161,9 +166,7 @@ export default function HomeScreen() {
   const [userTeamId, setUserTeamId] = useState<string | null>(null);
   const [userName, setUserName] = useState('');
   
-  // 👇 [수정됨] 사용자 인증 상태 감지 로직 개선 (새로고침 문제 해결)
   useEffect(() => {
-    // onAuthStateChanged는 로그인 복구까지 기다렸다가 실행됩니다.
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
         try {
@@ -175,19 +178,15 @@ export default function HomeScreen() {
             }
         } catch(e) { console.log(e); }
       } else {
-        // 로그아웃 상태일 때 초기화
         setUserTeamId(null);
         setUserName('');
       }
-      // 유저 확인이 끝난 후 매치 리스트를 불러옵니다.
       fetchMatches(true);
     });
 
-    // 컴포넌트 언마운트 시 리스너 해제
     return () => unsubscribe();
-  }, []); // filter 의존성 제거 (fetchMatches 내부에서 처리하거나 별도 useEffect 분리)
+  }, []); 
 
-  // 필터 변경 시 매치 다시 로드
   useEffect(() => {
       fetchMatches(true);
   }, [filter]);
@@ -254,7 +253,6 @@ export default function HomeScreen() {
 
   const onRefresh = () => {
       setRefreshing(true);
-      // 리프레시 시에도 유저 정보를 다시 확인하고 싶다면 아래 로직 유지, 아니라면 fetchMatches만 호출
       fetchMatches(true);
   };
 
@@ -301,14 +299,12 @@ export default function HomeScreen() {
     );
   };
 
-  // --- [Guest Mode View] ---
   if (!loading && !userTeamId) {
     return (
       <SafeAreaView className="flex-1 bg-[#F8FAFC] px-6 justify-center">
         <StatusBar barStyle="dark-content" />
         <View className="mb-10">
           <Text className="text-4xl mb-2">👋</Text>
-          {/* 👇 [수정됨] 이름이 로딩되지 않았을 때 기본값 처리 */}
           <Text className={`${TYPOGRAPHY.h1} mb-2`}>{userName || '회원'}님</Text>
           <Text className={`${TYPOGRAPHY.body2} leading-6`}>
             아직 소속된 팀이 없어요.{'\n'}팀에 가입하거나 용병으로 활동해보세요.
@@ -356,7 +352,6 @@ export default function HomeScreen() {
     );
   }
 
-  // --- [Member Mode View] ---
   return (
     <SafeAreaView className="flex-1" style={{ backgroundColor: COLORS.background }} edges={['top']}>
       <StatusBar barStyle="dark-content" backgroundColor={COLORS.background} />
