@@ -1,3 +1,4 @@
+// app/match/[id].tsx
 import React, { useEffect, useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, Alert, ActivityIndicator, StatusBar, Platform, Share } from 'react-native';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
@@ -6,6 +7,31 @@ import { auth, db } from '../../configs/firebaseConfig';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { sendPushNotification } from '../../utils/notificationHelper';
+
+// [Architect's Fix] 웹용 Alert & Confirm 헬퍼
+const safeAlert = (title: string, msg: string, onPress?: () => void) => {
+  if (Platform.OS === 'web') {
+    window.alert(`${title}\n${msg}`);
+    if (onPress) onPress();
+  } else {
+    Alert.alert(title, msg, onPress ? [{ text: '확인', onPress }] : undefined);
+  }
+};
+
+// [Architect's Fix] 웹용 Confirm 헬퍼 (Promise 기반)
+const safeConfirm = (title: string, msg: string): Promise<boolean> => {
+  return new Promise((resolve) => {
+    if (Platform.OS === 'web') {
+      const result = window.confirm(`${title}\n\n${msg}`);
+      resolve(result);
+    } else {
+      Alert.alert(title, msg, [
+        { text: '취소', style: 'cancel', onPress: () => resolve(false) },
+        { text: '확인', style: 'destructive', onPress: () => resolve(true) },
+      ]);
+    }
+  });
+};
 
 const COLORS = {
   bg: '#F2F4F6',
@@ -58,17 +84,16 @@ export default function MatchDetailScreen() {
         if (matchDoc.exists()) {
           const data = matchDoc.data();
           if (data.status === 'deleted' || data.isDeleted === true) {
-             Alert.alert('알림', '삭제된 게시물입니다.', [{ text: '확인', onPress: () => router.back() }]);
+             safeAlert('알림', '삭제된 게시물입니다.', () => router.back()); // Fix
              return;
           }
           setMatch({ id: matchDoc.id, ...data } as MatchDetail);
         } else {
-          Alert.alert('오류', '존재하지 않거나 삭제된 게시물입니다.');
-          router.back();
+          safeAlert('오류', '존재하지 않거나 삭제된 게시물입니다.', () => router.back()); // Fix
         }
       }
     } catch (e) {
-      Alert.alert('오류', '정보를 불러오지 못했습니다.');
+      safeAlert('오류', '정보를 불러오지 못했습니다.');
     } finally {
       setLoading(false);
     }
@@ -97,67 +122,64 @@ export default function MatchDetailScreen() {
   };
 
   const handleDelete = async () => {
-    Alert.alert('삭제 확인', '정말 이 공고를 삭제하시겠습니까?\n(신청자들에게는 삭제된 공고로 표시됩니다)', [
-      { text: '취소', style: 'cancel' },
-      {
-        text: '삭제',
-        style: 'destructive',
-        onPress: async () => {
-            if (!match?.id) return;
-            setIsProcessing(true);
-            try {
-                await updateDoc(doc(db, "matches", match.id), {
-                    status: 'deleted',
-                    isDeleted: true,
-                    deletedAt: new Date().toISOString()
-                });
-                Alert.alert('삭제 완료', '게시물이 삭제되었습니다.', [{ text: '확인', onPress: () => router.back() }]);
-            } catch (e) { Alert.alert('오류', '삭제 처리에 실패했습니다.'); } finally { setIsProcessing(false); }
-        }
-      }
-    ]);
+    // [Fix] safeConfirm 사용
+    const confirmed = await safeConfirm(
+      '삭제 확인', 
+      '정말 이 공고를 삭제하시겠습니까?\n(신청자들에게는 삭제된 공고로 표시됩니다)'
+    );
+
+    if (confirmed) {
+        if (!match?.id) return;
+        setIsProcessing(true);
+        try {
+            await updateDoc(doc(db, "matches", match.id), {
+                status: 'deleted',
+                isDeleted: true,
+                deletedAt: new Date().toISOString()
+            });
+            safeAlert('삭제 완료', '게시물이 삭제되었습니다.', () => router.back());
+        } catch (e) { safeAlert('오류', '삭제 처리에 실패했습니다.'); } finally { setIsProcessing(false); }
+    }
   };
 
   const handleApply = async () => {
-    if (!userTeamId) return Alert.alert('오류', '팀 정보가 없습니다.');
+    if (!userTeamId) return safeAlert('오류', '팀 정보가 없습니다.');
     if (userTeamId === match?.hostId) return;
 
-    Alert.alert('신청 확인', '이 경기에 매칭을 신청하시겠습니까?', [
-      { text: '취소', style: 'cancel' },
-      {
-        text: '신청하기',
-        onPress: async () => {
-            if (!match?.id) return;
-            setIsProcessing(true);
-            try {
-                await updateDoc(doc(db, "matches", match.id), {
-                    applicants: arrayUnion(userTeamId)
-                });
-                const hostUid = await findCaptainUid(match.hostId);
-                if (hostUid) {
-                    await sendNotification(hostUid, 'applicant', '새로운 매칭 신청!', '새로운 팀이 경기를 신청했습니다. 라커룸에서 확인하세요.');
-                }
-                Alert.alert('성공', '신청되었습니다! 호스트가 수락하면 알림이 옵니다.');
-                loadMatchAndUser();
-            } catch (e) { Alert.alert('실패', '신청 중 오류가 발생했습니다.'); } finally { setIsProcessing(false); }
-        }
-      }
-    ]);
+    // [Fix] safeConfirm 사용
+    const confirmed = await safeConfirm('신청 확인', '이 경기에 매칭을 신청하시겠습니까?');
+
+    if (confirmed) {
+        if (!match?.id) return;
+        setIsProcessing(true);
+        try {
+            await updateDoc(doc(db, "matches", match.id), {
+                applicants: arrayUnion(userTeamId)
+            });
+            const hostUid = await findCaptainUid(match.hostId);
+            if (hostUid) {
+                await sendNotification(hostUid, 'applicant', '새로운 매칭 신청!', '새로운 팀이 경기를 신청했습니다. 라커룸에서 확인하세요.');
+            }
+            safeAlert('성공', '신청되었습니다! 호스트가 수락하면 알림이 옵니다.');
+            loadMatchAndUser();
+        } catch (e) { safeAlert('실패', '신청 중 오류가 발생했습니다.'); } finally { setIsProcessing(false); }
+    }
   };
 
   const handleCancelApply = async () => {
       if (!userTeamId || !match?.id) return;
-      Alert.alert('취소 확인', '신청을 취소하시겠습니까?', [
-        { text: '아니오', style: 'cancel' },
-        { text: '네, 취소합니다', onPress: async () => {
-            setIsProcessing(true);
-            try {
-                await updateDoc(doc(db, "matches", match.id), { applicants: arrayRemove(userTeamId) });
-                Alert.alert('취소됨', '신청이 취소되었습니다.');
-                loadMatchAndUser();
-            } catch (e) { Alert.alert('오류', '취소 실패'); } finally { setIsProcessing(false); }
-        }}
-      ]);
+      
+      // [Fix] safeConfirm 사용
+      const confirmed = await safeConfirm('취소 확인', '신청을 취소하시겠습니까?');
+
+      if (confirmed) {
+          setIsProcessing(true);
+          try {
+              await updateDoc(doc(db, "matches", match.id), { applicants: arrayRemove(userTeamId) });
+              safeAlert('취소됨', '신청이 취소되었습니다.');
+              loadMatchAndUser();
+          } catch (e) { safeAlert('오류', '취소 실패'); } finally { setIsProcessing(false); }
+      }
   };
 
   // [기능 추가] 공유하기 기능
@@ -168,9 +190,9 @@ export default function MatchDetailScreen() {
     if (Platform.OS === 'web') {
         try {
             await navigator.clipboard.writeText(url);
-            Alert.alert('복사 완료', '링크가 클립보드에 복사되었습니다.');
+            safeAlert('복사 완료', '링크가 클립보드에 복사되었습니다.'); // Fix
         } catch (err) {
-            Alert.alert('오류', '링크 복사에 실패했습니다.');
+            safeAlert('오류', '링크 복사에 실패했습니다.');
         }
     } else {
         try {
@@ -207,14 +229,11 @@ export default function MatchDetailScreen() {
   const isMyPost = userTeamId === match.hostId;
   const isApplied = userTeamId && match.applicants?.includes(userTeamId);
 
-  // [SEO] 동적 타이틀 설정
   const pageTitle = `${match.team} - 매치 상세`;
 
   return (
     <SafeAreaView className="flex-1 bg-[#F2F4F6]" edges={['top']}>
       <StatusBar barStyle="dark-content" />
-      
-      {/* [SEO] 웹 브라우저 탭 제목 변경 */}
       <Stack.Screen options={{ title: pageTitle }} />
 
       <View className="px-5 py-3 flex-row items-center justify-between bg-[#F2F4F6]">
@@ -222,8 +241,6 @@ export default function MatchDetailScreen() {
             <FontAwesome5 name="arrow-left" size={20} color={COLORS.textMain} />
         </TouchableOpacity>
         <Text className="text-lg font-bold text-[#191F28]">매칭 상세</Text>
-        
-        {/* [UI] 공유 버튼 추가 */}
         <TouchableOpacity onPress={handleShare} className="p-2 -mr-2 rounded-full">
             <FontAwesome5 name="share-alt" size={20} color={COLORS.textMain} />
         </TouchableOpacity>

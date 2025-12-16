@@ -1,3 +1,4 @@
+// hooks/useGuest.ts
 import { useState, useEffect } from 'react';
 import { 
   collection, query, where, orderBy, onSnapshot, 
@@ -5,7 +6,7 @@ import {
   getDoc, runTransaction, deleteDoc 
 } from 'firebase/firestore';
 import { db, auth } from '../configs/firebaseConfig';
-import { Alert } from 'react-native';
+import { Alert, Platform } from 'react-native'; // Platform 추가
 import { sendPushNotification } from '../utils/notificationHelper';
 
 export type GuestPost = {
@@ -23,6 +24,15 @@ export type GuestPost = {
   applicants?: string[]; 
   acceptedApplicantId?: string;
   createdAt: string;
+};
+
+// [Architect's Fix] 웹 호환 알림 헬퍼
+const safeAlert = (title: string, message?: string) => {
+  if (Platform.OS === 'web') {
+    window.alert(`${title}\n\n${message || ''}`);
+  } else {
+    Alert.alert(title, message);
+  }
 };
 
 export const useGuest = () => {
@@ -67,7 +77,7 @@ export const useGuest = () => {
       });
       return true;
     } catch (e: any) {
-      Alert.alert('오류', e.message);
+      safeAlert('오류', e.message); // Fix
       return false;
     }
   };
@@ -78,7 +88,7 @@ export const useGuest = () => {
     const userUid = auth.currentUser.uid;
 
     if (post.hostCaptainId === userUid) {
-      Alert.alert('오류', '본인이 작성한 글입니다.');
+      safeAlert('오류', '본인이 작성한 글입니다.'); // Fix
       return;
     }
 
@@ -94,7 +104,7 @@ export const useGuest = () => {
         transaction.update(postRef, { applicants: arrayUnion(userUid) });
       });
       
-      // 호스트에게 알림 발송 (DB + Push)
+      // 호스트에게 알림 발송
       try {
         await addDoc(collection(db, "notifications"), {
             userId: post.hostCaptainId,
@@ -105,7 +115,6 @@ export const useGuest = () => {
             isRead: false
         });
 
-        // Push
         const hostSnap = await getDoc(doc(db, "users", post.hostCaptainId));
         if (hostSnap.exists() && hostSnap.data().pushToken) {
             await sendPushNotification(
@@ -117,9 +126,9 @@ export const useGuest = () => {
         }
       } catch (notiErr) { console.log("Noti failed but ignore"); }
 
-      Alert.alert('완료', '신청되었습니다! 호스트가 확인 후 연락할 것입니다.');
+      safeAlert('완료', '신청되었습니다! 호스트가 확인 후 연락할 것입니다.'); // Fix
     } catch (e: any) {
-      Alert.alert('신청 실패', typeof e === 'string' ? e : '알 수 없는 오류가 발생했습니다.');
+      safeAlert('신청 실패', typeof e === 'string' ? e : '알 수 없는 오류가 발생했습니다.'); // Fix
     }
   };
 
@@ -130,9 +139,9 @@ export const useGuest = () => {
       await updateDoc(doc(db, "guest_posts", postId), {
         applicants: arrayRemove(auth.currentUser.uid)
       });
-      Alert.alert('취소됨', '신청이 취소되었습니다.');
+      safeAlert('취소됨', '신청이 취소되었습니다.'); // Fix
     } catch (e) {
-      Alert.alert('오류', '취소 처리에 실패했습니다.');
+      safeAlert('오류', '취소 처리에 실패했습니다.'); // Fix
     }
   };
 
@@ -152,7 +161,6 @@ export const useGuest = () => {
               });
           });
 
-          // 용병에게 알림 발송 (DB + Push)
           await addDoc(collection(db, "notifications"), {
               userId: applicantUid,
               type: 'normal',
@@ -162,7 +170,6 @@ export const useGuest = () => {
               isRead: false
           });
 
-          // Push
           const userSnap = await getDoc(doc(db, "users", applicantUid));
           if (userSnap.exists() && userSnap.data().pushToken) {
               await sendPushNotification(
@@ -175,7 +182,7 @@ export const useGuest = () => {
 
           return true;
       } catch (e: any) {
-          Alert.alert('수락 실패', typeof e === 'string' ? e : '오류가 발생했습니다.');
+          safeAlert('수락 실패', typeof e === 'string' ? e : '오류가 발생했습니다.'); // Fix
           return false;
       }
   };
@@ -186,7 +193,7 @@ export const useGuest = () => {
           await deleteDoc(doc(db, "guest_posts", postId));
           return true;
       } catch (e) {
-          Alert.alert('오류', '삭제 처리에 실패했습니다.');
+          safeAlert('오류', '삭제 처리에 실패했습니다.'); // Fix
           return false;
       }
   };

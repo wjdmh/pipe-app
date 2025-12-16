@@ -1,6 +1,5 @@
 // app/home/index.tsx
 import React, { useEffect, useState, useRef } from 'react';
-// [수정] Platform import 추가
 import { View, Text, FlatList, TouchableOpacity, ActivityIndicator, RefreshControl, StatusBar, Pressable, Animated, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import { onAuthStateChanged } from 'firebase/auth'; 
@@ -11,6 +10,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { COLORS, TYPOGRAPHY } from '../../configs/theme';
 import { Card } from '../../components/Card';
 import { KUSF_TEAMS } from './ranking';
+
+// [Architect's Fix] 전역 상수로 애니메이션 드라이버 설정 (성능 최적화)
+const USE_NATIVE_DRIVER = Platform.OS !== 'web';
 
 interface Team {
   id: string;
@@ -34,20 +36,36 @@ type MatchData = {
   isDeleted?: boolean;
 };
 
-// [수정] useNativeDriver 옵션을 플랫폼에 따라 분기 처리 (웹 오류 해결)
+// [Architect's Fix] AnimatedCard 컴포넌트 안정화
 const AnimatedCard = ({ children, onPress, className, style }: { children: React.ReactNode, onPress: () => void, className?: string, style?: any }) => {
   const scaleValue = useRef(new Animated.Value(1)).current;
-  // 웹에서는 false, 앱에서는 true
-  const useNativeDriver = Platform.OS !== 'web';
+
+  const onPressIn = () => {
+    Animated.spring(scaleValue, { 
+      toValue: 0.98, 
+      useNativeDriver: USE_NATIVE_DRIVER, 
+      speed: 20 
+    }).start();
+  };
+
+  const onPressOut = () => {
+    Animated.spring(scaleValue, { 
+      toValue: 1, 
+      useNativeDriver: USE_NATIVE_DRIVER, 
+      speed: 20 
+    }).start();
+  };
 
   return (
     <Pressable 
-      onPressIn={() => Animated.spring(scaleValue, { toValue: 0.98, useNativeDriver, speed: 20 }).start()} 
-      onPressOut={() => Animated.spring(scaleValue, { toValue: 1, useNativeDriver, speed: 20 }).start()} 
+      onPressIn={onPressIn} 
+      onPressOut={onPressOut} 
       onPress={onPress} 
       style={{ width: '100%' }}
     >
-      <Animated.View className={className} style={[style, { transform: [{ scale: scaleValue }] }]}>{children}</Animated.View>
+      <Animated.View className={className} style={[style, { transform: [{ scale: scaleValue }] }]}>
+        {children}
+      </Animated.View>
     </Pressable>
   );
 };

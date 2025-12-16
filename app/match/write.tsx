@@ -10,7 +10,7 @@ import {
   KeyboardAvoidingView, 
   Animated, 
   Modal, 
-  TouchableWithoutFeedback, 
+  Pressable, // [Change] TouchableWithoutFeedback 대체
   ScrollView,
   LogBox
 } from 'react-native';
@@ -24,21 +24,36 @@ import { FontAwesome5 } from '@expo/vector-icons';
 // ⚠️ VirtualizedLists 경고 무시
 LogBox.ignoreLogs(['VirtualizedLists should never be nested']);
 
-// [Design Component] 선택 카드
+// [Architect's Fix] 웹 대응 드라이버 설정
+const USE_NATIVE_DRIVER = Platform.OS !== 'web';
+
+// [Architect's Fix] SelectCard 리팩토링 (TouchableWithoutFeedback -> Pressable)
 const SelectCard = ({ label, subLabel, icon, selected, onPress }: { label: string, subLabel?: string, icon: string, selected: boolean, onPress: () => void }) => {
   const scaleAnim = useRef(new Animated.Value(1)).current;
 
   const handlePressIn = () => {
-    Animated.spring(scaleAnim, { toValue: 0.96, useNativeDriver: true, speed: 20 }).start();
+    Animated.spring(scaleAnim, { 
+      toValue: 0.96, 
+      useNativeDriver: USE_NATIVE_DRIVER, 
+      speed: 20 
+    }).start();
   };
 
   const handlePressOut = () => {
-    Animated.spring(scaleAnim, { toValue: 1, useNativeDriver: true, speed: 20 }).start();
-    onPress();
+    Animated.spring(scaleAnim, { 
+      toValue: 1, 
+      useNativeDriver: USE_NATIVE_DRIVER, 
+      speed: 20 
+    }).start();
   };
 
   return (
-    <TouchableWithoutFeedback onPressIn={handlePressIn} onPressOut={handlePressOut}>
+    <Pressable 
+      onPress={onPress}
+      onPressIn={handlePressIn} 
+      onPressOut={handlePressOut}
+      style={{ flex: 1 }} // Pressable은 기본 스타일이 없으므로 flex: 1 명시
+    >
       <Animated.View 
         className={`flex-1 p-5 rounded-2xl border shadow-sm items-center justify-center h-36 ${selected ? 'bg-indigo-50 border-[#4F46E5] shadow-indigo-100' : 'bg-white border-gray-100'}`}
         style={{ transform: [{ scale: scaleAnim }] }}
@@ -49,7 +64,7 @@ const SelectCard = ({ label, subLabel, icon, selected, onPress }: { label: strin
         <Text className={`text-base font-bold ${selected ? 'text-[#4F46E5]' : 'text-gray-800'}`}>{label}</Text>
         {subLabel && <Text className={`text-[10px] mt-1 ${selected ? 'text-indigo-400' : 'text-gray-400'}`}>{subLabel}</Text>}
       </Animated.View>
-    </TouchableWithoutFeedback>
+    </Pressable>
   );
 };
 
@@ -157,8 +172,6 @@ export default function WriteMatchScreen() {
 
   return (
     <SafeAreaView className="flex-1 bg-[#F9FAFB]" edges={['bottom']}>
-      {/* [Fix] 커스텀 헤더 제거: Stack Navigation 헤더 사용으로 중복 방지 */}
-      
       <KeyboardAvoidingView 
         behavior={Platform.OS === "ios" ? "padding" : undefined}
         className="flex-1"
@@ -168,7 +181,6 @@ export default function WriteMatchScreen() {
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps='handled'
         >
-            {/* Title Section */}
             <View className="mb-8">
                 <Text className="text-2xl font-extrabold text-gray-900 mb-2">새로운 매칭 만들기</Text>
                 <Text className="text-gray-500 text-sm">팀원들과 함께할 즐거운 경기를 만들어보세요.</Text>

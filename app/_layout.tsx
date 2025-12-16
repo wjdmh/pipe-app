@@ -1,19 +1,31 @@
-import "../global.css"; 
-import "../shim";       
+import "../global.css";
+import "../shim";
 import { Stack } from 'expo-router';
-import { View, Platform } from 'react-native';
+import { View, Platform, LogBox } from 'react-native'; // [Change] LogBox 추가
 import { StatusBar } from 'expo-status-bar';
 import { getResponsiveContainer, getWebBackground } from "../utils/platformHelper";
 import { useEffect } from 'react';
 import { useFonts } from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
 
-// 스플래시 유지
-SplashScreen.preventAutoHideAsync();
+// [Architect's Fix] 콘솔 노이즈 제거
+LogBox.ignoreLogs([
+  'Blocked aria-hidden on an element', // React Navigation Web 접근성 경고
+  'props.pointerEvents is deprecated', // 구형 라이브러리 호환성
+  'shadow* style props are deprecated', // NativeWind/RNW 그림자 경고
+  'TouchableWithoutFeedback is deprecated', // 아직 남아있을 수 있는 컴포넌트 경고
+]);
+
+// [Architect's Fix] 스플래시 스크린 방어 로직
+try {
+  SplashScreen.preventAutoHideAsync().catch(() => {
+    console.warn("[Layout] Splash Screen preventAutoHide failed - continuing anyway.");
+  });
+} catch (e) {
+  // ignore errors
+}
 
 export default function RootLayout() {
-  // [수정 포인트] node_modules가 아닌, 직접 복사한 '로컬 폰트 파일'을 불러옵니다.
-  // 이렇게 하면 배포 시 경로에 'node_modules'가 포함되지 않아 404 에러가 사라집니다.
   const [loaded, error] = useFonts({
     "FontAwesome": require("../assets/fonts/FontAwesome.ttf"),
     "FontAwesome5Free-Solid": require("../assets/fonts/FontAwesome5_Solid.ttf"),
@@ -22,12 +34,14 @@ export default function RootLayout() {
   });
 
   useEffect(() => {
-    if (error) console.error("Font loading error:", error);
+    if (error) console.error("[Layout] Font loading error:", error);
   }, [error]);
 
   useEffect(() => {
     if (loaded || error) {
-      SplashScreen.hideAsync();
+      SplashScreen.hideAsync().catch((e) => {
+        console.warn("[Layout] Failed to hide splash screen:", e);
+      });
     }
   }, [loaded, error]);
 
@@ -35,7 +49,11 @@ export default function RootLayout() {
     return null;
   }
 
-  const screenOptions = { headerShown: false };
+  // [Architect's Fix] 웹 UX 최적화 (애니메이션 제거)
+  const screenOptions = {
+    headerShown: false,
+    animation: Platform.OS === 'web' ? 'none' : 'default', 
+  } as const;
 
   return (
     <View className={getWebBackground()}>

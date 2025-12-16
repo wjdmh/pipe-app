@@ -4,22 +4,32 @@ import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
 
-// [수정] 웹이 아닐 때만 알림 핸들러 설정 (웹 콘솔 경고 방지)
+// [Architect's Fix] 타입 호환성 문제 해결
+// 웹 환경이 아닐 때만 핸들러를 설정하며, 최신 타입 정의에 맞춰 필수 속성을 모두 추가했습니다.
 if (Platform.OS !== 'web') {
   Notifications.setNotificationHandler({
     handleNotification: async () => ({
       shouldShowAlert: true,
       shouldPlaySound: true,
       shouldSetBadge: false,
-    } as Notifications.NotificationBehavior),
+      // [Fix] 누락된 속성 추가 (Type Compatibility)
+      shouldShowBanner: true,
+      shouldShowList: true,
+    }),
   });
 }
 
 // 푸시 알림 권한 요청 및 토큰 가져오기
 export async function registerForPushNotificationsAsync() {
-  // [Web Guard] 웹 환경이면 즉시 종료 (에러 방지)
+  // [Web Guard] 웹 환경 차단
   if (Platform.OS === 'web') {
-    console.log('[Web] 푸시 알림 로직을 건너뜁니다.');
+    console.log('🌐 [Web] 푸시 알림 기능이 비활성화되었습니다.');
+    return null;
+  }
+
+  // [Emulator Guard]
+  if (!Device.isDevice) {
+    console.log('📱 [Emulator] 실기기에서만 푸시 알림이 작동합니다.');
     return null;
   }
 
@@ -33,12 +43,6 @@ export async function registerForPushNotificationsAsync() {
     });
   }
 
-  // 에뮬레이터 체크
-  if (!Device.isDevice) {
-    console.log('에뮬레이터에서는 푸시 알림이 작동하지 않습니다.');
-    return null;
-  }
-
   // 권한 확인
   const { status: existingStatus } = await Notifications.getPermissionsAsync();
   let finalStatus = existingStatus;
@@ -49,33 +53,31 @@ export async function registerForPushNotificationsAsync() {
   }
   
   if (finalStatus !== 'granted') {
-    console.log('푸시 알림 권한이 거부되었습니다.');
+    console.log('🚫 [Permission] 푸시 알림 권한이 거부되었습니다.');
     return null;
   }
 
-  // Project ID 가져오기
-  const projectId = Constants?.expoConfig?.extra?.eas?.projectId ?? Constants?.easConfig?.projectId;
-  
-  if (!projectId) {
-      console.log('Project ID not found');
-      return null;
-  }
-
+  // Project ID 및 토큰 발급
   try {
+    const projectId = Constants?.expoConfig?.extra?.eas?.projectId ?? Constants?.easConfig?.projectId;
+    if (!projectId) {
+        console.error('❌ [Config] Project ID를 찾을 수 없습니다.');
+        return null;
+    }
     const token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
-    console.log('Expo Push Token:', token);
+    console.log('✅ [Token] Expo Push Token:', token);
     return token;
   } catch (e) {
-    console.error("Push Token Error:", e);
+    console.error("❌ [Error] Push Token Error:", e);
     return null;
   }
 }
 
 // 푸시 알림 발송 함수
 export async function sendPushNotification(expoPushToken: string, title: string, body: string, data: any = {}) {
-  // [Web Guard] 웹에서는 발송 로직 실행 안 함
+  // [Web Guard] 웹 차단
   if (Platform.OS === 'web') {
-    console.log('[Web] 푸시 발송 시뮬레이션:', { title, body });
+    console.log(`📨 [Web Simulation] Push to ${expoPushToken}: ${title} - ${body}`);
     return;
   }
 
@@ -98,6 +100,31 @@ export async function sendPushNotification(expoPushToken: string, title: string,
       body: JSON.stringify(message),
     });
   } catch (error) {
-    console.error('Push Sending Error:', error);
+    console.error('❌ [Send Error] Push Sending Failed:', error);
   }
+}
+
+// [Architect's Fix] 리스너 관리 로직 수정
+// removeNotificationSubscription 대신 Subscription 객체의 .remove()를 사용합니다.
+export function setupNotificationListeners(
+  onReceive?: (notification: Notifications.Notification) => void,
+  onResponse?: (response: Notifications.NotificationResponse) => void
+) {
+  // 웹이면 빈 정리 함수 반환
+  if (Platform.OS === 'web') return () => {};
+
+  // 리스너 등록
+  const notiSubscription = onReceive 
+    ? Notifications.addNotificationReceivedListener(onReceive) 
+    : null;
+    
+  const respSubscription = onResponse 
+    ? Notifications.addNotificationResponseReceivedListener(onResponse) 
+    : null;
+
+  // 클린업 함수 (useEffect의 return 값으로 사용 가능)
+  return () => {
+    notiSubscription?.remove();
+    respSubscription?.remove();
+  };
 }
