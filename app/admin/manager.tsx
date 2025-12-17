@@ -121,7 +121,7 @@ export default function AdminManager() {
                   const hDoc = await transaction.get(hostRef);
                   const gDoc = await transaction.get(guestRef);
                   
-                  // ㅎㅎㅎㅎ팀이 존재하지 않아도 경기는 종료 처리 (Soft Fail)
+                  // ㅎㅎㅎㅎㅎ팀이 존재하지 않아도 경기는 종료 처리 (Soft Fail)
                   
                   if(hDoc.exists()) {
                       const hStats = hDoc.data().stats || { wins: 0, losses: 0, points: 0, total: 0 };
