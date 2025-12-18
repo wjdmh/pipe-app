@@ -1,28 +1,17 @@
 // app/home/index.tsx
-import React, { useEffect, useState, useRef } from 'react';
-import { View, Text, FlatList, TouchableOpacity, ActivityIndicator, RefreshControl, StatusBar, Pressable, Animated, Platform } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, Text, FlatList, TouchableOpacity, ActivityIndicator, RefreshControl, StatusBar, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
 import { onAuthStateChanged } from 'firebase/auth'; 
 import { collection, query, orderBy, where, limit, startAfter, getDocs, doc, getDoc, QueryDocumentSnapshot, DocumentData } from 'firebase/firestore';
 import { auth, db } from '../../configs/firebaseConfig';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { COLORS, TYPOGRAPHY } from '../../configs/theme';
-import { Card } from '../../components/Card';
-import { KUSF_TEAMS } from './ranking';
 
-// [Architect's Fix] 전역 상수로 애니메이션 드라이버 설정 (성능 최적화)
-const USE_NATIVE_DRIVER = Platform.OS !== 'web';
+// [디자인 상수] 브랜드 컬러
+const BRAND_COLOR = '#2962FF';
 
-interface Team {
-  id: string;
-  name: string;
-  kusfId?: string;
-  affiliation: string;
-  gender: 'male' | 'female';
-  stats: { wins: number; losses: number; points: number; total: number };
-}
-
+// [데이터 타입 정의]
 type MatchData = { 
   id: string; 
   team: string; 
@@ -36,154 +25,57 @@ type MatchData = {
   isDeleted?: boolean;
 };
 
-// [Architect's Fix] AnimatedCard 컴포넌트 안정화
-const AnimatedCard = ({ children, onPress, className, style }: { children: React.ReactNode, onPress: () => void, className?: string, style?: any }) => {
-  const scaleValue = useRef(new Animated.Value(1)).current;
-
-  const onPressIn = () => {
-    Animated.spring(scaleValue, { 
-      toValue: 0.98, 
-      useNativeDriver: USE_NATIVE_DRIVER, 
-      speed: 20 
-    }).start();
-  };
-
-  const onPressOut = () => {
-    Animated.spring(scaleValue, { 
-      toValue: 1, 
-      useNativeDriver: USE_NATIVE_DRIVER, 
-      speed: 20 
-    }).start();
-  };
-
-  return (
-    <Pressable 
-      onPressIn={onPressIn} 
-      onPressOut={onPressOut} 
-      onPress={onPress} 
-      style={{ width: '100%' }}
-    >
-      <Animated.View className={className} style={[style, { transform: [{ scale: scaleValue }] }]}>
-        {children}
-      </Animated.View>
-    </Pressable>
-  );
-};
-
-const FilterChip = ({ label, active, onPress }: { label: string, active: boolean, onPress: () => void }) => (
-  <TouchableOpacity 
-    onPress={onPress} 
-    activeOpacity={0.7} 
-    className="px-4 py-2.5 rounded-full mr-2 border flex-row items-center"
-    style={{ 
-        backgroundColor: active ? COLORS.textMain : COLORS.surface, 
-        borderColor: active ? COLORS.textMain : COLORS.surface, 
-        shadowColor: "#000", 
-        shadowOpacity: active ? 0 : 0.05, 
-        shadowRadius: 2, 
-        elevation: active ? 0 : 1 
-    }}
-  >
-    <Text className="text-sm font-bold" style={{ color: active ? '#FFFFFF' : COLORS.textSub }}>{label}</Text>
-  </TouchableOpacity>
+// [UI Component] 주차별 캘린더 아이템
+const WeekItem = ({ label, selected }: { label: string, selected: boolean }) => (
+    <View className={`items-center justify-center mr-3 ${selected ? 'w-[74px] h-[74px] rounded-full bg-[#2962FF]' : 'w-[74px] h-[74px]'}`}>
+        <Text className={selected ? "text-white font-black text-[15px] text-center leading-tight" : "text-gray-400 font-bold text-[15px] text-center leading-tight"}>
+            {label.replace(' ', '\n')}
+        </Text>
+    </View>
 );
 
-const RankingCard = ({ onPress }: { onPress: () => void }) => {
-  const [topTeams, setTopTeams] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<'male'|'female'>('male');
+// [UI Component] 퀵 메뉴 아이템
+const QuickMenuItem = ({ label, onPress }: { label: string, onPress?: () => void }) => (
+    <TouchableOpacity 
+        onPress={onPress} 
+        activeOpacity={0.7}
+        className="w-[23%] aspect-square bg-gray-100 rounded-[22px] items-center justify-center mb-4"
+    >
+       <Text className="text-gray-800 font-bold text-[13px] text-center leading-4">{label.replace(' ', '\n')}</Text>
+    </TouchableOpacity>
+);
 
-  useEffect(() => {
-      const fetchTopTeams = async () => {
-          try {
-              const q = query(collection(db, "teams"));
-              const snap = await getDocs(q);
-              
-              const dbTeams = snap.docs.map(d => ({ id: d.id, ...d.data() } as Team));
-              
-              let combined = KUSF_TEAMS.filter(t => t.gender === tab);
-
-              dbTeams.forEach(dbTeam => {
-                  if(dbTeam.gender !== tab) return;
-
-                  const idx = combined.findIndex(t => t.id === dbTeam.kusfId || t.name === dbTeam.name);
-                  if (idx !== -1) {
-                      combined[idx] = { 
-                          ...combined[idx], 
-                          ...dbTeam, 
-                          stats: dbTeam.stats || combined[idx].stats 
-                      };
-                  } else {
-                      combined.push({
-                          id: dbTeam.id, 
-                          name: dbTeam.name, 
-                          affiliation: dbTeam.affiliation, 
-                          gender: dbTeam.gender, 
-                          stats: dbTeam.stats || { wins: 0, losses: 0, points: 0, total: 0 }
-                      });
-                  }
-              });
-              
-              const finalTop3 = combined.sort((a, b) => b.stats.points - a.stats.points).slice(0, 3);
-              setTopTeams(finalTop3);
-          } catch (e) {
-              console.error("Ranking Fetch Error:", e);
-          } finally {
-              setLoading(false);
-          }
-      };
-      fetchTopTeams();
-  }, [tab]);
-
-  return (
-    <AnimatedCard onPress={onPress} className="p-6 rounded-[24px] mb-8 shadow-sm" style={{ backgroundColor: COLORS.surface }}>
-        <View className="flex-row justify-between items-start mb-4">
-            <View>
-                <Text className="text-xl font-extrabold mb-1" style={{ color: COLORS.textMain }}>실시간 순위</Text>
-                <Text className="text-sm font-medium" style={{ color: COLORS.textSub }}>앱으로 경기를 잡고 순위를 올려봐요</Text>
-            </View>
-            <FontAwesome5 name="chevron-right" size={14} color={COLORS.textCaption} className="mt-1" />
-        </View>
-        
-        <View className="flex-row bg-[#F2F4F6] p-1 rounded-xl mb-4 self-start">
-            <TouchableOpacity onPress={() => setTab('male')} className={`px-3 py-1.5 rounded-lg ${tab === 'male' ? 'bg-white shadow-sm' : ''}`}><Text className="text-xs font-bold" style={{ color: tab === 'male' ? COLORS.primary : COLORS.textCaption }}>남자부</Text></TouchableOpacity>
-            <TouchableOpacity onPress={() => setTab('female')} className={`px-3 py-1.5 rounded-lg ${tab === 'female' ? 'bg-white shadow-sm' : ''}`}><Text className="text-xs font-bold" style={{ color: tab === 'female' ? '#FF6B6B' : COLORS.textCaption }}>여자부</Text></TouchableOpacity>
-        </View>
-
-        <View className="gap-4">
-            {loading ? <ActivityIndicator color={COLORS.primary} /> : topTeams.map((team, index) => {
-                const badgeColor = index === 0 ? '#FFD700' : index === 1 ? '#C0C0C0' : '#CD7F32';
-                return (
-                    <View key={team.id || index} className="flex-row items-center justify-between">
-                        <View className="flex-row items-center flex-1 mr-4">
-                            <View className="w-7 h-7 items-center justify-center rounded-full mr-3" style={{ backgroundColor: index === 0 ? '#FFF9E5' : 'transparent' }}><Text className="font-black text-base" style={{ color: badgeColor }}>{index + 1}</Text></View>
-                            <Text className="text-base font-bold flex-1" style={{ color: COLORS.textMain }} numberOfLines={1} ellipsizeMode="tail">{team.name}</Text>
-                            {index === 0 && <FontAwesome5 name="crown" size={12} color={badgeColor} className="ml-1" />}
-                        </View>
-                        <Text className="text-sm font-bold" style={{ color: COLORS.textSub }}>{team.stats.points}점</Text>
-                    </View>
-                );
-            })}
-        </View>
-    </AnimatedCard>
-  );
-};
+// [UI Component] 필터 버튼 (오류 수정됨: onPress 추가)
+const FilterButton = ({ label, active, hasIcon = true, onPress }: { label: string, active?: boolean, hasIcon?: boolean, onPress?: () => void }) => (
+    <TouchableOpacity 
+        onPress={onPress}
+        className={`flex-row items-center px-4 py-2 rounded-full border mr-2 ${active ? 'border-[#2962FF]' : 'border-gray-200 bg-white'}`}
+    >
+        <Text className={`text-[13px] font-bold mr-1 ${active ? 'text-[#2962FF]' : 'text-gray-500'}`}>{label}</Text>
+        {hasIcon && <FontAwesome5 name="chevron-down" size={10} color={active ? '#2962FF' : '#999'} />}
+    </TouchableOpacity>
+);
 
 export default function HomeScreen() {
   const router = useRouter();
   
+  // 상태 관리
   const [matches, setMatches] = useState<MatchData[]>([]);
   const [lastDoc, setLastDoc] = useState<QueryDocumentSnapshot<DocumentData> | null>(null);
   const [hasMore, setHasMore] = useState(true);
-  
   const [filter, setFilter] = useState('all');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   
+  // 유저 정보
   const [userTeamId, setUserTeamId] = useState<string | null>(null);
   const [userName, setUserName] = useState('');
+
+  // UI 탭 상태 (팀매치/게스트)
+  const [matchTab, setMatchTab] = useState<'team' | 'guest'>('team'); 
   
+  // 초기 실행: 유저 정보 확인 및 매치 로드
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
@@ -201,14 +93,13 @@ export default function HomeScreen() {
       }
       fetchMatches(true);
     });
-
     return () => unsubscribe();
   }, []); 
 
-  useEffect(() => {
-      fetchMatches(true);
-  }, [filter]);
+  // 필터 변경 시 매치 목록 재로드
+  useEffect(() => { fetchMatches(true); }, [filter]);
 
+  // 매치 데이터 불러오기 (Firebase Query)
   const fetchMatches = async (isRefresh = false) => {
       if (isRefresh) {
           setLoading(true);
@@ -226,12 +117,12 @@ export default function HomeScreen() {
               limit(10)
           );
 
+          // 필터 조건 적용
           if (filter === '6man') q = query(q, where("type", "==", "6man"));
           else if (filter === '9man') q = query(q, where("type", "==", "9man"));
-          else if (filter === 'mixed') q = query(q, where("gender", "==", "mixed"));
           else if (filter === 'male') q = query(q, where("gender", "==", "male"));
           else if (filter === 'female') q = query(q, where("gender", "==", "female"));
-
+          
           if (!isRefresh && lastDoc) {
               q = query(q, startAfter(lastDoc));
           }
@@ -274,6 +165,7 @@ export default function HomeScreen() {
       fetchMatches(true);
   };
 
+  // 리스트 아이템 렌더링
   const renderItem = ({ item }: { item: MatchData }) => {
     let displayDate = item.time;
     let displayTime = '';
@@ -289,144 +181,141 @@ export default function HomeScreen() {
             displayTime = `${hour}:${min}`;
         } else {
             const parts = item.time.split(' ');
-            displayDate = parts[0] || item.time;
+            if(parts[0].includes('-')) {
+                const dates = parts[0].split('-');
+                displayDate = `${parseInt(dates[1])}/${parseInt(dates[2])}`;
+            } else {
+                displayDate = parts[0];
+            }
             displayTime = parts[1] ? parts[1].substring(0, 5) : '';
         }
-    } catch(e) {
-        displayDate = item.time;
-    }
+    } catch(e) { displayDate = item.time; }
 
     return (
-      <AnimatedCard className="p-6 rounded-[24px] mb-4 shadow-sm" style={{ backgroundColor: COLORS.surface }} onPress={() => router.push(`/match/${item.id}`)}>
-        <View className="flex-row items-center justify-between mb-4">
-            <View className="flex-row gap-2">
-                <View className="px-2.5 py-1.5 rounded-[8px]" style={{ backgroundColor: item.type === '6man' ? '#E8F3FF' : '#FFF5E6' }}><Text className="text-xs font-bold" style={{ color: item.type === '6man' ? '#1B64DA' : '#FF8C00' }}>{item.type === '6man' ? '6인제' : '9인제'}</Text></View>
-                <View className="px-2.5 py-1.5 rounded-[8px]" style={{ backgroundColor: COLORS.background }}><Text className="text-xs font-bold" style={{ color: COLORS.textSub }}>{item.gender === 'male' ? '남자부' : item.gender === 'female' ? '여자부' : '혼성'}</Text></View>
+      <TouchableOpacity 
+        className="flex-row py-6 border-b border-gray-100 bg-white" 
+        onPress={() => router.push(`/match/${item.id}`)}
+        activeOpacity={0.7}
+      >
+        <View className="w-[52px] mr-3 items-center pt-1">
+            <Text className="text-[20px] font-black text-black mb-1 leading-none">{displayDate}</Text>
+            <Text className="text-[14px] font-bold text-gray-800">{displayTime}</Text>
+        </View>
+
+        <View className="flex-1 pr-2 justify-center">
+            <View className="flex-row items-center mb-1.5">
+                <FontAwesome5 name="map-marker-alt" size={11} color="#9CA3AF" style={{marginRight: 4}} />
+                <Text className="text-[12px] text-gray-400 font-medium" numberOfLines={1}>{item.loc || '장소 미정'}</Text>
             </View>
-            <View className="px-2.5 py-1 rounded-full" style={{ backgroundColor: '#E6F8EB' }}><Text className="text-xs font-bold text-[#26A96C]">신청 가능</Text></View>
+            <View className="flex-row items-baseline mb-1">
+                <Text className="text-[13px] text-gray-400 mr-1.5 font-bold">VS</Text>
+                <Text className="text-[18px] font-black text-black tracking-tight" numberOfLines={1}>{item.team}</Text>
+            </View>
+            <Text className="text-[12px] text-gray-400 font-medium">
+                {item.gender === 'male' ? '남자부' : item.gender === 'female' ? '여자부' : '혼성'} · {item.type === '6man' ? '6인제' : '9인제'}
+            </Text>
         </View>
-        <View className="mb-5">
-            <Text className="text-[20px] font-bold mb-1.5 leading-tight" style={{ color: COLORS.textMain }} numberOfLines={2} ellipsizeMode="tail">{item.team}</Text>
-            <Text className="text-sm font-medium" style={{ color: COLORS.textCaption }} numberOfLines={1}>{item.affiliation || '소속 미정'} {item.level ? `· ${item.level}급` : ''}</Text>
+
+        <View className="justify-center pl-2">
+            <FontAwesome5 name="heart" solid={false} size={20} color="#FF6B6B" style={{ opacity: 0.5 }} />
         </View>
-        <View className="pt-4 border-t flex-row items-center" style={{ borderColor: COLORS.background }}>
-            <View className="flex-row items-center mr-6 flex-shrink-0"><FontAwesome5 name="clock" size={13} color={COLORS.textSub} className="mr-1.5" /><Text className="text-sm font-bold" style={{ color: COLORS.textSub }}>{displayDate} <Text style={{ color: COLORS.primary }}>{displayTime}</Text></Text></View>
-            <View className="flex-row items-center flex-1 overflow-hidden"><FontAwesome5 name="map-marker-alt" size={13} color={COLORS.textSub} className="mr-1.5" /><Text className="text-sm font-medium flex-1" style={{ color: COLORS.textSub }} numberOfLines={1}>{item.loc}</Text></View>
-        </View>
-      </AnimatedCard>
+      </TouchableOpacity>
     );
   };
 
-  if (!loading && !userTeamId) {
-    return (
-      <SafeAreaView className="flex-1 bg-[#F8FAFC] px-6 justify-center">
-        <StatusBar barStyle="dark-content" />
-        <View className="mb-10">
-          <Text className="text-4xl mb-2">👋</Text>
-          <Text className={`${TYPOGRAPHY.h1} mb-2`}>{userName || '회원'}님</Text>
-          <Text className={`${TYPOGRAPHY.body2} leading-6`}>
-            아직 소속된 팀이 없어요.{'\n'}팀에 가입하거나 용병으로 활동해보세요.
-          </Text>
-        </View>
+  // [헤더 컴포넌트]
+  const ListHeader = () => (
+      <View className="bg-white pt-2">
+          {/* 1. 로고 */}
+          <View className="pb-5">
+              <Text className="text-[30px] font-black text-black tracking-tighter">PIPE</Text>
+          </View>
 
-        <View className="gap-4">
-          <Card onPress={() => router.push('/team/register?mode=search')}>
-            <View className="flex-row items-center">
-              <View className="w-12 h-12 bg-indigo-50 rounded-full items-center justify-center mr-4">
-                <FontAwesome5 name="search" size={20} color={COLORS.primary} />
+          {/* 2. 메인 배너 */}
+          <TouchableOpacity 
+            onPress={() => router.push('/home/ranking')}
+            className="w-full rounded-[20px] px-6 py-6 mb-8 justify-center shadow-sm relative overflow-hidden"
+            style={{ backgroundColor: BRAND_COLOR }}
+          >
+              <Text className="text-white text-[20px] font-black mb-1.5 leading-snug tracking-tight">2026-1 시즌이 시작됐어요</Text>
+              <View className="border-b-2 border-white self-start">
+                <Text className="text-white text-[20px] font-black leading-snug tracking-tight pb-0.5">실시간 랭킹을 확인해보세요!</Text>
               </View>
-              <View>
-                <Text className={TYPOGRAPHY.h3}>팀 찾기</Text>
-                <Text className={TYPOGRAPHY.body2}>이미 만들어진 팀에 들어가요</Text>
-              </View>
-            </View>
-          </Card>
+          </TouchableOpacity>
 
-          <Card onPress={() => router.push('/team/register?mode=create')} variant="primary">
-            <View className="flex-row items-center">
-              <View className="w-12 h-12 bg-white/20 rounded-full items-center justify-center mr-4">
-                <FontAwesome5 name="flag" size={18} color="white" />
-              </View>
-              <View>
-                <Text className="text-lg font-bold text-white">팀 만들기</Text>
-                <Text className="text-sm text-indigo-100">새로운 팀을 등록해요</Text>
-              </View>
-            </View>
-          </Card>
+          {/* 3. 퀵 메뉴 (4번째: 매치 생성) */}
+          <View className="flex-row flex-wrap justify-between mb-6">
+              <QuickMenuItem label="시작하기" onPress={() => {}} />
+              <QuickMenuItem label="팀찾기" onPress={() => router.push('/team/register?mode=search')} />
+              <QuickMenuItem label="찜한 매치" onPress={() => {}} />
+              <QuickMenuItem label="매치 생성" onPress={() => router.push('/match/write')} />
+          </View>
 
-          <Card onPress={() => router.push('/guest/list')}>
-            <View className="flex-row items-center">
-              <View className="w-12 h-12 bg-orange-50 rounded-full items-center justify-center mr-4">
-                <FontAwesome5 name="running" size={20} color="#F97316" />
+          {/* 4. 주차별 캘린더 */}
+          <View className="mb-8">
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{paddingRight: 20}}>
+                  <WeekItem label="12월 1주차" selected={true} />
+                  <WeekItem label="12월 2주차" selected={false} />
+                  <WeekItem label="12월 3주차" selected={false} />
+                  <WeekItem label="12월 4주차" selected={false} />
+                  <WeekItem label="1월 1주차" selected={false} />
+              </ScrollView>
+          </View>
+
+          {/* 5. 필터 섹션 */}
+          <View className="mb-2">
+              <View className="flex-row items-center justify-center mb-5">
+                  <View className="flex-row bg-gray-100 p-1.5 rounded-full">
+                    <TouchableOpacity 
+                        onPress={() => setMatchTab('team')}
+                        className={`px-8 py-2.5 rounded-full ${matchTab === 'team' ? 'bg-black shadow-sm' : ''}`}
+                    >
+                        <Text className={`font-bold text-[15px] ${matchTab === 'team' ? 'text-white' : 'text-gray-400'}`}>팀 매치</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity 
+                        onPress={() => setMatchTab('guest')}
+                        className={`px-8 py-2.5 rounded-full ${matchTab === 'guest' ? 'bg-black shadow-sm' : ''}`}
+                    >
+                        <Text className={`font-bold text-[15px] ${matchTab === 'guest' ? 'text-white' : 'text-gray-400'}`}>게스트</Text>
+                    </TouchableOpacity>
+                  </View>
               </View>
-              <View>
-                <Text className={TYPOGRAPHY.h3}>용병으로 참가하기</Text>
-                <Text className={TYPOGRAPHY.body2}>팀 없이 경기에 참여해요</Text>
-              </View>
-            </View>
-          </Card>
-        </View>
-      </SafeAreaView>
-    );
-  }
+
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mb-2" contentContainerStyle={{paddingRight: 20}}>
+                  <FilterButton label="서울" active />
+                  <FilterButton label="마감 가리기" hasIcon={false} /> 
+                  <FilterButton label="성별" />
+                  <FilterButton label="6인제" active={filter === '6man'} onPress={() => setFilter(filter === '6man' ? 'all' : '6man')} />
+              </ScrollView>
+          </View>
+      </View>
+  );
 
   return (
-    <SafeAreaView className="flex-1" style={{ backgroundColor: COLORS.background }} edges={['top']}>
-      <StatusBar barStyle="dark-content" backgroundColor={COLORS.background} />
-      <View className="px-6 pt-3 pb-2 flex-row justify-between items-center bg-[#F2F4F6]">
-        <View><Text className="text-[26px] font-extrabold" style={{ color: COLORS.textMain }}>매칭 찾기</Text></View>
-        <TouchableOpacity onPress={() => router.push('/home/notification')} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} activeOpacity={0.7} className="p-2.5 rounded-full bg-white shadow-sm border border-gray-100"><FontAwesome5 name="bell" size={18} color={COLORS.textMain} /><View className="absolute top-2 right-2.5 w-1.5 h-1.5 rounded-full bg-red-500" /></TouchableOpacity>
-      </View>
+    <SafeAreaView className="flex-1 bg-white" edges={['top']}>
+      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
       
       <FlatList 
         data={matches} 
         renderItem={renderItem} 
         keyExtractor={item => item.id} 
-        contentContainerClassName="px-5 pb-32 pt-4" 
+        contentContainerClassName="px-5 pb-32" 
         showsVerticalScrollIndicator={false}
         onEndReached={() => fetchMatches(false)}
         onEndReachedThreshold={0.5}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[COLORS.primary]} />}
-        ListFooterComponent={loadingMore ? <ActivityIndicator className="py-4" color={COLORS.primary} /> : <View className="h-8" />}
-        ListHeaderComponent={
-            <>
-                <RankingCard onPress={() => router.push('/home/ranking')} />
-                
-                <View className="flex-row gap-3 mb-6">
-                    <TouchableOpacity onPress={() => router.push('/guest/list')} className="flex-1 bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex-row items-center">
-                        <View className="w-10 h-10 bg-orange-50 rounded-full items-center justify-center mr-3">
-                            <FontAwesome5 name="running" size={16} color="#F97316" />
-                        </View>
-                        <View>
-                            <Text className="font-bold text-gray-900">게스트 참여</Text>
-                            <Text className="text-xs text-gray-500">팀 없이 참여해요</Text>
-                        </View>
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={() => router.push('/guest/write')} className="flex-1 bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex-row items-center">
-                        <View className="w-10 h-10 bg-indigo-50 rounded-full items-center justify-center mr-3">
-                            <FontAwesome5 name="user-plus" size={16} color="#4F46E5" />
-                        </View>
-                        <View>
-                            <Text className="font-bold text-gray-900">게스트 모집</Text>
-
-                        </View>
-                    </TouchableOpacity>
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[BRAND_COLOR]} />}
+        ListHeaderComponent={<ListHeader />}
+        ListFooterComponent={loadingMore ? <ActivityIndicator className="py-4" color={BRAND_COLOR} /> : <View className="h-8" />}
+        ListEmptyComponent={
+            !loading ? (
+                <View className="items-center justify-center py-20">
+                    <Text className="text-gray-300 text-center font-bold">조건에 맞는 경기가 없어요.</Text>
                 </View>
-
-                <View className="mb-6">
-                    <FlatList 
-                        horizontal 
-                        showsHorizontalScrollIndicator={false} 
-                        data={[{ id: 'all', label: '전체' }, { id: '6man', label: '6인제' }, { id: '9man', label: '9인제' }, { id: 'mixed', label: '혼성' }, { id: 'male', label: '남자부' }, { id: 'female', label: '여자부' }]} 
-                        keyExtractor={(item) => item.id} 
-                        renderItem={({ item }) => <FilterChip label={item.label} active={filter === item.id} onPress={() => setFilter(item.id)} />} 
-                    />
-                </View>
-            </>
+            ) : (
+                <View className="py-20"><ActivityIndicator size="large" color={BRAND_COLOR} /></View>
+            )
         } 
-        ListEmptyComponent={!loading ? <View className="items-center justify-center py-20"><View className="w-20 h-20 rounded-full items-center justify-center mb-6" style={{ backgroundColor: '#E5E8EB' }}><FontAwesome5 name="search" size={32} color="#8B95A1" /></View><Text className="text-lg font-bold mb-2" style={{ color: COLORS.textMain }}>모집 중인 경기가 없어요</Text><Text className="text-sm text-center leading-relaxed" style={{ color: COLORS.textCaption }}>필터를 바꿔보거나,{'\n'}직접 매칭을 만들어보세요.</Text></View> : <View className="py-20"><ActivityIndicator size="large" color={COLORS.primary} /></View>} 
       />
-      <AnimatedCard onPress={() => router.push('/match/write')} className="absolute bottom-8 right-6 px-6 py-4 rounded-full flex-row items-center shadow-lg" style={{ backgroundColor: COLORS.primary, shadowColor: '#3182F6', shadowOpacity: 0.3, shadowRadius: 10, elevation: 6 }}><FontAwesome5 name="pen" size={14} color="white" className="mr-2" /><Text className="text-white font-bold text-base">매칭 만들기</Text></AnimatedCard>
     </SafeAreaView>
   );
 }
