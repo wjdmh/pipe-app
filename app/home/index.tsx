@@ -6,7 +6,7 @@ import {
   ActivityIndicator, 
   RefreshControl, 
   StatusBar, 
-  SectionList, // [Change] FlatList -> SectionList
+  FlatList, // [Change] SectionList -> FlatList
   Platform 
 } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -44,31 +44,12 @@ type GuestData = {
     isDeleted?: boolean;
 };
 
-// [Helper] 요일 반환
-const getDayOfWeek = (date: Date) => {
-    const days = ['일', '월', '화', '수', '목', '금', '토'];
-    return days[date.getDay()];
-};
-
-// [Helper] 섹션 데이터용 날짜 키 생성 (YYYY-MM-DD)
-const getDateKey = (date: Date) => {
-    return `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
-};
-
-// [Helper] 섹션 헤더 표시용 (12.18 목요일)
-const getSectionTitle = (dateStr: string) => {
-    // dateStr이 YYYY-MM-DD 형식이 아니거나, 정확한 파싱을 위해 분해
-    const [y, m, d] = dateStr.split('-').map(Number);
-    const date = new Date(y, m - 1, d);
-    return `${m}.${d} ${getDayOfWeek(date)}요일`;
-};
-
 export default function HomeScreen() {
   const router = useRouter();
   
   // 상태 관리
   const [activeTab, setActiveTab] = useState<'match' | 'guest'>('match');
-  const [sections, setSections] = useState<any[]>([]); // SectionList용 데이터
+  const [items, setItems] = useState<any[]>([]); // [Change] sections -> items (단일 배열)
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   
@@ -80,14 +61,13 @@ export default function HomeScreen() {
           const collectionName = activeTab === 'match' ? 'matches' : 'guest_posts';
           const nowISO = new Date().toISOString();
 
-          // [Query Change] 작성일(createdAt)이 아닌 경기시간(time) 순으로 정렬해야 스케줄 뷰가 가능함
-          // 주의: Firebase 콘솔에서 'status' + 'time' 복합 인덱스 생성이 필요할 수 있음
+          // [Query] 경기 시간(time) 순으로 정렬
           const q = query(
               collection(db, collectionName), 
               where("status", "==", "recruiting"),
               where("time", ">=", nowISO), // 지난 경기는 제외
               orderBy("time", "asc"), // 가까운 경기부터
-              limit(50) // 한 번에 가져올 양 (Infinite Scroll 구현은 복잡도상 생략하고 50개로 넉넉히 잡음)
+              limit(50) 
           );
 
           const snapshot = await getDocs(q);
@@ -98,23 +78,7 @@ export default function HomeScreen() {
               if (!data.isDeleted) rawItems.push({ id: d.id, ...data });
           });
 
-          // [Grouping] 날짜별로 데이터 묶기
-          const grouped: { [key: string]: any[] } = {};
-          
-          rawItems.forEach(item => {
-              const d = new Date(item.time);
-              const key = getDateKey(d);
-              if (!grouped[key]) grouped[key] = [];
-              grouped[key].push(item);
-          });
-
-          // SectionList 포맷으로 변환
-          const sectionData = Object.keys(grouped).map(key => ({
-              title: key, // YYYY-MM-DD
-              data: grouped[key]
-          }));
-
-          setSections(sectionData);
+          setItems(rawItems); // [Change] 그룹핑 없이 바로 저장
 
       } catch (e) {
           console.error("Fetch Error:", e);
@@ -135,13 +99,28 @@ export default function HomeScreen() {
 
   // [UI] 리스트 아이템
   const renderItem = ({ item }: { item: any }) => {
+    let dateStr = "";
     let timeStr = "";
+    
+    // [Change] 날짜와 시간 모두 파싱
     try {
         const d = new Date(item.time);
+        
+        // 날짜 (12.18 수)
+        const month = d.getMonth() + 1;
+        const date = d.getDate();
+        const days = ['일', '월', '화', '수', '목', '금', '토'];
+        const day = days[d.getDay()];
+        dateStr = `${month}.${date} (${day})`;
+
+        // 시간 (19:00)
         const hour = d.getHours().toString().padStart(2, '0');
         const min = d.getMinutes().toString().padStart(2, '0');
         timeStr = `${hour}:${min}`;
-    } catch(e) { timeStr = "00:00"; }
+    } catch(e) { 
+        dateStr = "-.- (-)";
+        timeStr = "00:00"; 
+    }
 
     const isMatch = activeTab === 'match';
     const mainColor = isMatch ? 'text-blue-600' : 'text-orange-600';
@@ -158,12 +137,13 @@ export default function HomeScreen() {
         activeOpacity={0.7}
         className="flex-row items-center py-4 px-5 border-b border-gray-100 bg-white"
       >
-        {/* 시간 */}
-        <View className="w-14 items-center mr-3">
-            <Text className="text-[15px] font-bold text-gray-900 tracking-tight">{timeStr}</Text>
+        {/* 1. 날짜 & 시간 (좌측 영역) - [Change] 날짜와 시간을 함께 표시 */}
+        <View className="w-[72px] mr-3 items-start justify-center">
+            <Text className="text-[12px] font-medium text-gray-500 mb-0.5">{dateStr}</Text>
+            <Text className="text-[16px] font-bold text-gray-900 tracking-tight">{timeStr}</Text>
         </View>
 
-        {/* 정보 */}
+        {/* 2. 정보 (중앙 영역) */}
         <View className="flex-1 justify-center pr-2">
             <Text className="text-[16px] font-bold text-gray-900 mb-0.5" numberOfLines={1}>
                 {title}
@@ -173,26 +153,17 @@ export default function HomeScreen() {
             </Text>
         </View>
 
-        {/* 상태 태그 */}
+        {/* 3. 상태 태그 (우측 영역) */}
         <View className="ml-1 shrink-0">
-            <View className={`${bgColor} px-3 py-1.5 rounded-lg`}>
-                <Text className={`${mainColor} text-[12px] font-bold`}>
-                    {isMatch ? '신청가능' : '용병구인'}
+            <View className={`${bgColor} px-2.5 py-1.5 rounded-lg`}>
+                <Text className={`${mainColor} text-[11px] font-bold`}>
+                    {isMatch ? '신청가능' : '구인중'}
                 </Text>
             </View>
         </View>
       </TouchableOpacity>
     );
   };
-
-  // [UI] 섹션 헤더 (Sticky)
-  const renderSectionHeader = ({ section: { title } }: { section: { title: string } }) => (
-    <View className="bg-gray-50/95 px-5 py-2 border-y border-gray-100 backdrop-blur-md">
-        <Text className="text-[13px] font-bold text-gray-500">
-            {getSectionTitle(title)}
-        </Text>
-    </View>
-  );
 
   return (
     <SafeAreaView className="flex-1 bg-white" edges={['top']}>
@@ -226,7 +197,7 @@ export default function HomeScreen() {
       {/* 2. Banner */}
       <TouchableOpacity 
             onPress={() => router.push('/home/ranking')}
-            className="mx-5 mb-4 mt-2 bg-gray-900 rounded-xl px-4 py-3 flex-row justify-between items-center shadow-sm"
+            className="mx-5 mb-2 mt-2 bg-gray-900 rounded-xl px-4 py-3 flex-row justify-between items-center shadow-sm"
             activeOpacity={0.9}
         >
             <View>
@@ -236,15 +207,13 @@ export default function HomeScreen() {
             <FontAwesome5 name="chevron-right" size={12} color="white" />
       </TouchableOpacity>
 
-      {/* 3. Schedule List (SectionList) */}
-      <SectionList
-        sections={sections}
-        keyExtractor={(item, index) => item.id + index}
+      {/* 3. Simple List (FlatList) [Change] */}
+      <FlatList
+        data={items}
+        keyExtractor={(item) => item.id}
         renderItem={renderItem}
-        renderSectionHeader={renderSectionHeader}
         contentContainerStyle={{ paddingBottom: 80 }}
         showsVerticalScrollIndicator={false}
-        stickySectionHeadersEnabled={true} // 헤더 고정
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         ListEmptyComponent={
             !loading ? (
@@ -252,7 +221,6 @@ export default function HomeScreen() {
                     <Text className="text-gray-300 font-bold text-[14px] mb-1">
                         {activeTab === 'match' ? '예정된 매치가 없어요' : '모집 중인 게스트 공고가 없어요'}
                     </Text>
-                    <Text className="text-gray-400 text-[12px]">나중에 다시 확인해보세요</Text>
                 </View>
             ) : (
                 <View className="py-20"><ActivityIndicator color={activeTab === 'match' ? TEAM_COLOR : GUEST_COLOR} /></View>
