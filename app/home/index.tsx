@@ -1,393 +1,273 @@
-// app/home/index.tsx
 import React, { useEffect, useState } from 'react';
-import { View, Text, FlatList, TouchableOpacity, ActivityIndicator, RefreshControl, StatusBar, ScrollView, Platform } from 'react-native';
+import { 
+  View, 
+  Text, 
+  TouchableOpacity, 
+  ActivityIndicator, 
+  RefreshControl, 
+  StatusBar, 
+  SectionList, // [Change] FlatList -> SectionList
+  Platform 
+} from 'react-native';
 import { useRouter } from 'expo-router';
-import { onAuthStateChanged } from 'firebase/auth'; 
-import { collection, query, orderBy, where, limit, startAfter, getDocs, doc, getDoc, QueryDocumentSnapshot, DocumentData } from 'firebase/firestore';
-import { auth, db } from '../../configs/firebaseConfig';
+import { collection, query, orderBy, where, limit, getDocs } from 'firebase/firestore';
+import { db } from '../../configs/firebaseConfig';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 // [디자인 상수]
-const BRAND_COLOR = '#007AFF'; // Apple Style Blue
-const BG_COLOR = '#F2F2F7'; // Apple System Gray 6
+const TEAM_COLOR = '#4F46E5'; // Indigo
+const GUEST_COLOR = '#EA580C'; // Orange
 
-// [데이터 타입 정의]
+// [타입 정의]
 type MatchData = { 
   id: string; 
   team: string; 
-  affiliation?: string; 
   type: '6man' | '9man'; 
   gender: 'male' | 'female' | 'mixed'; 
   time: string; 
   loc: string; 
   status: string; 
-  level?: string; 
   isDeleted?: boolean;
 };
 
-// [UI Component] 주차별 캘린더 아이템
-const WeekItem = ({ label, selected }: { label: string, selected: boolean }) => (
-    <View className={`items-center justify-center mr-3 ${selected ? 'w-[68px] h-[76px] rounded-[18px] bg-[#007AFF] shadow-sm shadow-blue-300' : 'w-[68px] h-[76px] bg-white rounded-[18px] border border-gray-100'}`}>
-        <Text className={selected ? "text-white/80 font-semibold text-[13px] text-center mb-0.5" : "text-gray-400 font-medium text-[13px] text-center mb-0.5"}>
-            {label.split(' ')[0]}
-        </Text>
-        <Text className={selected ? "text-white font-bold text-[17px] text-center" : "text-gray-800 font-bold text-[17px] text-center"}>
-            {label.split(' ')[1]}
-        </Text>
-    </View>
-);
+// [게스트 데이터 타입]
+type GuestData = {
+    id: string;
+    teamName: string; 
+    time: string;
+    loc: string;
+    gender: 'male' | 'female' | 'mixed';
+    positions: string; 
+    targetLevel: string;     
+    status: string;
+    isDeleted?: boolean;
+};
 
-// [UI Component] 퀵 메뉴 아이템 (심플 & 클린)
-const QuickMenuItem = ({ label, icon, onPress, isActive = false }: { label: string, icon: string, onPress?: () => void, isActive?: boolean }) => (
-    <TouchableOpacity 
-        onPress={onPress} 
-        activeOpacity={0.6}
-        className="w-[22%] aspect-square items-center justify-center mb-2"
-    >
-       <View className={`w-[56px] h-[56px] rounded-[18px] items-center justify-center mb-2 shadow-sm ${isActive ? 'bg-blue-50' : 'bg-white'}`}>
-           <FontAwesome5 name={icon} size={20} color={isActive ? BRAND_COLOR : '#333'} solid={isActive} />
-       </View>
-       <Text className="text-gray-600 font-medium text-[12px] tracking-tight text-center">{label}</Text>
-    </TouchableOpacity>
-);
+// [Helper] 요일 반환
+const getDayOfWeek = (date: Date) => {
+    const days = ['일', '월', '화', '수', '목', '금', '토'];
+    return days[date.getDay()];
+};
 
-// [UI Component] 필터 버튼 (Apple Chips 스타일)
-const FilterButton = ({ label, active, hasIcon = true, onPress }: { label: string, active?: boolean, hasIcon?: boolean, onPress?: () => void }) => (
-    <TouchableOpacity 
-        onPress={onPress}
-        className={`flex-row items-center px-3.5 py-2 rounded-full mr-2 border ${active ? 'bg-[#007AFF] border-[#007AFF]' : 'bg-white border-gray-200'}`}
-        activeOpacity={0.7}
-    >
-        <Text className={`text-[13px] font-semibold mr-1 ${active ? 'text-white' : 'text-gray-600'}`}>{label}</Text>
-        {hasIcon && <FontAwesome5 name="chevron-down" size={9} color={active ? '#FFF' : '#8E8E93'} />}
-    </TouchableOpacity>
-);
+// [Helper] 섹션 데이터용 날짜 키 생성 (YYYY-MM-DD)
+const getDateKey = (date: Date) => {
+    return `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
+};
+
+// [Helper] 섹션 헤더 표시용 (12.18 목요일)
+const getSectionTitle = (dateStr: string) => {
+    // dateStr이 YYYY-MM-DD 형식이 아니거나, 정확한 파싱을 위해 분해
+    const [y, m, d] = dateStr.split('-').map(Number);
+    const date = new Date(y, m - 1, d);
+    return `${m}.${d} ${getDayOfWeek(date)}요일`;
+};
 
 export default function HomeScreen() {
   const router = useRouter();
   
-  // 상태 관리 (로직 보존)
-  const [matches, setMatches] = useState<MatchData[]>([]);
-  const [lastDoc, setLastDoc] = useState<QueryDocumentSnapshot<DocumentData> | null>(null);
-  const [hasMore, setHasMore] = useState(true);
-  const [filter, setFilter] = useState('all');
+  // 상태 관리
+  const [activeTab, setActiveTab] = useState<'match' | 'guest'>('match');
+  const [sections, setSections] = useState<any[]>([]); // SectionList용 데이터
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [loadingMore, setLoadingMore] = useState(false);
   
-  const [userTeamId, setUserTeamId] = useState<string | null>(null);
-  const [userName, setUserName] = useState('');
-  const [matchTab, setMatchTab] = useState<'team' | 'guest'>('team'); 
-
-  // [New] 찜하기 로컬 상태 (UI 즉각 반응용 - 하트 색상만 변경)
-  const [likedIds, setLikedIds] = useState<Set<string>>(new Set());
-
-  // 찜하기 토글 함수
-  const toggleLike = (id: string) => {
-    setLikedIds(prev => {
-        const next = new Set(prev);
-        if (next.has(id)) next.delete(id);
-        else next.add(id);
-        return next;
-    });
-  };
-  
-  // 로직: 초기 데이터 로드
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      if (user) {
-        try {
-            const uSnap = await getDoc(doc(db, "users", user.uid));
-            if (uSnap.exists()) {
-              const data = uSnap.data();
-              setUserTeamId(data.teamId || null);
-              setUserName(data.nickname || data.name || '회원');
-            }
-        } catch(e) { console.log(e); }
-      } else {
-        setUserTeamId(null);
-        setUserName('');
-      }
-      fetchMatches(true);
-    });
-    return () => unsubscribe();
-  }, []); 
-
-  // 로직: 필터 변경 감지
-  useEffect(() => { fetchMatches(true); }, [filter]);
-
-  // 로직: Firebase Fetch 함수
-  const fetchMatches = async (isRefresh = false) => {
-      if (isRefresh) {
-          setLoading(true);
-          setLastDoc(null);
-      } else {
-          if (!hasMore || loadingMore) return;
-          setLoadingMore(true);
-      }
-
+  // [Logic] 데이터 Fetching
+  const fetchData = async () => {
+      setLoading(true);
+      
       try {
-          let q = query(
-              collection(db, "matches"), 
-              where("status", "==", "recruiting"), 
-              orderBy("createdAt", "desc"),
-              limit(10)
+          const collectionName = activeTab === 'match' ? 'matches' : 'guest_posts';
+          const nowISO = new Date().toISOString();
+
+          // [Query Change] 작성일(createdAt)이 아닌 경기시간(time) 순으로 정렬해야 스케줄 뷰가 가능함
+          // 주의: Firebase 콘솔에서 'status' + 'time' 복합 인덱스 생성이 필요할 수 있음
+          const q = query(
+              collection(db, collectionName), 
+              where("status", "==", "recruiting"),
+              where("time", ">=", nowISO), // 지난 경기는 제외
+              orderBy("time", "asc"), // 가까운 경기부터
+              limit(50) // 한 번에 가져올 양 (Infinite Scroll 구현은 복잡도상 생략하고 50개로 넉넉히 잡음)
           );
 
-          if (filter === '6man') q = query(q, where("type", "==", "6man"));
-          else if (filter === '9man') q = query(q, where("type", "==", "9man"));
-          else if (filter === 'male') q = query(q, where("gender", "==", "male"));
-          else if (filter === 'female') q = query(q, where("gender", "==", "female"));
-          
-          if (!isRefresh && lastDoc) {
-              q = query(q, startAfter(lastDoc));
-          }
-
           const snapshot = await getDocs(q);
-          const newMatches: MatchData[] = [];
+          const rawItems: any[] = [];
           
           snapshot.forEach(d => {
               const data = d.data();
-              if (!data.isDeleted) newMatches.push({ id: d.id, ...data } as MatchData);
+              if (!data.isDeleted) rawItems.push({ id: d.id, ...data });
           });
 
-          if (isRefresh) {
-              setMatches(newMatches);
-          } else {
-              setMatches(prev => {
-                  const existingIds = new Set(prev.map(m => m.id));
-                  const uniqueNewMatches = newMatches.filter(m => !existingIds.has(m.id));
-                  return [...prev, ...uniqueNewMatches];
-              });
-          }
+          // [Grouping] 날짜별로 데이터 묶기
+          const grouped: { [key: string]: any[] } = {};
+          
+          rawItems.forEach(item => {
+              const d = new Date(item.time);
+              const key = getDateKey(d);
+              if (!grouped[key]) grouped[key] = [];
+              grouped[key].push(item);
+          });
 
-          if (snapshot.docs.length < 10) setHasMore(false);
-          else {
-              setHasMore(true);
-              setLastDoc(snapshot.docs[snapshot.docs.length - 1]);
-          }
+          // SectionList 포맷으로 변환
+          const sectionData = Object.keys(grouped).map(key => ({
+              title: key, // YYYY-MM-DD
+              data: grouped[key]
+          }));
 
-      } catch (e: any) {
-          console.error("Match Fetch Error:", e);
+          setSections(sectionData);
+
+      } catch (e) {
+          console.error("Fetch Error:", e);
       } finally {
           setLoading(false);
           setRefreshing(false);
-          setLoadingMore(false);
       }
   };
 
+  useEffect(() => {
+    fetchData();
+  }, [activeTab]);
+
   const onRefresh = () => {
-      setRefreshing(true);
-      fetchMatches(true);
+    setRefreshing(true);
+    fetchData();
   };
 
-  // [UI] 매치 카드 렌더링
-  const renderItem = ({ item }: { item: MatchData }) => {
-    let displayDate = item.time;
-    let displayTime = '';
-    let dayOfWeek = '';
-    
-    // 날짜 파싱 로직 (보존)
+  // [UI] 리스트 아이템
+  const renderItem = ({ item }: { item: any }) => {
+    let timeStr = "";
     try {
         const d = new Date(item.time);
-        if (!isNaN(d.getTime()) && item.time.includes('T')) {
-            const month = d.getMonth() + 1;
-            const date = d.getDate();
-            const hour = d.getHours().toString().padStart(2, '0');
-            const min = d.getMinutes().toString().padStart(2, '0');
-            const days = ['일', '월', '화', '수', '목', '금', '토'];
-            dayOfWeek = days[d.getDay()];
-            displayDate = `${month}.${date}`;
-            displayTime = `${hour}:${min}`;
-        } else {
-            const parts = item.time.split(' ');
-            if(parts[0].includes('-')) {
-                const dates = parts[0].split('-');
-                displayDate = `${parseInt(dates[1])}.${parseInt(dates[2])}`;
-            } else {
-                displayDate = parts[0];
-            }
-            displayTime = parts[1] ? parts[1].substring(0, 5) : '';
-        }
-    } catch(e) { displayDate = item.time; }
+        const hour = d.getHours().toString().padStart(2, '0');
+        const min = d.getMinutes().toString().padStart(2, '0');
+        timeStr = `${hour}:${min}`;
+    } catch(e) { timeStr = "00:00"; }
 
-    const isLiked = likedIds.has(item.id);
+    const isMatch = activeTab === 'match';
+    const mainColor = isMatch ? 'text-blue-600' : 'text-orange-600';
+    const bgColor = isMatch ? 'bg-blue-50' : 'bg-orange-50';
+
+    const title = isMatch ? item.team : item.teamName;
+    const info = isMatch 
+        ? `${item.loc} · ${item.gender === 'male' ? '남' : item.gender === 'female' ? '여' : '혼성'}${item.type === '6man' ? '6' : '9'}`
+        : `${item.loc} · ${item.positions || '포지션 무관'} 구함`;
 
     return (
       <TouchableOpacity 
-        className="bg-white p-5 mb-3.5 rounded-[22px] shadow-sm border border-gray-100/80 active:bg-gray-50" 
-        onPress={() => router.push(`/match/${item.id}`)}
-        activeOpacity={0.8}
+        onPress={() => router.push(isMatch ? `/match/${item.id}` : `/guest/${item.id}`)}
+        activeOpacity={0.7}
+        className="flex-row items-center py-4 px-5 border-b border-gray-100 bg-white"
       >
-        {/* Header: Status & Time */}
-        <View className="flex-row justify-between items-start mb-3">
-            <View className="flex-row items-center">
-                <View className="bg-blue-50 px-2.5 py-1 rounded-[8px] mr-2">
-                    <Text className="text-[#007AFF] text-[11px] font-bold tracking-tight">모집중</Text>
-                </View>
-                <Text className="text-gray-500 text-[13px] font-medium tracking-tight">
-                    {displayDate} ({dayOfWeek || '·'}) <Text className="text-gray-800 font-semibold">{displayTime}</Text>
-                </Text>
-            </View>
-            {/* Heart Button */}
-            <TouchableOpacity 
-                onPress={() => toggleLike(item.id)}
-                hitSlop={{top:15, bottom:15, left:15, right:15}}
-            >
-                <FontAwesome5 
-                    name="heart" 
-                    size={18} 
-                    solid={isLiked} 
-                    color={isLiked ? "#FF3B30" : "#D1D1D6"} 
-                />
-            </TouchableOpacity>
+        {/* 시간 */}
+        <View className="w-14 items-center mr-3">
+            <Text className="text-[15px] font-bold text-gray-900 tracking-tight">{timeStr}</Text>
         </View>
 
-        {/* Content: Team & Type */}
-        <View className="flex-row items-center justify-between mb-4">
-            <View className="flex-1 mr-4">
-                <Text className="text-[19px] font-bold text-gray-900 leading-tight mb-1" numberOfLines={1}>{item.team}</Text>
-                <Text className="text-[13px] text-gray-500 font-medium">
-                    {item.gender === 'male' ? '남자부' : item.gender === 'female' ? '여자부' : '혼성'} · {item.type === '6man' ? '6인제' : '9인제'}
-                </Text>
-            </View>
-            {/* VS Badge */}
-            <View className="w-[42px] h-[42px] rounded-full bg-gray-50 items-center justify-center border border-gray-100">
-                <Text className="text-gray-400 font-black text-[11px] italic">VS</Text>
-            </View>
-        </View>
-
-        {/* Footer: Location */}
-        <View className="flex-row items-center">
-            <FontAwesome5 name="map-marker-alt" size={12} color="#8E8E93" style={{marginRight: 6}} />
-            <Text className="text-gray-500 text-[13px] font-medium flex-1 tracking-tight" numberOfLines={1}>
-                {item.loc || '장소 미정'}
+        {/* 정보 */}
+        <View className="flex-1 justify-center pr-2">
+            <Text className="text-[16px] font-bold text-gray-900 mb-0.5" numberOfLines={1}>
+                {title}
             </Text>
+            <Text className={`text-[13px] font-medium ${isMatch ? 'text-gray-500' : 'text-gray-600'}`} numberOfLines={1}>
+                {info}
+            </Text>
+        </View>
+
+        {/* 상태 태그 */}
+        <View className="ml-1 shrink-0">
+            <View className={`${bgColor} px-3 py-1.5 rounded-lg`}>
+                <Text className={`${mainColor} text-[12px] font-bold`}>
+                    {isMatch ? '신청가능' : '용병구인'}
+                </Text>
+            </View>
         </View>
       </TouchableOpacity>
     );
   };
 
-  // [헤더 컴포넌트]
-  const ListHeader = () => (
-      <View className="mb-4">
-          {/* 1. Top Bar */}
-          <View className="flex-row justify-between items-center px-5 py-3 bg-white mb-2">
-              <Text className="text-[28px] font-extrabold text-black tracking-tighter">PIPE</Text>
-              <TouchableOpacity 
-                className="w-10 h-10 bg-gray-50 rounded-full items-center justify-center"
-                activeOpacity={0.7}
-              >
-                  <FontAwesome5 name="bell" size={18} color="#1C1C1E" />
-              </TouchableOpacity>
-          </View>
-
-          <View className="bg-white rounded-b-[32px] shadow-sm pb-8 px-5 mb-6 border-b border-gray-100">
-              {/* 2. Banner */}
-              <TouchableOpacity 
-                onPress={() => router.push('/home/ranking')}
-                className="w-full rounded-[24px] px-6 py-7 mb-8 justify-between relative overflow-hidden shadow-lg shadow-blue-200/40"
-                style={{ backgroundColor: BRAND_COLOR }}
-                activeOpacity={0.9}
-              >
-                  <View className="z-10">
-                    <View className="bg-white/20 self-start px-2 py-0.5 rounded-[6px] mb-2">
-                        <Text className="text-white text-[11px] font-bold">New Season</Text>
-                    </View>
-                    <Text className="text-white text-[22px] font-black leading-snug tracking-tight">2026-1 시즌이{'\n'}시작됐어요!</Text>
-                  </View>
-                  <View className="absolute right-[-15] bottom-[-15] opacity-20 transform rotate-12">
-                    <FontAwesome5 name="trophy" size={110} color="white" />
-                  </View>
-              </TouchableOpacity>
-
-              {/* 3. Quick Menu (수정: 찜한 매치는 그대로 두되, 이동 기능만 제거) */}
-              <View className="flex-row justify-between px-1">
-                  <QuickMenuItem label="시작하기" icon="flag" onPress={() => {}} />
-                  <QuickMenuItem label="팀찾기" icon="search" onPress={() => router.push('/team/register?mode=search')} />
-                  <QuickMenuItem label="매치생성" icon="pen" onPress={() => router.push('/match/write')} />
-                  {/* 여기 이동 로직(onPress)을 비워두었습니다 */}
-                  <QuickMenuItem label="찜한 매치" icon="heart" onPress={() => {}} />
-              </View>
-          </View>
-
-          {/* 4. Calendar & Filter */}
-          <View className="px-5">
-            <View className="flex-row justify-between items-end mb-5">
-                <Text className="text-[22px] font-bold text-gray-900 tracking-tight">이번주 매치</Text>
-                <TouchableOpacity activeOpacity={0.6}>
-                    <Text className="text-[#007AFF] text-[14px] font-semibold">전체보기</Text>
-                </TouchableOpacity>
-            </View>
-
-            {/* Toggle Switch */}
-            <View className="flex-row bg-[#E5E5EA] p-[4px] rounded-[14px] mb-6 self-start w-[180px]">
-                <TouchableOpacity 
-                    onPress={() => setMatchTab('team')}
-                    className={`flex-1 py-1.5 rounded-[11px] items-center justify-center ${matchTab === 'team' ? 'bg-white shadow-sm' : ''}`}
-                    activeOpacity={0.8}
-                >
-                    <Text className={`font-semibold text-[13px] ${matchTab === 'team' ? 'text-black' : 'text-gray-400'}`}>팀 매치</Text>
-                </TouchableOpacity>
-                <TouchableOpacity 
-                    onPress={() => setMatchTab('guest')}
-                    className={`flex-1 py-1.5 rounded-[11px] items-center justify-center ${matchTab === 'guest' ? 'bg-white shadow-sm' : ''}`}
-                    activeOpacity={0.8}
-                >
-                    <Text className={`font-semibold text-[13px] ${matchTab === 'guest' ? 'text-black' : 'text-gray-400'}`}>게스트</Text>
-                </TouchableOpacity>
-            </View>
-
-            {/* Calendar */}
-            <View className="mb-6">
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{paddingRight: 20}}>
-                    <WeekItem label="12월 1주" selected={true} />
-                    <WeekItem label="12월 2주" selected={false} />
-                    <WeekItem label="12월 3주" selected={false} />
-                    <WeekItem label="12월 4주" selected={false} />
-                    <WeekItem label="1월 1주" selected={false} />
-                </ScrollView>
-            </View>
-
-            {/* Filters */}
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mb-2" contentContainerStyle={{paddingRight: 20}}>
-                <FilterButton label="서울 전체" active hasIcon />
-                <FilterButton label="성별" />
-                <FilterButton label="6인제" active={filter === '6man'} onPress={() => setFilter(filter === '6man' ? 'all' : '6man')} />
-                <FilterButton label="마감 제외" hasIcon={false} /> 
-            </ScrollView>
-          </View>
-      </View>
+  // [UI] 섹션 헤더 (Sticky)
+  const renderSectionHeader = ({ section: { title } }: { section: { title: string } }) => (
+    <View className="bg-gray-50/95 px-5 py-2 border-y border-gray-100 backdrop-blur-md">
+        <Text className="text-[13px] font-bold text-gray-500">
+            {getSectionTitle(title)}
+        </Text>
+    </View>
   );
 
   return (
-    <SafeAreaView className="flex-1 bg-[#F2F2F7]" edges={['top']}>
-      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+    <SafeAreaView className="flex-1 bg-white" edges={['top']}>
+      <StatusBar barStyle="dark-content" />
       
-      <FlatList 
-        data={matches} 
-        renderItem={renderItem} 
-        keyExtractor={item => item.id} 
-        contentContainerClassName="pb-32"
-        style={{ paddingHorizontal: 20 }}
+      {/* 1. Header & Tabs */}
+      <View className="bg-white px-5 pt-2 pb-0">
+        <Text className="text-xl font-extrabold text-gray-900 italic tracking-tighter mb-4">PIPE</Text>
+        
+        <View className="flex-row gap-6 mb-2">
+            <TouchableOpacity 
+                onPress={() => setActiveTab('match')}
+                activeOpacity={0.8}
+                className="pb-2"
+                style={{ borderBottomWidth: 2, borderBottomColor: activeTab === 'match' ? '#111827' : 'transparent' }}
+            >
+                <Text className={`text-[17px] font-bold ${activeTab === 'match' ? 'text-gray-900' : 'text-gray-400'}`}>팀 매치</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+                onPress={() => setActiveTab('guest')}
+                activeOpacity={0.8}
+                className="pb-2"
+                style={{ borderBottomWidth: 2, borderBottomColor: activeTab === 'guest' ? '#111827' : 'transparent' }}
+            >
+                <Text className={`text-[17px] font-bold ${activeTab === 'guest' ? 'text-gray-900' : 'text-gray-400'}`}>게스트</Text>
+            </TouchableOpacity>
+        </View>
+      </View>
+
+      {/* 2. Banner */}
+      <TouchableOpacity 
+            onPress={() => router.push('/home/ranking')}
+            className="mx-5 mb-4 mt-2 bg-gray-900 rounded-xl px-4 py-3 flex-row justify-between items-center shadow-sm"
+            activeOpacity={0.9}
+        >
+            <View>
+                <Text className="text-white font-bold text-[14px]">2026-1 시즌 랭킹</Text>
+                <Text className="text-gray-400 text-[11px]">우리 팀 순위를 확인해보세요</Text>
+            </View>
+            <FontAwesome5 name="chevron-right" size={12} color="white" />
+      </TouchableOpacity>
+
+      {/* 3. Schedule List (SectionList) */}
+      <SectionList
+        sections={sections}
+        keyExtractor={(item, index) => item.id + index}
+        renderItem={renderItem}
+        renderSectionHeader={renderSectionHeader}
+        contentContainerStyle={{ paddingBottom: 80 }}
         showsVerticalScrollIndicator={false}
-        onEndReached={() => fetchMatches(false)}
-        onEndReachedThreshold={0.5}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[BRAND_COLOR]} />}
-        ListHeaderComponent={<ListHeader />}
-        ListFooterComponent={loadingMore ? <ActivityIndicator className="py-4" color={BRAND_COLOR} /> : <View className="h-8" />}
+        stickySectionHeadersEnabled={true} // 헤더 고정
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         ListEmptyComponent={
             !loading ? (
-                <View className="items-center justify-center py-20 bg-white mx-1 rounded-[20px] border border-gray-200 border-dashed">
-                    <FontAwesome5 name="volleyball-ball" size={32} color="#D1D1D6" style={{marginBottom: 12}} />
-                    <Text className="text-gray-400 text-center font-bold text-[15px]">조건에 맞는 경기가 없어요.</Text>
+                <View className="items-center justify-center py-24">
+                    <Text className="text-gray-300 font-bold text-[14px] mb-1">
+                        {activeTab === 'match' ? '예정된 매치가 없어요' : '모집 중인 게스트 공고가 없어요'}
+                    </Text>
+                    <Text className="text-gray-400 text-[12px]">나중에 다시 확인해보세요</Text>
                 </View>
             ) : (
-                <View className="py-20"><ActivityIndicator size="large" color={BRAND_COLOR} /></View>
+                <View className="py-20"><ActivityIndicator color={activeTab === 'match' ? TEAM_COLOR : GUEST_COLOR} /></View>
             )
-        } 
+        }
       />
+      
+      {/* Floating Write Button */}
+      <TouchableOpacity 
+        onPress={() => router.push(activeTab === 'match' ? '/match/write' : '/guest/write')}
+        className="absolute bottom-6 right-5 w-14 h-14 bg-gray-900 rounded-full items-center justify-center shadow-lg shadow-gray-400/50"
+        activeOpacity={0.8}
+      >
+        <FontAwesome5 name={activeTab === 'match' ? "plus" : "pen"} size={20} color="white" />
+      </TouchableOpacity>
     </SafeAreaView>
   );
 }

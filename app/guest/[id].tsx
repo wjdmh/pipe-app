@@ -1,197 +1,276 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, Alert, Platform, Share } from 'react-native';
+import { 
+  View, 
+  Text, 
+  ScrollView, 
+  TouchableOpacity, 
+  ActivityIndicator, 
+  Alert, 
+  Platform, 
+  Modal, 
+  TextInput,
+  KeyboardAvoidingView
+} from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { doc, getDoc, deleteDoc, updateDoc } from 'firebase/firestore';
-import { db, auth } from '../../configs/firebaseConfig';
+import { doc, getDoc, updateDoc, arrayUnion, deleteDoc } from 'firebase/firestore';
+import { auth, db } from '../../configs/firebaseConfig';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { FontAwesome5 } from '@expo/vector-icons';
 
-// [수정 완료] 불필요한 'expo-clipboard' import 구문을 삭제했습니다.
+// [상수] 포지션 선택지
+const POSITIONS = ['세터', '레프트', '라이트', '센터', '리베로', '올라운더'];
+
+// [타입 정의]
+type GuestPost = {
+  id: string;
+  hostCaptainId: string;
+  teamName: string;
+  gender: 'male' | 'female' | 'mixed';
+  positions: string; // "세터, 레프트" (String)
+  targetLevel: string;
+  time: string;
+  loc: string;
+  note: string;
+  status: string;
+  applicants: any[];
+};
 
 export default function GuestDetailScreen() {
-  const router = useRouter();
   const { id } = useLocalSearchParams();
-  const [post, setPost] = useState<any>(null);
+  const router = useRouter();
+  
+  const [post, setPost] = useState<GuestPost | null>(null);
   const [loading, setLoading] = useState(true);
-  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [user, setUser] = useState(auth.currentUser);
 
+  // 신청 모달 상태
+  const [showApplyModal, setShowApplyModal] = useState(false);
+  const [myPosition, setMyPosition] = useState('');
+  const [message, setMessage] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  // [Logic] 데이터 불러오기
   useEffect(() => {
-    if (auth.currentUser) setCurrentUser(auth.currentUser);
+    const fetchPost = async () => {
+      if (!id) return;
+      try {
+        const docRef = doc(db, "guest_posts", id as string);
+        const docSnap = await getDoc(docRef);
+        
+        if (docSnap.exists()) {
+          setPost({ id: docSnap.id, ...docSnap.data() } as GuestPost);
+        } else {
+          Alert.alert('오류', '존재하지 않는 게시글입니다.');
+          router.back();
+        }
+      } catch (e) {
+        console.error(e);
+      } finally {
+        setLoading(false);
+      }
+    };
     fetchPost();
   }, [id]);
 
-  const fetchPost = async () => {
-    if (typeof id !== 'string') return;
+  // [Logic] 날짜 포맷팅
+  const formatTime = (isoString: string) => {
     try {
-      const docRef = doc(db, "guest_posts", id);
-      const docSnap = await getDoc(docRef);
-      if (docSnap.exists()) {
-        setPost({ id: docSnap.id, ...docSnap.data() });
-      } else {
-        Alert.alert('오류', '존재하지 않는 게시글입니다.');
-        router.back();
-      }
+        const d = new Date(isoString);
+        const month = d.getMonth() + 1;
+        const day = d.getDate();
+        const hour = d.getHours();
+        const min = d.getMinutes();
+        const days = ['일', '월', '화', '수', '목', '금', '토'];
+        const dayName = days[d.getDay()];
+        return `${month}월 ${day}일 (${dayName}) ${hour}:${min.toString().padStart(2, '0')}`;
+    } catch { return isoString; }
+  };
+
+  // [Logic] 지원하기 제출
+  const handleApply = async () => {
+    if (!myPosition) return Alert.alert('알림', '주 포지션을 선택해주세요.');
+    if (!user) {
+        Alert.alert('로그인 필요', '로그인 후 이용해주세요.');
+        return router.push('/auth/login');
+    }
+
+    setSubmitting(true);
+    try {
+        const docRef = doc(db, "guest_posts", id as string);
+        
+        // 신청 데이터 구조
+        const applicationData = {
+            uid: user.uid,
+            name: user.displayName || '익명', // 닉네임이 있다면 그것을 사용
+            position: myPosition,
+            message: message.trim(),
+            appliedAt: new Date().toISOString()
+        };
+
+        await updateDoc(docRef, {
+            applicants: arrayUnion(applicationData)
+        });
+
+        Alert.alert('신청 완료', '호스트에게 신청을 보냈습니다.', [
+            { text: '확인', onPress: () => {
+                setShowApplyModal(false);
+                // 로컬 상태 업데이트 (리패치 없이 즉시 반영)
+                setPost(prev => prev ? ({...prev, applicants: [...prev.applicants, applicationData]}) : null);
+            }}
+        ]);
+
     } catch (e) {
-      console.error(e);
+        Alert.alert('오류', '신청 중 문제가 발생했습니다.');
     } finally {
-      setLoading(false);
+        setSubmitting(false);
     }
   };
 
-  const handleShare = async () => {
-    if (!post) return;
-
-    // 1. 공유할 메시지 만들기
-    // 날짜 포맷팅 안전 처리
-    let dateStr = '날짜 미정';
-    try {
-        if(post.matchDate) {
-            const d = new Date(post.matchDate);
-            dateStr = d.toLocaleDateString('ko-KR', { month: 'short', day: 'numeric', weekday: 'short' });
-        }
-    } catch(e) {}
-
-    const positionsStr = post.positions?.join(', ') || '전 포지션';
-    const title = `🏐 [용병모집] ${dateStr} @${post.location}`;
-    const message = `${title}\n\n포지션: ${positionsStr}\n성별: ${post.gender === 'male' ? '남성' : post.gender === 'female' ? '여성' : '혼성'}\n참가비: ${post.fee === '0' || post.fee === '무료' ? '무료' : `${post.fee}원`}\n\n함께 배구하실 분 구해요! 👇`;
-    
-    // 링크 (웹 배포 주소가 있다면 교체, 없으면 임시 텍스트)
-    // 실제 배포된 웹 주소가 있다면 여기에 넣으세요. 예: `https://myapp.com/guest/${id}`
-    const url = Platform.OS === 'web' ? window.location.href : `https://pipe-app.web.app/guest/${id}`; 
-
-    try {
-        if (Platform.OS === 'web') {
-            // 웹: 브라우저 내장 클립보드 API 사용 (라이브러리 불필요)
-            if (navigator.clipboard) {
-                await navigator.clipboard.writeText(`${message}\n${url}`);
-                window.alert('📋 공유 내용이 클립보드에 복사되었습니다.\n카카오톡 등에 붙여넣기 하세요!');
-            } else {
-                window.alert('이 브라우저에서는 공유 기능을 지원하지 않습니다.\n주소창의 링크를 복사해주세요.');
-            }
-        } else {
-            // 앱: 네이티브 공유 시트 (카톡, 인스타 등 선택 가능)
-            await Share.share({
-                title: title,
-                message: `${message}\n${url}`, // 안드로이드는 메시지에 URL 포함 권장
-                url: url, // iOS는 URL 필드 별도 지원
-            });
-        }
-    } catch (error) {
-        console.error("Share Error:", error);
-    }
-  };
-
+  // [Logic] 삭제하기 (호스트 전용)
   const handleDelete = async () => {
-      Alert.alert('게시글 삭제', '정말 삭제하시겠습니까?', [
+      Alert.alert('삭제 확인', '정말 이 모집글을 삭제하시겠습니까?', [
           { text: '취소', style: 'cancel' },
           { text: '삭제', style: 'destructive', onPress: async () => {
               try {
-                  await deleteDoc(doc(db, "guest_posts", id as string));
-                  Alert.alert('삭제 완료', '게시글이 삭제되었습니다.');
-                  router.replace('/guest/list');
+                  await updateDoc(doc(db, "guest_posts", id as string), { isDeleted: true });
+                  router.back();
               } catch(e) { Alert.alert('오류', '삭제 실패'); }
           }}
       ]);
   };
 
-  const isOwner = currentUser?.uid === post?.hostCaptainId;
+  if (loading || !post) {
+      return <View className="flex-1 bg-white items-center justify-center"><ActivityIndicator color="#111827" /></View>;
+  }
 
-  if (loading) return <View className="flex-1 justify-center items-center bg-white"><ActivityIndicator color="#4F46E5"/></View>;
-  if (!post) return null;
-
-  const matchDate = new Date(post.matchDate);
+  const isHost = user?.uid === post.hostCaptainId;
+  const isApplied = post.applicants?.some(a => a.uid === user?.uid);
 
   return (
-    <View className="flex-1 bg-white">
-      {/* Header */}
-      <View className="px-5 pt-12 pb-4 flex-row justify-between items-center border-b border-gray-100 bg-white">
-        <TouchableOpacity onPress={() => router.back()} className="p-2 -ml-2">
-            <FontAwesome5 name="arrow-left" size={20} color="#191F28" />
-        </TouchableOpacity>
-        <View className="flex-row gap-4">
-            {/* 공유 버튼 */}
-            <TouchableOpacity onPress={handleShare} className="p-2">
-                <FontAwesome5 name="share-alt" size={20} color="#191F28" />
+    <SafeAreaView className="flex-1 bg-white" edges={['bottom']}>
+      <View className="flex-1">
+        {/* Header */}
+        <View className="px-5 py-3 border-b border-gray-100 flex-row justify-between items-center bg-white">
+            <TouchableOpacity onPress={() => router.back()} className="p-2 -ml-2">
+                <FontAwesome5 name="arrow-left" size={20} color="#111827" />
             </TouchableOpacity>
-            {isOwner && (
-                <TouchableOpacity onPress={() => router.push(`/guest/write?id=${id}`)} className="p-2">
-                    <FontAwesome5 name="edit" size={20} color="#191F28" />
-                </TouchableOpacity>
-            )}
-            {isOwner && (
-                <TouchableOpacity onPress={handleDelete} className="p-2">
-                    <FontAwesome5 name="trash" size={20} color="#FF6B6B" />
-                </TouchableOpacity>
-            )}
+            <Text className="font-bold text-[16px]">모집 상세</Text>
+            <View className="w-8" />
         </View>
-      </View>
 
-      <ScrollView contentContainerClassName="pb-32">
-        {/* Main Info */}
-        <View className="p-6 border-b border-gray-100">
-            <View className="flex-row items-center mb-2">
-                <Text className="text-[#4F46E5] font-bold text-sm bg-indigo-50 px-3 py-1 rounded-full mr-2">
-                    {post.positions?.join(', ')}
-                </Text>
-                <Text className="text-gray-500 text-sm font-medium">
-                    {post.gender === 'male' ? '남성' : post.gender === 'female' ? '여성' : '혼성'}
-                </Text>
+        <ScrollView contentContainerStyle={{ paddingBottom: 100 }}>
+            {/* 1. Title Section */}
+            <View className="px-6 pt-8 pb-6 border-b border-gray-100">
+                <View className="flex-row items-center mb-3">
+                    <View className="bg-orange-50 px-2.5 py-1 rounded-md mr-2">
+                        <Text className="text-orange-600 font-bold text-[12px]">용병구인</Text>
+                    </View>
+                    <Text className="text-gray-500 font-medium text-[13px]">{post.gender === 'male' ? '남자부' : post.gender === 'female' ? '여자부' : '혼성'} · {post.targetLevel}</Text>
+                </View>
+                <Text className="text-[24px] font-extrabold text-gray-900 leading-tight mb-2">{post.teamName}</Text>
+                <Text className="text-[15px] text-gray-600">{post.positions} 포지션을 찾고 있어요.</Text>
             </View>
-            <Text className="text-2xl font-extrabold text-gray-900 mb-6 leading-tight">
-                {post.hostTeamName}에서{'\n'}용병을 찾고 있어요
-            </Text>
 
-            <View className="gap-4">
-                <View className="flex-row items-start">
-                    <View className="w-8 pt-1"><FontAwesome5 name="calendar-alt" size={18} color="#9CA3AF" /></View>
+            {/* 2. Info Grid */}
+            <View className="px-6 py-6 border-b border-gray-100">
+                <View className="flex-row items-start mb-5">
+                    <View className="w-6 mt-0.5"><FontAwesome5 name="clock" size={16} color="#9CA3AF" /></View>
                     <View>
-                        <Text className="text-gray-900 font-bold text-lg">
-                            {matchDate.getMonth()+1}월 {matchDate.getDate()}일 ({['일','월','화','수','목','금','토'][matchDate.getDay()]})
-                        </Text>
-                        <Text className="text-gray-500">
-                            {matchDate.getHours() >= 12 ? '오후' : '오전'} {matchDate.getHours() % 12 || 12}시 {matchDate.getMinutes() > 0 ? `${matchDate.getMinutes()}분` : ''}
-                        </Text>
+                        <Text className="text-gray-400 text-[12px] font-bold mb-0.5">일시</Text>
+                        <Text className="text-gray-900 text-[16px] font-bold">{formatTime(post.time)}</Text>
                     </View>
                 </View>
                 <View className="flex-row items-start">
-                    <View className="w-8 pt-1"><FontAwesome5 name="map-marker-alt" size={18} color="#9CA3AF" /></View>
+                    <View className="w-6 mt-0.5"><FontAwesome5 name="map-marker-alt" size={16} color="#9CA3AF" /></View>
                     <View className="flex-1">
-                        <Text className="text-gray-900 font-bold text-lg">{post.location}</Text>
+                        <Text className="text-gray-400 text-[12px] font-bold mb-0.5">장소</Text>
+                        <Text className="text-gray-900 text-[16px] font-bold">{post.loc}</Text>
                     </View>
-                </View>
-                <View className="flex-row items-start">
-                    <View className="w-8 pt-1"><FontAwesome5 name="coins" size={18} color="#9CA3AF" /></View>
-                    <Text className="text-gray-900 font-bold text-lg">
-                        {post.fee === '0' || post.fee === '무료' ? '참가비 없음' : `${Number(post.fee).toLocaleString()}원`}
-                    </Text>
                 </View>
             </View>
-        </View>
 
-        {/* Description */}
-        <View className="p-6">
-            <Text className="font-bold text-gray-900 mb-3 text-lg">상세 내용</Text>
-            <Text className="text-gray-600 leading-6 text-base">{post.description || '작성된 상세 내용이 없습니다.'}</Text>
-        </View>
-      </ScrollView>
-
-      {/* Footer Action */}
-      <View className="absolute bottom-0 w-full bg-white border-t border-gray-100 p-5 pb-8 shadow-lg">
-        {!isOwner ? (
-            <TouchableOpacity 
-                onPress={() => router.push(`/guest/applicants?id=${post.id}`)}
-                className="w-full bg-[#4F46E5] py-4 rounded-2xl items-center shadow-lg shadow-indigo-200 active:scale-95"
-            >
-                <Text className="text-white font-bold text-lg">신청하기</Text>
-            </TouchableOpacity>
-        ) : (
-             <TouchableOpacity 
-                onPress={() => router.push(`/guest/applicants?id=${post.id}&mode=owner`)}
-                className="w-full bg-gray-900 py-4 rounded-2xl items-center active:scale-95"
-            >
-                <Text className="text-white font-bold text-lg">신청자 관리</Text>
-            </TouchableOpacity>
-        )}
+            {/* 3. Note */}
+            <View className="px-6 py-6">
+                <Text className="text-gray-900 text-[16px] leading-relaxed">
+                    {post.note || "상세 내용이 없습니다."}
+                </Text>
+            </View>
+        </ScrollView>
       </View>
-    </View>
+
+      {/* Bottom Action Bar */}
+      <View className="px-5 py-5 border-t border-gray-100 bg-white">
+          {isHost ? (
+              <View className="flex-row gap-3">
+                  <TouchableOpacity 
+                    onPress={handleDelete}
+                    className="flex-1 bg-gray-100 h-[52px] rounded-xl items-center justify-center"
+                  >
+                      <Text className="text-gray-600 font-bold text-[16px]">삭제</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity 
+                    className="flex-1 bg-gray-900 h-[52px] rounded-xl items-center justify-center"
+                    onPress={() => Alert.alert('준비중', '마감 기능은 준비 중입니다.')}
+                  >
+                      <Text className="text-white font-bold text-[16px]">마감하기</Text>
+                  </TouchableOpacity>
+              </View>
+          ) : (
+              <TouchableOpacity 
+                onPress={() => !isApplied && setShowApplyModal(true)}
+                disabled={isApplied}
+                className={`w-full h-[56px] rounded-xl items-center justify-center ${isApplied ? 'bg-gray-300' : 'bg-gray-900 shadow-lg shadow-gray-200'}`}
+              >
+                  <Text className="text-white font-bold text-[17px]">
+                      {isApplied ? '신청 완료' : '지원하기'}
+                  </Text>
+              </TouchableOpacity>
+          )}
+      </View>
+
+      {/* Apply Modal */}
+      <Modal visible={showApplyModal} transparent animationType="slide">
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} className="flex-1 justify-end">
+              <TouchableOpacity className="flex-1 bg-black/40" onPress={() => setShowApplyModal(false)} />
+              <View className="bg-white rounded-t-[24px] p-6 pb-10">
+                  <Text className="text-xl font-bold text-gray-900 mb-6">용병 지원하기</Text>
+                  
+                  {/* 포지션 선택 */}
+                  <Text className="text-[14px] font-bold text-gray-500 mb-3">내 포지션</Text>
+                  <View className="flex-row flex-wrap gap-2 mb-6">
+                      {POSITIONS.map(pos => (
+                          <TouchableOpacity 
+                            key={pos}
+                            onPress={() => setMyPosition(pos)}
+                            className={`px-4 py-2 rounded-full border ${myPosition === pos ? 'bg-gray-900 border-gray-900' : 'bg-white border-gray-200'}`}
+                          >
+                              <Text className={`text-[13px] font-bold ${myPosition === pos ? 'text-white' : 'text-gray-600'}`}>{pos}</Text>
+                          </TouchableOpacity>
+                      ))}
+                  </View>
+
+                  {/* 메시지 입력 */}
+                  <Text className="text-[14px] font-bold text-gray-500 mb-3">한마디 (선택)</Text>
+                  <TextInput 
+                      className="bg-gray-50 rounded-xl p-4 text-[16px] min-h-[100px] mb-6 border border-gray-100"
+                      placeholder="실력, 경험 등 간단한 소개를 남겨주세요."
+                      multiline
+                      textAlignVertical="top"
+                      value={message}
+                      onChangeText={setMessage}
+                  />
+
+                  <TouchableOpacity 
+                    onPress={handleApply}
+                    disabled={submitting}
+                    className="w-full bg-orange-600 h-[56px] rounded-xl items-center justify-center"
+                  >
+                      {submitting ? <ActivityIndicator color="white" /> : <Text className="text-white font-bold text-[17px]">지원서 보내기</Text>}
+                  </TouchableOpacity>
+              </View>
+          </KeyboardAvoidingView>
+      </Modal>
+
+    </SafeAreaView>
   );
 }

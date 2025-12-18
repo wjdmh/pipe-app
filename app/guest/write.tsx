@@ -1,329 +1,281 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, ScrollView, Alert, ActivityIndicator, Modal, KeyboardAvoidingView, Platform } from 'react-native';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { 
+  View, 
+  Text, 
+  TextInput, 
+  TouchableOpacity, 
+  Alert, 
+  ActivityIndicator, 
+  Platform, 
+  KeyboardAvoidingView, 
+  ScrollView,
+  Modal
+} from 'react-native';
+import { useRouter } from 'expo-router';
+import { collection, addDoc, doc, getDoc, serverTimestamp } from 'firebase/firestore';
+import { auth, db } from '../../configs/firebaseConfig';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { FontAwesome5 } from '@expo/vector-icons';
-import DateTimePicker from '@react-native-community/datetimepicker';
-import { doc, getDoc, updateDoc } from 'firebase/firestore';
-import { auth, db } from '../../configs/firebaseConfig';
-import { useGuest } from '../../hooks/useGuest';
 
-const POSITIONS = ['OH', 'OP', 'MB', 'S', 'L'];
+// [상수] 선택 옵션 데이터
+const POSITIONS = ['세터', '레프트', '라이트', '센터', '리베로', '포지션 무관'];
+const LEVELS = ['S급(선출)', 'A급(상급)', 'B급(중급)', 'C급(초급)', '초심'];
 
-// [Helper] 로컬 시간 ISO 문자열 변환 (웹 input용)
-const toLocalISOString = (date: Date) => {
-  const offset = date.getTimezoneOffset() * 60000; //ms
-  const localISOTime = (new Date(date.getTime() - offset)).toISOString().slice(0, 16);
-  return localISOTime;
-};
-
-// [Helper] 안전한 알림 함수 (웹/앱 호환)
-const safeAlert = (title: string, message: string, onConfirm?: () => void) => {
-    if (Platform.OS === 'web') {
-        window.alert(`${title}\n\n${message}`);
-        if (onConfirm) onConfirm();
-    } else {
-        Alert.alert(title, message, [{ text: '확인', onPress: onConfirm }]);
-    }
-};
-
-export default function GuestWriteScreen() {
+export default function WriteGuestPostScreen() {
   const router = useRouter();
-  const { id } = useLocalSearchParams();
-  const isEditMode = !!id;
-
-  const { createPost } = useGuest();
   const [loading, setLoading] = useState(false);
-  const [fetching, setFetching] = useState(!!id);
 
+  // [Form Data]
+  const [gender, setGender] = useState<'male' | 'female' | 'mixed'>('mixed');
+  const [selectedPositions, setSelectedPositions] = useState<Set<string>>(new Set());
+  const [level, setLevel] = useState<string>('C급(초급)'); // 단일 선택 (희망 실력)
   const [date, setDate] = useState(new Date());
-  const [tempDate, setTempDate] = useState(new Date()); 
-  const [showDatePicker, setShowDatePicker] = useState(false);
-  
-  const [location, setLocation] = useState('');
-  const [positions, setPositions] = useState<string[]>([]);
-  const [gender, setGender] = useState<'male'|'female'|'mixed'>('mixed');
-  const [fee, setFee] = useState('');
-  const [isFree, setIsFree] = useState(false);
-  const [description, setDescription] = useState('');
+  const [place, setPlace] = useState('');
+  const [note, setNote] = useState('');
 
-  // 수정 모드 데이터 불러오기
-  useEffect(() => {
-      if (isEditMode && typeof id === 'string') {
-          const loadData = async () => {
-              try {
-                  const docSnap = await getDoc(doc(db, "guest_posts", id));
-                  if (docSnap.exists()) {
-                      const data = docSnap.data();
-                      setLocation(data.location);
-                      setPositions(data.positions || []);
-                      setGender(data.gender);
-                      setDescription(data.description);
-                      if (data.matchDate) setDate(new Date(data.matchDate));
-                      if (data.fee === '0' || data.fee === '무료') {
-                          setIsFree(true);
-                          setFee('');
-                      } else {
-                          setFee(data.fee);
-                      }
-                  } else {
-                      safeAlert('오류', '존재하지 않는 게시글입니다.', () => router.back());
-                  }
-              } catch (e) {
-                  console.error(e);
-                  safeAlert('오류', '데이터를 불러오지 못했습니다.');
-              } finally {
-                  setFetching(false);
-              }
-          };
-          loadData();
-      }
-  }, [id]);
+  // [UI States]
+  const [showDateModal, setShowDateModal] = useState(false);
+  const [tempDate, setTempDate] = useState(new Date());
 
-  const formatDateKr = (d: Date) => {
-    const days = ['일', '월', '화', '수', '목', '금', '토'];
-    return `${d.getMonth() + 1}월 ${d.getDate()}일 (${days[d.getDay()]})`;
-  };
-
-  const formatTimeKr = (d: Date) => {
+  // [Helper] 날짜 포맷
+  const formatDateTime = (d: Date) => {
+    const month = d.getMonth() + 1;
+    const day = d.getDate();
     const hour = d.getHours();
     const min = d.getMinutes();
     const ampm = hour >= 12 ? '오후' : '오전';
     const formatHour = hour % 12 || 12;
-    return `${ampm} ${formatHour}시 ${min > 0 ? `${min}분` : ''}`;
+    return `${month}월 ${day}일 ${ampm} ${formatHour}:${min.toString().padStart(2, '0')}`;
   };
 
-  const handleDateChange = (event: any, selectedDate?: Date) => {
-    if (selectedDate) setTempDate(selectedDate);
+  const toLocalISOString = (date: Date) => {
+    const offset = date.getTimezoneOffset() * 60000;
+    return (new Date(date.getTime() - offset)).toISOString().slice(0, 16);
   };
 
-  const handleWebDateChange = (e: any) => {
-      const val = e.target.value;
-      if (val) setDate(new Date(val));
-  };
-
+  // [Logic] 포지션 토글
   const togglePosition = (pos: string) => {
-    if (positions.includes(pos)) setPositions(positions.filter(p => p !== pos));
-    else setPositions([...positions, pos]);
+    setSelectedPositions(prev => {
+        const next = new Set(prev);
+        if (next.has(pos)) next.delete(pos);
+        else next.add(pos);
+        return next;
+    });
   };
 
-  const handleFeeChange = (text: string) => {
-      const numericValue = text.replace(/[^0-9]/g, '');
-      setFee(numericValue);
-      setIsFree(false);
-  };
-
-  const toggleFree = () => {
-      if (!isFree) {
-          setFee('');
-          setIsFree(true);
-      } else {
-          setIsFree(false);
-      }
-  };
-
+  // [Logic] 제출
   const handleSubmit = async () => {
-    // 1. 필수 입력 검증
-    if (!location.trim()) return safeAlert('필수 입력', '경기 장소를 입력해주세요.');
-    if (positions.length === 0) return safeAlert('필수 입력', '모집할 포지션을 하나 이상 선택해주세요.');
-    if (!isFree && !fee) return safeAlert('필수 입력', '참가비를 입력하거나 "참가비 없음"을 선택해주세요.');
+    if (selectedPositions.size === 0) return alert('모집할 포지션을 최소 1개 선택해주세요.');
+    if (!place.trim()) return alert('경기 장소를 입력해주세요.');
     
-    // 2. 날짜 검증 (현재 시간보다 이전인지 체크)
-    const now = new Date();
-    // 5분의 여유 시간은 둠 (작성하는 동안 시간이 흐를 수 있으므로)
-    if (date.getTime() < now.getTime() - 5 * 60 * 1000) {
-        return safeAlert('날짜 확인', '이미 지나간 시간입니다.\n미래의 시간을 선택해주세요.');
-    }
-    
+    // 과거 날짜 체크
+    if (date < new Date()) return alert('미래의 시간을 선택해주세요.');
+
     setLoading(true);
     try {
-      // 수정 모드
-      if (isEditMode && typeof id === 'string') {
-          await updateDoc(doc(db, "guest_posts", id), {
-              matchDate: date.toISOString(),
-              location,
-              positions,
-              gender,
-              fee: isFree ? '0' : fee,
-              description,
-              updatedAt: new Date().toISOString()
-          });
-          
-          safeAlert('수정 완료', '게시글이 성공적으로 수정되었습니다.', () => router.back());
-          return;
+      const user = auth.currentUser;
+      if (!user) throw new Error('로그인이 필요합니다.');
+
+      // 1. 유저 & 팀 정보 확인
+      const userSnap = await getDoc(doc(db, "users", user.uid));
+      if (!userSnap.exists()) throw new Error('회원 정보를 찾을 수 없습니다.');
+      
+      const userData = userSnap.data();
+      if (!userData?.teamId) {
+        Alert.alert('알림', '팀 소속만 용병을 모집할 수 있습니다.', [
+            { text: '팀 등록하러 가기', onPress: () => router.replace('/team/register') },
+            { text: '취소', style: 'cancel' }
+        ]);
+        return;
       }
 
-      // 생성 모드
-      let teamId = 'individual';
-      let teamName = '개인 모집';
-      let hostUid = auth.currentUser?.uid;
+      const teamSnap = await getDoc(doc(db, "teams", userData.teamId));
+      if (!teamSnap.exists()) throw new Error('팀 정보를 찾을 수 없습니다.');
+      const teamData = teamSnap.data();
 
-      if (!hostUid) {
-          setLoading(false);
-          return safeAlert('인증 필요', '로그인이 필요합니다.');
-      }
-
-      const userSnap = await getDoc(doc(db, "users", hostUid));
-      if (userSnap.exists()) {
-            const uData = userSnap.data();
-            if (uData.teamId) {
-                teamId = uData.teamId;
-                const teamSnap = await getDoc(doc(db, "teams", teamId));
-                if (teamSnap.exists()) teamName = teamSnap.data().name;
-            } else if (uData.name) {
-                teamName = `${uData.name} (개인)`;
-            }
-      }
-
-      const success = await createPost({
-        hostTeamId: teamId,
-        hostTeamName: teamName,
-        hostCaptainId: hostUid,
-        matchDate: date.toISOString(),
-        location,
-        positions,
+      // 2. 데이터 저장 (guest_posts)
+      await addDoc(collection(db, "guest_posts"), {
+        hostCaptainId: user.uid, // 작성자(보안용)
+        hostTeamId: userData.teamId,
+        teamName: teamData.name || 'Unknown Team',
         gender,
-        fee: isFree ? '0' : fee,
-        description
+        positions: Array.from(selectedPositions).join(', '), // 배열을 문자열로 변환 저장
+        targetLevel: level,
+        time: date.toISOString(),
+        loc: place.trim(),
+        note: note.trim(),
+        status: 'recruiting', // recruiting | finished
+        createdAt: new Date().toISOString(),
+        applicants: [], // 신청자 목록
+        isDeleted: false
       });
 
-      if (success) {
-        safeAlert('등록 완료', '용병 모집글이 등록되었습니다.\n많은 지원자가 오길 바랄게요!', () => router.back());
-      } else {
-        throw new Error("Create Failed");
-      }
+      Alert.alert('등록 완료', '용병 모집글이 등록되었습니다.', [
+        { text: '확인', onPress: () => router.back() }
+      ]);
 
-    } catch (e) {
-      console.error(e);
-      safeAlert('등록 실패', '일시적인 오류가 발생했습니다.\n잠시 후 다시 시도해주세요.');
+    } catch (error: any) {
+      Alert.alert('오류', error.message);
     } finally {
       setLoading(false);
     }
   };
 
-  if (fetching) return <View className="flex-1 justify-center items-center bg-white"><ActivityIndicator size="large" color="#4F46E5"/></View>;
+  const alert = (msg: string) => {
+    if(Platform.OS === 'web') window.alert(msg);
+    else Alert.alert('알림', msg);
+  }
 
   return (
     <SafeAreaView className="flex-1 bg-white" edges={['bottom']}>
-      <KeyboardAvoidingView 
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-        className="flex-1"
-      >
-        <ScrollView contentContainerClassName="p-6 pb-20" showsVerticalScrollIndicator={false}>
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} className="flex-1">
+        <ScrollView contentContainerStyle={{ padding: 24, paddingBottom: 100 }} showsVerticalScrollIndicator={false}>
+            
+            {/* Header */}
             <View className="mb-8">
-                <Text className="text-2xl font-extrabold text-gray-900 mb-2">{isEditMode ? '모집글 수정하기' : '게스트 모집하기'}</Text>
-                <Text className="text-gray-500 text-sm">{isEditMode ? '변경할 내용을 입력해주세요.' : '함께 운동할 멤버를 찾아보세요.'}</Text>
+                <Text className="text-2xl font-extrabold text-gray-900 mb-1">용병 모집하기</Text>
+                <Text className="text-gray-500 text-[14px]">우리 팀에 필요한 파트너를 찾아보세요.</Text>
             </View>
 
-            <Text className="font-bold text-gray-500 mb-2">필요 포지션</Text>
-            <View className="flex-row flex-wrap gap-2 mb-6">
-            {POSITIONS.map(pos => (
-                <TouchableOpacity 
-                key={pos}
-                onPress={() => togglePosition(pos)}
-                className={`px-4 py-2 rounded-lg border ${positions.includes(pos) ? 'bg-indigo-600 border-indigo-600' : 'bg-white border-gray-200'}`}
-                >
-                <Text className={`font-bold ${positions.includes(pos) ? 'text-white' : 'text-gray-500'}`}>{pos}</Text>
-                </TouchableOpacity>
-            ))}
+            {/* 1. 성별 */}
+            <View className="mb-8">
+                <Text className="text-[15px] font-bold text-gray-900 mb-3">경기 성별</Text>
+                <View className="flex-row bg-gray-100 p-1 rounded-xl">
+                    {['male', 'female', 'mixed'].map((type) => (
+                        <TouchableOpacity 
+                            key={type}
+                            onPress={() => setGender(type as any)}
+                            className={`flex-1 py-2.5 rounded-lg items-center ${gender === type ? 'bg-white shadow-sm' : ''}`}
+                        >
+                            <Text className={`text-[14px] font-bold ${gender === type ? 'text-gray-900' : 'text-gray-400'}`}>
+                                {type === 'male' ? '남자부' : type === 'female' ? '여자부' : '혼성'}
+                            </Text>
+                        </TouchableOpacity>
+                    ))}
+                </View>
             </View>
 
-            <Text className="font-bold text-gray-500 mb-2">성별</Text>
-            <View className="flex-row gap-2 mb-6">
-            {['male', 'female', 'mixed'].map((g: any) => (
-                <TouchableOpacity 
-                key={g}
-                onPress={() => setGender(g)}
-                className={`flex-1 py-3 rounded-xl border items-center ${gender === g ? 'bg-gray-800 border-gray-800' : 'bg-white border-gray-200'}`}
-                >
-                <Text className={`font-bold ${gender === g ? 'text-white' : 'text-gray-500'}`}>
-                    {g === 'male' ? '남성' : g === 'female' ? '여성' : '혼성'}
-                </Text>
-                </TouchableOpacity>
-            ))}
-            </View>
-
-            <Text className="font-bold text-gray-500 mb-2">일시</Text>
-            {Platform.OS === 'web' ? (
-                <View className="bg-white p-4 rounded-xl border border-gray-200 mb-6">
-                    {React.createElement('input', {
-                        type: 'datetime-local',
-                        value: toLocalISOString(date),
-                        onChange: handleWebDateChange,
-                        min: toLocalISOString(new Date()), 
-                        style: { border: 'none', width: '100%', height: '40px', fontSize: '16px', color: '#111827', backgroundColor: 'transparent', outline: 'none' }
+            {/* 2. 모집 포지션 (다중 선택) */}
+            <View className="mb-8">
+                <Text className="text-[15px] font-bold text-gray-900 mb-3">필요 포지션 (중복 가능)</Text>
+                <View className="flex-row flex-wrap gap-2">
+                    {POSITIONS.map(pos => {
+                        const isSelected = selectedPositions.has(pos);
+                        return (
+                            <TouchableOpacity
+                                key={pos}
+                                onPress={() => togglePosition(pos)}
+                                className={`px-4 py-2.5 rounded-full border ${isSelected ? 'bg-gray-900 border-gray-900' : 'bg-white border-gray-200'}`}
+                            >
+                                <Text className={`text-[13px] font-bold ${isSelected ? 'text-white' : 'text-gray-500'}`}>{pos}</Text>
+                            </TouchableOpacity>
+                        );
                     })}
                 </View>
-            ) : (
-                <TouchableOpacity 
-                    onPress={() => { setTempDate(date); setShowDatePicker(true); }} 
-                    activeOpacity={0.8}
-                    className="bg-white p-5 rounded-3xl border border-gray-200 flex-row justify-between items-center shadow-sm mb-6"
-                >
-                    <View>
-                        <Text className="text-xs font-bold text-gray-400 mb-1">날짜와 시간</Text>
-                        <Text className="text-xl font-extrabold text-[#4F46E5]">
-                            {formatDateKr(date)}  {formatTimeKr(date)}
-                        </Text>
-                    </View>
-                    <View className="w-10 h-10 bg-indigo-50 rounded-full items-center justify-center">
-                        <FontAwesome5 name="calendar-alt" size={18} color="#4F46E5" />
-                    </View>
-                </TouchableOpacity>
-            )}
-
-            <Text className="font-bold text-gray-500 mb-2">장소</Text>
-            <TextInput className="bg-gray-50 p-4 rounded-xl border border-gray-200 mb-6" placeholder="예: 서울 강남구 역삼동 체육관" value={location} onChangeText={setLocation} />
-
-            <Text className="font-bold text-gray-500 mb-2">참가비</Text>
-            <View className="flex-row gap-2 mb-6">
-                <TextInput 
-                    className={`flex-1 bg-gray-50 p-4 rounded-xl border ${isFree ? 'border-gray-200 bg-gray-100' : 'border-indigo-500 bg-white'}`} 
-                    placeholder="금액 입력 (원)" 
-                    keyboardType="number-pad"
-                    value={isFree ? '' : fee} 
-                    onChangeText={handleFeeChange}
-                    editable={!isFree}
-                />
-                <TouchableOpacity 
-                    onPress={toggleFree}
-                    className={`px-5 rounded-xl border items-center justify-center ${isFree ? 'bg-indigo-600 border-indigo-600' : 'bg-white border-gray-200'}`}
-                >
-                    <Text className={`font-bold ${isFree ? 'text-white' : 'text-gray-500'}`}>참가비 없음</Text>
-                </TouchableOpacity>
             </View>
 
-            <Text className="font-bold text-gray-500 mb-2">상세 내용</Text>
-            <TextInput className="bg-gray-50 p-4 rounded-xl border border-gray-200 h-24 mb-8" multiline placeholder="팀 실력, 분위기 등 상세 정보를 적어주세요." value={description} onChangeText={setDescription} textAlignVertical="top" />
+            {/* 3. 희망 실력 */}
+            <View className="mb-8">
+                <Text className="text-[15px] font-bold text-gray-900 mb-3">희망 실력</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} className="flex-row gap-2">
+                    {LEVELS.map(lv => (
+                        <TouchableOpacity
+                            key={lv}
+                            onPress={() => setLevel(lv)}
+                            className={`mr-2 px-4 py-2.5 rounded-full border ${level === lv ? 'bg-orange-50 border-orange-500' : 'bg-white border-gray-200'}`}
+                        >
+                            <Text className={`text-[13px] font-bold ${level === lv ? 'text-orange-600' : 'text-gray-500'}`}>{lv}</Text>
+                        </TouchableOpacity>
+                    ))}
+                </ScrollView>
+            </View>
 
-            <TouchableOpacity 
-                onPress={handleSubmit} 
-                disabled={loading} 
-                className={`py-4 rounded-xl items-center shadow-lg ${loading ? 'bg-gray-400' : 'bg-indigo-600 shadow-indigo-200'}`}
-            >
-                {loading ? (
-                    <View className="flex-row items-center gap-2">
-                        <ActivityIndicator color="white" />
-                        <Text className="text-white font-bold text-lg">처리 중...</Text>
-                    </View>
+            {/* 4. 일시 */}
+            <View className="mb-8">
+                <Text className="text-[15px] font-bold text-gray-900 mb-3">경기 일시</Text>
+                {Platform.OS === 'web' ? (
+                    <input 
+                        type="datetime-local"
+                        value={toLocalISOString(date)}
+                        onChange={(e) => setDate(new Date(e.target.value))}
+                        style={{
+                            width: '100%', padding: '12px', borderRadius: '12px',
+                            border: '1px solid #E5E7EB', fontSize: '15px', outline: 'none'
+                        }}
+                    />
                 ) : (
-                    <Text className="text-white font-bold text-lg">{isEditMode ? '수정 완료' : '모집 등록'}</Text>
+                    <TouchableOpacity 
+                        onPress={() => { setTempDate(date); setShowDateModal(true); }}
+                        className="w-full p-4 rounded-xl border border-gray-200 bg-white"
+                    >
+                        <Text className="text-[16px] text-gray-900 font-medium">{formatDateTime(date)}</Text>
+                    </TouchableOpacity>
                 )}
-            </TouchableOpacity>
+            </View>
+
+            {/* 5. 장소 */}
+            <View className="mb-8">
+                <Text className="text-[15px] font-bold text-gray-900 mb-3">경기 장소</Text>
+                <TextInput 
+                    className="w-full p-4 rounded-xl border border-gray-200 bg-white text-[16px]"
+                    placeholder="체육관 이름 또는 주소"
+                    value={place}
+                    onChangeText={setPlace}
+                />
+            </View>
+
+            {/* 6. 상세 내용 */}
+            <View className="mb-8">
+                <Text className="text-[15px] font-bold text-gray-900 mb-3">상세 내용 (선택)</Text>
+                <TextInput 
+                    className="w-full p-4 rounded-xl border border-gray-200 bg-white text-[15px] min-h-[100px]"
+                    placeholder="참가비, 주차 여부 등 추가 정보를 입력하세요."
+                    multiline
+                    textAlignVertical="top"
+                    value={note}
+                    onChangeText={setNote}
+                />
+            </View>
+
         </ScrollView>
       </KeyboardAvoidingView>
 
-      {/* Date Picker Modal (Mobile Only) */}
+      {/* 하단 버튼 */}
+      <View className="absolute bottom-0 w-full px-5 py-5 bg-white border-t border-gray-100">
+          <TouchableOpacity 
+            onPress={handleSubmit}
+            disabled={loading}
+            className="w-full bg-gray-900 h-[56px] rounded-xl items-center justify-center shadow-sm"
+          >
+              {loading ? <ActivityIndicator color="white" /> : <Text className="text-white font-bold text-[16px]">모집글 등록</Text>}
+          </TouchableOpacity>
+      </View>
+
+      {/* Date Picker Modal (Mobile) */}
       {Platform.OS !== 'web' && (
-        <Modal visible={showDatePicker} transparent animationType="fade">
-            <View className="flex-1 justify-end bg-black/60">
-                <View className="bg-white rounded-t-[32px] p-6 pb-10 shadow-2xl">
-                    <View className="flex-row justify-between items-center mb-6 px-2">
-                      <Text className="text-xl font-bold">시간 선택</Text>
-                        <TouchableOpacity onPress={() => setShowDatePicker(false)} className="bg-gray-100 px-4 py-2 rounded-full"><Text className="text-gray-500 font-bold text-xs">취소</Text></TouchableOpacity>
+        <Modal visible={showDateModal} transparent animationType="fade">
+            <View className="flex-1 justify-end bg-black/50">
+                <View className="bg-white rounded-t-3xl p-6 pb-10">
+                    <View className="flex-row justify-between items-center mb-6">
+                        <Text className="text-lg font-bold text-gray-900">시간 선택</Text>
+                        <TouchableOpacity onPress={() => setShowDateModal(false)}><Text className="text-gray-500 p-2">취소</Text></TouchableOpacity>
                     </View>
-                    <DateTimePicker value={tempDate} mode="datetime" display="spinner" onChange={handleDateChange} textColor="#111827" locale="ko-KR" minimumDate={new Date()} className="h-48" />
-                    <TouchableOpacity onPress={() => { setDate(tempDate); setShowDatePicker(false); }} className="mt-6 bg-[#4F46E5] py-4 rounded-2xl items-center shadow-lg shadow-indigo-200"><Text className="text-white font-bold text-lg">설정</Text></TouchableOpacity>
+                    <DateTimePicker 
+                        value={tempDate} 
+                        mode="datetime" 
+                        display="spinner" 
+                        onChange={(_, d) => d && setTempDate(d)} 
+                        textColor="#111827"
+                        locale="ko-KR"
+                        minimumDate={new Date()}
+                    />
+                    <TouchableOpacity 
+                        onPress={() => { setDate(tempDate); setShowDateModal(false); }}
+                        className="mt-4 bg-gray-900 py-3.5 rounded-xl items-center"
+                    >
+                        <Text className="text-white font-bold">확인</Text>
+                    </TouchableOpacity>
                 </View>
             </View>
         </Modal>
