@@ -17,7 +17,7 @@ export default function TeamRegister() {
   
   const [userInfo, setUserInfo] = useState<any>(null);
   
-  // [Modified] KUSF 팀 매핑 정보와 커스텀 팀 리스트 분리 관리
+  // KUSF 팀 매핑 정보와 커스텀 팀 리스트 분리 관리
   const [registeredTeamsMap, setRegisteredTeamsMap] = useState<{[key: string]: any}>({});
   const [customTeams, setCustomTeams] = useState<any[]>([]);
 
@@ -51,7 +51,7 @@ export default function TeamRegister() {
     } catch (e) { console.error("User Fetch Error", e); }
   };
 
-  // [Modified] DB에서 팀 정보를 가져와서 KUSF 팀과 커스텀 팀으로 분류
+  // DB에서 팀 정보를 가져와서 KUSF 팀과 커스텀 팀으로 분류
   const fetchRegisteredTeams = async () => {
       try {
         const q = query(collection(db, "teams"));
@@ -85,14 +85,14 @@ export default function TeamRegister() {
       } catch (e) { console.error("Teams Fetch Error", e); }
   };
 
-  // [Modified] 통합 검색 필터링 (KUSF 팀 + 커스텀 팀)
+  // 통합 검색 필터링 (KUSF 팀 + 커스텀 팀)
   const filteredTeams = [...KUSF_TEAMS, ...customTeams].filter(team => {
     const isGenderMatch = team.gender === selectedGender;
     const isSearchMatch = team.name.includes(searchQuery) || team.affiliation.includes(searchQuery);
     return isGenderMatch && isSearchMatch;
   });
 
-  // [Modified] 팀 선택 핸들러 (통합 로직)
+  // 팀 선택 핸들러 (통합 로직)
   const onSelectExistingTeam = async (team: any) => {
     let existingData = null;
 
@@ -106,7 +106,6 @@ export default function TeamRegister() {
 
     // Case 1: 이미 등록된 팀이 활성화된 경우 (가입 신청)
     if (existingData && !existingData.isDeleted && existingData.captainId) {
-        // 웹 호환성 고려 (Optional)
         const confirmMsg = `'${existingData.name}' 팀은 이미 활동 중입니다.\n팀원으로 가입 신청을 보내시겠습니까?`;
         
         if (Platform.OS === 'web') {
@@ -151,12 +150,15 @@ export default function TeamRegister() {
     setStep('VERIFY');
   };
 
+  // [수정된 부분] 가입 신청 시 유저 DB에 appliedTeamId 저장
   const sendJoinRequest = async (teamDocData: any) => {
       if (!auth.currentUser || !userInfo) return;
       setLoading(true);
       try {
           await runTransaction(db, async (transaction) => {
               const teamRef = doc(db, "teams", teamDocData.docId);
+              const userRef = doc(db, "users", auth.currentUser!.uid);
+
               const teamSnap = await transaction.get(teamRef);
               
               if (!teamSnap.exists()) throw "팀이 존재하지 않습니다.";
@@ -172,8 +174,14 @@ export default function TeamRegister() {
                   requestedAt: new Date().toISOString()
               };
 
+              // 1. 팀의 가입 요청 목록 업데이트
               transaction.update(teamRef, {
                   joinRequests: [...currentRequests, requestPayload]
+              });
+
+              // 2. 유저의 신청 대기 상태 업데이트 (중요: LockerScreen에서 대기 화면 표시에 사용)
+              transaction.update(userRef, {
+                  appliedTeamId: teamDocData.docId
               });
           });
 
@@ -195,7 +203,7 @@ export default function TeamRegister() {
       }
   };
 
-  // [Modified] 보안성 강화: 테스트 모드임을 명시
+  // 보안성 강화: 테스트 모드임을 명시
   const sendVerificationCode = async () => {
       if (!email.includes('@')) {
           const msg = '올바른 이메일 형식이 아닙니다.';
@@ -259,7 +267,7 @@ export default function TeamRegister() {
                 members: [userUid], 
                 roster: [me],
                 joinRequests: [],
-                kusfId: targetTeam && !targetTeam.isCustom ? targetTeam.id : null, // 커스텀 팀은 kusfId 없음
+                kusfId: targetTeam && !targetTeam.isCustom ? targetTeam.id : null, 
                 stats: targetTeam ? targetTeam.stats : { wins: 0, losses: 0, points: 0, total: 0 },
                 level: 'C',
                 createdAt: new Date().toISOString(),
@@ -287,7 +295,8 @@ export default function TeamRegister() {
             transaction.update(userRef, { 
                 teamId: teamRef.id, 
                 role: 'leader',
-                updatedAt: new Date().toISOString()
+                updatedAt: new Date().toISOString(),
+                appliedTeamId: null // 팀 생성 시 기존 신청 내역 제거
             });
         });
         
@@ -310,6 +319,8 @@ export default function TeamRegister() {
           setLoading(false); 
       }
   };
+
+  if (loading) return <View className="flex-1 justify-center items-center bg-white"><ActivityIndicator size="large" color="#3182F6" /></View>;
 
   return (
     <SafeAreaView className="flex-1 bg-white">
@@ -347,18 +358,15 @@ export default function TeamRegister() {
                     contentContainerClassName="px-5 pb-32"
                     keyboardShouldPersistTaps="handled"
                     renderItem={({item}) => {
-                        // [Modified] 렌더링 시 커스텀 팀 처리 로직 추가
                         let isActive = false;
                         let isReclaimable = false;
 
                         if (item.isCustom) {
-                            // 커스텀 팀은 목록에 떴다는 것 자체가 이미 등록된 상태임 (활성 여부는 isDeleted로 판단)
-                            isActive = !item.isDeleted; // 사실 isDeleted=true는 필터링되므로 항상 true일 것임
+                            isActive = !item.isDeleted;
                         } else {
-                            // KUSF 팀은 DB 맵핑 확인
                             const existing = registeredTeamsMap[item.id];
                             isActive = existing && !existing.isDeleted && existing.captainId;
-                            isReclaimable = existing && (!existing.captainId || existing.isDeleted); // 비활성 KUSF 팀
+                            isReclaimable = existing && (!existing.captainId || existing.isDeleted); 
                         }
 
                         return (
@@ -373,7 +381,6 @@ export default function TeamRegister() {
                                     ) : isReclaimable ? (
                                         <Text className="text-xs text-green-600 font-bold">이어받기 가능</Text>
                                     ) : (
-                                        // KUSF 팀인데 DB에 없는 경우
                                         <Text className="text-xs text-gray-400 font-bold">신규 등록 가능</Text>
                                     )}
                                 </View>
@@ -427,7 +434,7 @@ export default function TeamRegister() {
             </ScrollView>
         )}
 
-        {/* [Web Fix] Custom Modal Overlay (웹 호환성 해결) */}
+        {/* Custom Modal Overlay */}
         {showRegionModal && (
             <View className="absolute top-0 bottom-0 left-0 right-0 bg-black/50 justify-center items-center z-50 p-5">
                 <View className="bg-white w-full max-w-sm rounded-2xl h-2/3 shadow-2xl overflow-hidden">

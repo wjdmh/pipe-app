@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { 
   View, 
   Text, 
@@ -27,7 +27,7 @@ LogBox.ignoreLogs(['VirtualizedLists should never be nested']);
 // [Architect's Fix] 웹 대응 드라이버 설정
 const USE_NATIVE_DRIVER = Platform.OS !== 'web';
 
-// [Architect's Fix] SelectCard 리팩토링 (TouchableWithoutFeedback -> Pressable)
+// [Architect's Fix] SelectCard 리팩토링
 const SelectCard = ({ label, subLabel, icon, selected, onPress }: { label: string, subLabel?: string, icon: string, selected: boolean, onPress: () => void }) => {
   const scaleAnim = useRef(new Animated.Value(1)).current;
 
@@ -75,9 +75,22 @@ const toLocalISOString = (date: Date) => {
   return localISOTime;
 };
 
+// [Web Helper] Alert 처리 함수
+const safeAlert = (title: string, msg: string, options?: any) => {
+    if (Platform.OS === 'web') {
+        window.alert(`${title}\n${msg}`);
+        if (options && options[0] && options[0].onPress) {
+            options[0].onPress();
+        }
+    } else {
+        Alert.alert(title, msg, options);
+    }
+};
+
 export default function WriteMatchScreen() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
+  const [checkingPermission, setCheckingPermission] = useState(true); // 권한 확인 중 상태
 
   // Data States
   const [type, setType] = useState<'6man' | '9man' | null>(null);
@@ -89,6 +102,51 @@ export default function WriteMatchScreen() {
   // UI States (Mobile Only)
   const [showDateModal, setShowDateModal] = useState(false);
   const [tempDate, setTempDate] = useState(new Date());
+
+  // [권한 체크 로직] - 페이지 진입 시 실행
+  useEffect(() => {
+    const checkPermission = async () => {
+        const user = auth.currentUser;
+        if (!user) {
+            safeAlert('알림', '로그인이 필요합니다.', [{ onPress: () => router.replace('/auth/login') }]);
+            return;
+        }
+
+        try {
+            // 1. 유저 정보 확인 (팀 소속 여부)
+            const userDoc = await getDoc(doc(db, "users", user.uid));
+            const userData = userDoc.data();
+
+            if (!userData?.teamId) {
+                safeAlert('알림', '팀을 먼저 생성하거나 가입해야 매치를 만들 수 있습니다.', [
+                    { text: '팀 등록하러 가기', onPress: () => router.replace('/team/register') }
+                ]);
+                return;
+            }
+
+            // 2. 팀 정보 확인 (주장 여부)
+            const teamDoc = await getDoc(doc(db, "teams", userData.teamId));
+            const teamData = teamDoc.data();
+
+            if (teamData?.captainId !== user.uid) {
+                // 주장이 아니면 차단
+                safeAlert('권한 없음', '팀 대표만 매치를 생성할 수 있습니다.', [
+                    { text: '확인', onPress: () => router.back() }
+                ]);
+                return;
+            }
+
+            // 모든 검사 통과
+            setCheckingPermission(false);
+
+        } catch (e) {
+            console.error(e);
+            safeAlert('오류', '권한 정보를 확인하는 중 문제가 발생했습니다.', [{ onPress: () => router.back() }]);
+        }
+    };
+
+    checkPermission();
+  }, []);
 
   const formatDateKr = (d: Date) => {
     const days = ['일', '월', '화', '수', '목', '금', '토'];
@@ -103,30 +161,13 @@ export default function WriteMatchScreen() {
     return `${ampm} ${formatHour}시 ${min > 0 ? `${min}분` : ''}`;
   };
 
-  // [Mobile] 날짜 변경 핸들러
   const handleDateChange = (event: any, selectedDate?: Date) => {
     if (selectedDate) setTempDate(selectedDate);
   };
 
-  // [Web] 날짜 변경 핸들러
   const handleWebDateChange = (e: any) => {
       const val = e.target.value;
       if (val) setDate(new Date(val));
-  };
-
-  // [Web Helper] Alert 처리
-  const safeAlert = (title: string, msg: string, options?: any) => {
-    if (Platform.OS === 'web') {
-        window.alert(`${title}\n${msg}`);
-        // 웹에서는 Alert 버튼 콜백이 즉시 실행되지 않으므로, 
-        // 확인 버튼이 있는 경우 흐름상 필요한 동작을 여기서 수행하거나 
-        // window.confirm을 써야 하지만, 여기서는 단순 알림이므로 alert 사용
-        if (options && options[0] && options[0].onPress) {
-            options[0].onPress();
-        }
-    } else {
-        Alert.alert(title, msg, options);
-    }
   };
 
   const handleSubmit = async () => {
@@ -134,7 +175,6 @@ export default function WriteMatchScreen() {
     if (!gender) return safeAlert('정보 입력', '성별을 선택해주세요.');
     if (!place.trim()) return safeAlert('정보 입력', '경기 장소를 입력해주세요.');
 
-    // [Fix] 과거 시간 선택 방지 (Validation)
     const now = new Date();
     if (date < now) {
         return safeAlert('시간 확인', '이미 지나간 시간입니다. 미래의 시간을 선택해주세요.');
@@ -145,28 +185,19 @@ export default function WriteMatchScreen() {
       const user = auth.currentUser;
       if (!user) throw new Error('로그인이 필요해요.');
 
+      // 권한 체크는 useEffect에서 했지만, 데이터 무결성을 위해 한 번 더 데이터를 가져옵니다.
       const userRef = doc(db, "users", user.uid);
       const userSnap = await getDoc(userRef);
-      if (!userSnap.exists()) throw new Error('회원 정보를 찾을 수 없습니다.');
       const userData = userSnap.data();
       
-      if (!userData?.teamId) {
-        if (Platform.OS === 'web') {
-            if(window.confirm('팀 프로필이 없어요. 팀을 먼저 등록해주세요.')) {
-                router.replace('/team/register');
-            }
-        } else {
-            Alert.alert('팀 등록 필요', '팀 프로필이 없어요. 팀을 먼저 등록해주세요.', [
-                { text: '등록하기', onPress: () => router.replace('/team/register') }
-            ]);
-        }
-        return;
-      }
+      if (!userData?.teamId) throw new Error('소속된 팀 정보를 찾을 수 없습니다.');
 
       const teamRef = doc(db, "teams", userData.teamId);
       const teamSnap = await getDoc(teamRef);
-      if (!teamSnap.exists()) throw new Error('소속된 팀 정보를 찾을 수 없습니다.');
       const teamData = teamSnap.data();
+      
+      if (!teamData) throw new Error('팀 데이터 오류');
+      if (teamData.captainId !== user.uid) throw new Error('권한이 없습니다.');
 
       await updateDoc(teamRef, { lastActiveAt: serverTimestamp() });
 
@@ -196,6 +227,16 @@ export default function WriteMatchScreen() {
       setLoading(false);
     }
   };
+
+  // 권한 확인 중일 때는 로딩 화면 표시
+  if (checkingPermission) {
+      return (
+          <View className="flex-1 justify-center items-center bg-[#F9FAFB]">
+              <ActivityIndicator size="large" color="#4F46E5" />
+              <Text className="text-gray-500 mt-4 font-bold">권한 확인 중...</Text>
+          </View>
+      );
+  }
 
   return (
     <SafeAreaView className="flex-1 bg-[#F9FAFB]" edges={['bottom']}>
@@ -257,7 +298,6 @@ export default function WriteMatchScreen() {
                             type: 'datetime-local',
                             value: toLocalISOString(date),
                             onChange: handleWebDateChange,
-                            // [Fix] 웹에서 과거 날짜 선택 불가 처리
                             min: toLocalISOString(new Date()),
                             style: {
                                 border: 'none', width: '100%', height: '30px', fontSize: '16px',
