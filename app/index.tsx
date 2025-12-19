@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { View, Text, TouchableOpacity, ActivityIndicator } from 'react-native'; // [수정] SafeAreaView 제거
 import { useRouter } from 'expo-router';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from '../configs/firebaseConfig';
-import { SafeAreaView } from 'react-native-safe-area-context';
+// import { SafeAreaView } from 'react-native-safe-area-context'; // [삭제] 웹 호환성 문제로 제거
 
 export default function Index() {
   const router = useRouter();
@@ -12,8 +12,6 @@ export default function Index() {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       if (currentUser) {
-        // [수정됨] 팀 정보 확인 로직 제거 -> 무조건 홈으로 이동
-        // 홈 화면(index.tsx) 내부에서 팀 유무를 체크하여 Guest UI를 보여줍니다.
         router.replace('/home');
       } else {
         setLoading(false);
@@ -32,7 +30,8 @@ export default function Index() {
   }
 
   return (
-    <SafeAreaView className="flex-1 bg-indigo-600 justify-between px-6 pb-10 pt-20">
+    // [수정] SafeAreaView -> View 변경, style={{ flex: 1 }} 추가로 높이 강제 확보
+    <View style={{ flex: 1 }} className="bg-indigo-600 justify-between px-6 pb-10 pt-20">
       <View>
         <Text className="text-indigo-200 text-lg font-bold mb-2">
           아마추어 배구 매칭의{'\n'}새로운 시작
@@ -53,6 +52,6 @@ export default function Index() {
           <Text className="text-indigo-600 font-bold text-lg">바로 시작하기</Text>
         </TouchableOpacity>
       </View>
-    </SafeAreaView>
+    </View>
   );
 }
