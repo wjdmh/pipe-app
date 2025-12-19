@@ -1,3 +1,4 @@
+// vercel.json 예시
 {
   "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
 }

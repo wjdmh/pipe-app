@@ -1,3 +1,4 @@
+// app/_layout.tsx
 import "../global.css";
 import "../shim";
 import { Stack } from 'expo-router';
@@ -7,7 +8,6 @@ import { useEffect } from 'react';
 import { useFonts } from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
 
-// 콘솔 경고 무시
 LogBox.ignoreLogs([
   'Blocked aria-hidden on an element',
   'props.pointerEvents is deprecated',
@@ -48,30 +48,41 @@ export default function RootLayout() {
 
   return (
     // [1. 바깥 배경]
-    // alignItems: 'center' -> 자식 요소를 가로축 중앙으로 정렬
+    // 이제 이 View가 #root(전체화면) 내부를 꽉 채웁니다.
     <View 
-      style={isWeb ? {
+      style={{
         flex: 1,
-        backgroundColor: '#f3f4f6', // 회색 배경
-        alignItems: 'center',       // ⭐ 핵심 1: 플렉스 박스 중앙 정렬
-        width: '100%',
-      } : { flex: 1, backgroundColor: 'white' }}
+        backgroundColor: '#f3f4f6', // 바깥쪽 회색 배경
+        alignItems: 'center',       // 가로 중앙 정렬
+        justifyContent: 'center',   // 세로 중앙 정렬 (필요 시)
+      }}
     >
       <StatusBar style="auto" />
       
       {/* [2. 앱 컨테이너] */}
-      {/* marginHorizontal: 'auto' -> 브라우저에서 좌우 여백 자동 계산 (강제 중앙 정렬) */}
+      {/* 실제 앱 화면이 들어갈 하얀 박스 */}
       <View 
         style={isWeb ? { 
-          width: '100%', 
-          maxWidth: 480, 
-          height: '100%',
-          marginHorizontal: 'auto',  // ⭐ 핵심 2: 마진 오토 (치트키)
+          width: '100%',
+          maxWidth: 480,          // 모바일 너비 제한
+          height: '100%',         // 높이는 꽉 채움
           backgroundColor: 'white',
-          boxShadow: '0 0 10px rgba(0,0,0,0.1)' // 그림자 조금 진하게 변경
+          // 그림자 효과
+          shadowColor: "#000",
+          shadowOffset: {
+            width: 0,
+            height: 0,
+          },
+          shadowOpacity: 0.1,
+          shadowRadius: 20,
+          // 웹 전용 box-shadow (NativeWind나 style prop으로 호환)
+          // @ts-ignore
+          boxShadow: '0 0 20px rgba(0,0,0,0.1)', 
+          overflow: 'hidden',     // 둥근 모서리 등이 삐져나가지 않게
         } : { flex: 1, width: '100%' }}
       >
-        <View style={{ flex: 1, width: '100%', height: '100%' }}>
+        {/* 네비게이션 스택 */}
+        <View style={{ flex: 1 }}>
           <Stack screenOptions={screenOptions}>
             <Stack.Screen name="home" options={{ headerShown: false }} />
             <Stack.Screen name="index" options={{ headerShown: false }} />
