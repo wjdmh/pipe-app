@@ -1,7 +1,7 @@
 import "../global.css";
 import "../shim";
 import { Stack } from 'expo-router';
-import { View, Platform, LogBox } from 'react-native'; // [Change] LogBox 추가
+import { View, Platform, LogBox } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { getResponsiveContainer, getWebBackground } from "../utils/platformHelper";
 import { useEffect } from 'react';
@@ -10,10 +10,10 @@ import * as SplashScreen from 'expo-splash-screen';
 
 // [Architect's Fix] 콘솔 노이즈 제거
 LogBox.ignoreLogs([
-  'Blocked aria-hidden on an element', // React Navigation Web 접근성 경고
-  'props.pointerEvents is deprecated', // 구형 라이브러리 호환성
-  'shadow* style props are deprecated', // NativeWind/RNW 그림자 경고
-  'TouchableWithoutFeedback is deprecated', // 아직 남아있을 수 있는 컴포넌트 경고
+  'Blocked aria-hidden on an element',
+  'props.pointerEvents is deprecated',
+  'shadow* style props are deprecated',
+  'TouchableWithoutFeedback is deprecated',
 ]);
 
 // [Architect's Fix] 스플래시 스크린 방어 로직
@@ -56,10 +56,24 @@ export default function RootLayout() {
   } as const;
 
   return (
-    <View className={getWebBackground()}>
+    // 1. [Fix] 전체 배경: flex: 1을 명시하여 브라우저 전체 높이를 사용
+    <View style={{ flex: 1 }} className={getWebBackground()}>
       <StatusBar style="auto" />
       
-      <View className={getResponsiveContainer()}>
+      {/* 2. [Fix] 앱 컨테이너: 높이 100% 강제 지정 및 PC 화면 중앙 정렬 */}
+      <View 
+        className={getResponsiveContainer()} 
+        style={{ 
+          flex: 1, 
+          width: '100%', 
+          maxWidth: 480,        /* PC에서 모바일 너비 유지 */
+          marginHorizontal: 'auto', /* 화면 중앙 정렬 */
+          height: '100%',       /* ⭐ 핵심: 이게 없으면 내용물이 잘림 */
+          overflow: 'hidden',    /* 둥근 모서리 등 스타일 유지 */
+          display: 'flex',       /* Flexbox 동작 보장 */
+          flexDirection: 'column' 
+        }}
+      >
         <View style={{ flex: 1, width: '100%', height: '100%' }}>
           <Stack screenOptions={screenOptions}>
             <Stack.Screen name="home" options={{ headerShown: false }} />
