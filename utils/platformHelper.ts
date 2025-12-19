@@ -12,8 +12,8 @@ export const isMobile = Platform.OS === 'ios' || Platform.OS === 'android';
  */
 export const getResponsiveContainer = () => {
   if (isWeb) {
-    return 'w-full max-w-[500px] self-center h-full shadow-xl bg-white'; 
-    // 설명: 너비 100%지만 최대 500px 제한, 중앙 정렬, 높이 꽉 채움, 그림자 효과, 배경 흰색
+    // [수정] mx-auto 추가 (이게 있어야 가로 중앙으로 옵니다!)
+    return 'w-full max-w-[500px] mx-auto h-full shadow-xl bg-white'; 
   }
   return 'flex-1'; // 모바일은 기본값
 };
@@ -22,5 +22,6 @@ export const getResponsiveContainer = () => {
  * 웹 배경색 (회색 처리하여 앱이 돋보이게 함)
  */
 export const getWebBackground = () => {
-  return isWeb ? 'flex-1 bg-gray-100 justify-center' : 'flex-1 bg-white';
+  // [수정] items-center 추가 (자식 요소를 가로축 가운데로 정렬)
+  return isWeb ? 'flex-1 bg-gray-100 justify-center items-center' : 'flex-1 bg-white';
 };
