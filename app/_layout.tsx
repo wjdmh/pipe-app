@@ -3,7 +3,6 @@ import "../shim";
 import { Stack } from 'expo-router';
 import { View, Platform, LogBox } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import { getResponsiveContainer, getWebBackground } from "../utils/platformHelper";
 import { useEffect } from 'react';
 import { useFonts } from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
@@ -16,14 +15,9 @@ LogBox.ignoreLogs([
   'TouchableWithoutFeedback is deprecated',
 ]);
 
-// [Architect's Fix] 스플래시 스크린 방어 로직
 try {
-  SplashScreen.preventAutoHideAsync().catch(() => {
-    console.warn("[Layout] Splash Screen preventAutoHide failed - continuing anyway.");
-  });
-} catch (e) {
-  // ignore errors
-}
+  SplashScreen.preventAutoHideAsync().catch(() => {});
+} catch (e) {}
 
 export default function RootLayout() {
   const [loaded, error] = useFonts({
@@ -39,40 +33,40 @@ export default function RootLayout() {
 
   useEffect(() => {
     if (loaded || error) {
-      SplashScreen.hideAsync().catch((e) => {
-        console.warn("[Layout] Failed to hide splash screen:", e);
-      });
+      SplashScreen.hideAsync().catch((e) => {});
     }
   }, [loaded, error]);
 
-  if (!loaded && !error) {
-    return null;
-  }
+  if (!loaded && !error) return null;
 
-  // [Architect's Fix] 웹 UX 최적화 (애니메이션 제거)
   const screenOptions = {
     headerShown: false,
     animation: Platform.OS === 'web' ? 'none' : 'default', 
   } as const;
 
+  // [Web Helper] 웹 환경 여부 확인
+  const isWeb = Platform.OS === 'web';
+
   return (
-    // 1. [Fix] 전체 배경: flex: 1을 명시하여 브라우저 전체 높이를 사용
-    <View style={{ flex: 1 }} className={getWebBackground()}>
+    // 1. [Outer] 배경 및 정렬 컨테이너
+    // items-center: 자식 요소(앱 화면)를 가로축 가운데로 강제 정렬 (핵심!)
+    <View 
+      style={{ flex: 1 }} 
+      className={isWeb ? "flex-1 bg-gray-100 items-center" : "flex-1 bg-white"}
+    >
       <StatusBar style="auto" />
       
-      {/* 2. [Fix] 앱 컨테이너: 높이 100% 강제 지정 및 PC 화면 중앙 정렬 */}
+      {/* 2. [Inner] 앱 실제 화면 컨테이너 */}
+      {/* maxWidth: 480 (PC에서 모바일 비율 유지) */}
       <View 
-        className={getResponsiveContainer()} 
-        style={{ 
-          flex: 1, 
+        style={isWeb ? { 
           width: '100%', 
-          maxWidth: 480,        /* PC에서 모바일 너비 유지 */
-          marginHorizontal: 'auto', /* 화면 중앙 정렬 */
-          height: '100%',       /* ⭐ 핵심: 이게 없으면 내용물이 잘림 */
-          overflow: 'hidden',    /* 둥근 모서리 등 스타일 유지 */
-          display: 'flex',       /* Flexbox 동작 보장 */
-          flexDirection: 'column' 
-        }}
+          maxWidth: 480, 
+          height: '100%',
+          // 그림자 효과를 스타일에 직접 주입 (Tailwind 무시 방지)
+          boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)' 
+        } : { flex: 1, width: '100%' }}
+        className="bg-white w-full h-full"
       >
         <View style={{ flex: 1, width: '100%', height: '100%' }}>
           <Stack screenOptions={screenOptions}>
