@@ -1,10 +1,9 @@
 import { ExpoConfig, ConfigContext } from 'expo/config';
 
 export default ({ config }: ConfigContext): ExpoConfig => {
-  // [Web Fix] GitHub Pages 배포를 위한 서브 경로 설정
-  // 주의: 저장소 이름 뒤에 반드시 슬래시(/)를 붙여야 경로 오류를 방지할 수 있습니다.
-  const baseUrl = '/pipe-app/'; 
-
+  // [Vercel Fix] Vercel 배포는 루트 경로(/)를 사용하므로 baseUrl을 비워둡니다.
+  // GitHub Pages용 설정('/pipe-app/')은 삭제했습니다.
+  
   return {
     ...config,
     name: "Pipe",
@@ -46,8 +45,8 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     ],
     experiments: {
       "typedRoutes": true,
-      // 👇 GitHub Pages 하위 경로 배포 설정 (엑박 방지 핵심 코드)
-      "baseUrl": baseUrl 
+      // baseUrl 설정을 삭제하거나 주석 처리하여 기본값(/)을 사용하게 합니다.
+      // "baseUrl": "/pipe-app/"  <-- 이 줄이 문제였습니다.
     }
   };
 };
