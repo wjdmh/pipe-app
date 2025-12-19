@@ -1,7 +1,11 @@
 /** @type {import('tailwindcss').Config} */
 module.exports = {
-  // 1. 스타일을 적용할 파일 경로 설정 (app 폴더와 components 폴더 감시)
-  content: ["./app/**/*.{js,jsx,ts,tsx}", "./components/**/*.{js,jsx,ts,tsx}"],
+  // 👇 여기에 "./utils/..." 를 꼭 추가해야 platformHelper.ts의 스타일이 먹힙니다!
+  content: [
+    "./app/**/*.{js,jsx,ts,tsx}", 
+    "./components/**/*.{js,jsx,ts,tsx}",
+    "./utils/**/*.{js,jsx,ts,tsx}" 
+  ],
   presets: [require("nativewind/preset")],
   theme: {
     extend: {},
