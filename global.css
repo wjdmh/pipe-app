@@ -2,4 +2,9 @@
 @tailwind components;
 @tailwind utilities;
 
-/* 폰트 로딩 관련 @font-face 코드 싹 다 지우세요. _layout.tsx에서 이미 하고 있습니다. */
+/* [필수] 웹에서 화면 높이를 꽉 채우기 위한 설정 */
+html, body, #root {
+  height: 100%;
+}
+
+/* 폰트 로딩 관련... (기존 코드 유지) */
