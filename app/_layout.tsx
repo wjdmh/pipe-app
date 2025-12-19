@@ -7,7 +7,7 @@ import { useEffect } from 'react';
 import { useFonts } from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
 
-// [Architect's Fix] 콘솔 노이즈 제거
+// 콘솔 경고 무시
 LogBox.ignoreLogs([
   'Blocked aria-hidden on an element',
   'props.pointerEvents is deprecated',
@@ -44,29 +44,32 @@ export default function RootLayout() {
     animation: Platform.OS === 'web' ? 'none' : 'default', 
   } as const;
 
-  // [Web Helper] 웹 환경 여부 확인
   const isWeb = Platform.OS === 'web';
 
   return (
-    // 1. [Outer] 배경 및 정렬 컨테이너
-    // items-center: 자식 요소(앱 화면)를 가로축 가운데로 강제 정렬 (핵심!)
+    // [1. 바깥 배경]
+    // alignItems: 'center' -> 자식 요소를 가로축 중앙으로 정렬
     <View 
-      style={{ flex: 1 }} 
-      className={isWeb ? "flex-1 bg-gray-100 items-center" : "flex-1 bg-white"}
+      style={isWeb ? {
+        flex: 1,
+        backgroundColor: '#f3f4f6', // 회색 배경
+        alignItems: 'center',       // ⭐ 핵심 1: 플렉스 박스 중앙 정렬
+        width: '100%',
+      } : { flex: 1, backgroundColor: 'white' }}
     >
       <StatusBar style="auto" />
       
-      {/* 2. [Inner] 앱 실제 화면 컨테이너 */}
-      {/* maxWidth: 480 (PC에서 모바일 비율 유지) */}
+      {/* [2. 앱 컨테이너] */}
+      {/* marginHorizontal: 'auto' -> 브라우저에서 좌우 여백 자동 계산 (강제 중앙 정렬) */}
       <View 
         style={isWeb ? { 
           width: '100%', 
           maxWidth: 480, 
           height: '100%',
-          // 그림자 효과를 스타일에 직접 주입 (Tailwind 무시 방지)
-          boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)' 
+          marginHorizontal: 'auto',  // ⭐ 핵심 2: 마진 오토 (치트키)
+          backgroundColor: 'white',
+          boxShadow: '0 0 10px rgba(0,0,0,0.1)' // 그림자 조금 진하게 변경
         } : { flex: 1, width: '100%' }}
-        className="bg-white w-full h-full"
       >
         <View style={{ flex: 1, width: '100%', height: '100%' }}>
           <Stack screenOptions={screenOptions}>
