@@ -1,12 +1,19 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, FlatList, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { 
+  View, 
+  Text, 
+  TouchableOpacity, 
+  FlatList, 
+  StatusBar, 
+  ActivityIndicator 
+} from 'react-native';
 import { collection, query, orderBy, onSnapshot, limit } from 'firebase/firestore';
 import { db } from '../../configs/firebaseConfig';
 import { useRouter } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-// [Fix] 팀 데이터 타입 정의 (isDeleted 속성 추가)
+// [Type] 팀 데이터 타입 정의
 interface TeamRankInfo {
   id: string;
   name: string;
@@ -17,7 +24,7 @@ interface TeamRankInfo {
   isDeleted?: boolean;
 }
 
-// --- [Data] KUSF 전체 데이터 ---
+// --- [Data] KUSF 전체 데이터 (기존 데이터 유지) ---
 export const KUSF_TEAMS: TeamRankInfo[] = [
   // [남자부]
   { id: 'm1', name: '서울대학교 배구부', affiliation: '서울대학교', gender: 'male', stats: { wins: 8, losses: 1, points: 25, total: 9 } },
@@ -182,25 +189,13 @@ export const KUSF_TEAMS: TeamRankInfo[] = [
   { id: 'f68', name: '최후의 발악', affiliation: '숙명여자대학교', gender: 'female', stats: { wins: 0, losses: 1, points: 1, total: 1 } },
 ];
 
-const COLORS = {
-  background: '#F2F4F6',
-  surface: '#FFFFFF',
-  primary: '#3182F6',
-  textMain: '#191F28',
-  textSub: '#4E5968',
-  textCaption: '#8B95A1',
-  border: '#E5E8EB',
-  male: '#3182F6',
-  female: '#FF6B6B',
-};
-
 export default function RankingScreen() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<'male' | 'female'>('male');
   const [rankingList, setRankingList] = useState<TeamRankInfo[]>([]);
 
   useEffect(() => {
-    // 1. [Cost & Performance Fix] 상위 50개 팀만 가져오도록 제한
+    // 1. [Firebase] 팀 데이터 실시간 리스너 (DB 업데이트 반영)
     const q = query(
         collection(db, "teams"), 
         orderBy("stats.points", "desc"), 
@@ -217,35 +212,35 @@ export default function RankingScreen() {
     return () => unsubscribe();
   }, [activeTab]);
 
+  // 2. [Data Merge] 기본 KUSF 데이터 + DB 데이터 병합 및 정렬
   const mergeAndSortTeams = (dbTeams: any[]) => {
     let baseList: TeamRankInfo[] = [...KUSF_TEAMS].filter(t => t.gender === activeTab);
 
     dbTeams.forEach(dbTeam => {
         if (dbTeam.gender !== activeTab) return;
-
         const index = baseList.findIndex(t => t.id === dbTeam.kusfId || t.name === dbTeam.name);
 
         if (index !== -1) {
-            // [기존 팀 업데이트] DB의 최신 전적으로 덮어쓰기
+            // [업데이트] DB에 데이터가 있으면 최신 상태로 덮어쓰기
             baseList[index] = { 
                 ...baseList[index], 
                 ...dbTeam, 
                 stats: dbTeam.stats || baseList[index].stats 
             };
         } else {
-            // [신규 팀 추가] KUSF 리스트에 없던 자체 생성 팀 추가
+            // [추가] DB에만 있는 새로운 팀 추가
             baseList.push({
                 id: dbTeam.id,
                 name: dbTeam.name,
                 affiliation: dbTeam.affiliation,
                 gender: dbTeam.gender,
                 stats: dbTeam.stats || { wins: 0, losses: 0, points: 0, total: 0 },
-                isDeleted: dbTeam.isDeleted // 식제 여부 확인용
+                isDeleted: dbTeam.isDeleted
             });
         }
     });
 
-    // 3. 승점 순 정렬 (승점 -> 승리 수 -> 총 경기 수)
+    // 3. 순위 정렬 (승점 > 승리 수 > 경기 수)
     baseList.sort((a, b) => {
         if (b.stats.points !== a.stats.points) return b.stats.points - a.stats.points;
         if (b.stats.wins !== a.stats.wins) return b.stats.wins - a.stats.wins;
@@ -255,66 +250,171 @@ export default function RankingScreen() {
     setRankingList(baseList);
   };
 
-  const themeColor = activeTab === 'male' ? COLORS.male : COLORS.female;
+  // [UI Partition] 1~3위(Podium)와 4위~(List) 분리
+  const topThree = rankingList.slice(0, 3);
+  const restList = rankingList.slice(3);
 
-  const renderRankItem = ({ item, index }: { item: TeamRankInfo, index: number }) => {
-    const rank = index + 1;
-    let rankColor = COLORS.textSub;
-    let icon = null;
+  // [Component] 포디움 아이템 (1, 2, 3위)
+  const renderPodiumItem = (item: TeamRankInfo, place: 1 | 2 | 3) => {
+    let iconColor = '#D1D5DB'; 
+    let height = 110;          
+    let bgColor = 'bg-gray-100';
+    let rankText = '2';
 
-    if (rank === 1) { rankColor = '#FFD700'; icon = <FontAwesome5 name="crown" size={14} color="#FFD700" className="mb-1" />; }
-    else if (rank === 2) { rankColor = '#C0C0C0'; } 
-    else if (rank === 3) { rankColor = '#CD7F32'; }
+    if (place === 1) {
+      iconColor = '#F59E0B'; 
+      height = 140;
+      bgColor = 'bg-amber-50';
+      rankText = '1';
+    } else if (place === 3) {
+      iconColor = '#B45309'; 
+      height = 100;           
+      bgColor = 'bg-orange-50';
+      rankText = '3';
+    }
 
     return (
-      <View className="p-5 rounded-[24px] mb-3 flex-row items-center justify-between bg-white shadow-sm border border-gray-200">
-        <View className="flex-row items-center flex-1">
-            <View className="w-10 items-center justify-center mr-3">
-                {icon}
-                <Text className="font-black text-xl italic" style={{ color: rankColor }}>{rank}</Text>
-            </View>
-            <View className="flex-1">
-                <Text className="font-bold text-lg text-[#191F28] mb-0.5" numberOfLines={1}>{item.name}</Text>
-                <View className="flex-row items-center">
-                    <Text className="text-sm text-[#8B95A1] mr-2">{item.affiliation}</Text>
-                    {item.isDeleted && <View className="bg-gray-200 px-1.5 rounded"><Text className="text-[10px] text-gray-500">해체됨</Text></View>}
-                </View>
-            </View>
+      <View className="items-center justify-end" style={{ width: '30%', height: 170 }}>
+        {/* 왕관 및 순위 */}
+        <View className="mb-2 items-center">
+            {place === 1 && <FontAwesome5 name="crown" size={16} color={iconColor} style={{ marginBottom: 4 }} />}
+            <Text className={`font-black text-[15px] ${place === 1 ? 'text-amber-500' : place === 2 ? 'text-gray-400' : 'text-orange-700'}`}>
+                {rankText}위
+            </Text>
         </View>
-        <View className="items-end">
-            <Text className="font-extrabold text-xl" style={{ color: themeColor }}>{item.stats.points}점</Text>
-            <Text className="text-xs text-[#8B95A1] font-medium">{item.stats.wins}승 {item.stats.losses}패</Text>
+
+        {/* 카드 영역 */}
+        <View 
+            className={`w-full rounded-t-xl items-center justify-start pt-5 px-1 shadow-sm ${bgColor}`}
+            style={{ height: height }}
+        >
+            <View className="w-10 h-10 rounded-full bg-white items-center justify-center mb-2 shadow-sm">
+                {/* 로고 대신 아이콘 사용 */}
+                <FontAwesome5 name="user-friends" size={16} color={iconColor} />
+            </View>
+            <Text className="text-gray-900 font-bold text-[13px] text-center mb-1" numberOfLines={1}>
+                {item.name}
+            </Text>
+            <Text className="text-gray-500 text-[11px] font-medium text-center" numberOfLines={1}>
+                {item.affiliation}
+            </Text>
+            <Text className="text-gray-900 text-[12px] font-bold mt-1">
+                {item.stats.points}점
+            </Text>
+        </View>
+      </View>
+    );
+  };
+
+  // [Component] 리스트 아이템 (4위 ~) - 홈 화면 스타일과 100% 동일하게 맞춤
+  const renderListItem = ({ item, index }: { item: TeamRankInfo, index: number }) => {
+    // 실제 순위: 리스트 인덱스(0부터 시작) + 4위부터 시작 = index + 4
+    const realRank = index + 4;
+    
+    // 승률 계산 (소수점 반올림)
+    const winRate = item.stats.total > 0 
+        ? Math.round((item.stats.wins / item.stats.total) * 100) 
+        : 0;
+
+    return (
+      <View className="flex-row items-center py-4 px-5 border-b border-gray-100 bg-white">
+        {/* 1. 순위 (좌측) */}
+        <View className="w-[50px] mr-3 items-center justify-center">
+            <Text className="text-[18px] font-bold text-gray-400 italic">{realRank}</Text>
+        </View>
+
+        {/* 2. 팀 정보 (중앙) */}
+        <View className="flex-1 justify-center pr-2">
+            <Text className="text-[16px] font-bold text-gray-900 mb-0.5" numberOfLines={1}>
+                {item.name}
+            </Text>
+            <Text className="text-[13px] font-medium text-gray-500" numberOfLines={1}>
+                {item.affiliation} · {item.stats.wins}승 {item.stats.losses}패 ({item.stats.points}점)
+            </Text>
+        </View>
+
+        {/* 3. 승률 뱃지 (우측) */}
+        <View className="ml-1 shrink-0">
+            <View className="bg-blue-50 px-2.5 py-1.5 rounded-lg">
+                <Text className="text-blue-600 text-[11px] font-bold">
+                    승률 {winRate}%
+                </Text>
+            </View>
         </View>
       </View>
     );
   };
 
   return (
-    <SafeAreaView className="flex-1" style={{ backgroundColor: COLORS.background }} edges={['top']}>
-      <View className="px-5 py-3 flex-row items-center" style={{ backgroundColor: COLORS.background }}>
-         <TouchableOpacity onPress={() => router.back()} className="p-3 -ml-3 rounded-full">
-             <FontAwesome5 name="arrow-left" size={20} color={COLORS.textMain} />
-         </TouchableOpacity>
-         <Text className="text-xl font-extrabold ml-2" style={{ color: COLORS.textMain }}>전체 순위</Text>
+    <SafeAreaView className="flex-1 bg-white" edges={['top']}>
+      <StatusBar barStyle="dark-content" />
+
+      {/* 1. Header */}
+      <View className="bg-white px-5 pt-2 pb-0 flex-row items-center mb-4">
+        <TouchableOpacity 
+            onPress={() => router.back()} 
+            className="p-2 -ml-2 mr-2"
+            activeOpacity={0.6}
+        >
+            <FontAwesome5 name="arrow-left" size={20} color="#111827" />
+        </TouchableOpacity>
+        <Text className="text-xl font-extrabold text-gray-900 tracking-tighter">전체 순위</Text>
       </View>
 
-      <View className="px-5 mb-2">
-          <View className="flex-row bg-gray-200 p-1 rounded-2xl mb-4">
-              <TouchableOpacity onPress={() => setActiveTab('male')} className={`flex-1 py-3 rounded-xl items-center ${activeTab === 'male' ? 'bg-white shadow-sm' : ''}`}>
-                  <Text className={`font-bold ${activeTab === 'male' ? 'text-[#3182F6]' : 'text-[#8B95A1]'}`}>남자부</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => setActiveTab('female')} className={`flex-1 py-3 rounded-xl items-center ${activeTab === 'female' ? 'bg-white shadow-sm' : ''}`}>
-                  <Text className={`font-bold ${activeTab === 'female' ? 'text-[#FF6B6B]' : 'text-[#8B95A1]'}`}>여자부</Text>
-              </TouchableOpacity>
-          </View>
+      {/* 2. Tabs */}
+      <View className="flex-row gap-6 px-5 mb-2 border-b border-gray-100">
+        <TouchableOpacity 
+            onPress={() => setActiveTab('male')}
+            activeOpacity={0.8}
+            className="pb-2"
+            style={{ borderBottomWidth: 2, borderBottomColor: activeTab === 'male' ? '#111827' : 'transparent' }}
+        >
+            <Text className={`text-[16px] font-bold ${activeTab === 'male' ? 'text-gray-900' : 'text-gray-400'}`}>남자부</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity 
+            onPress={() => setActiveTab('female')}
+            activeOpacity={0.8}
+            className="pb-2"
+            style={{ borderBottomWidth: 2, borderBottomColor: activeTab === 'female' ? '#111827' : 'transparent' }}
+        >
+            <Text className={`text-[16px] font-bold ${activeTab === 'female' ? 'text-gray-900' : 'text-gray-400'}`}>여자부</Text>
+        </TouchableOpacity>
       </View>
 
+      {/* 3. List Content */}
       <FlatList
-        data={rankingList}
-        renderItem={renderRankItem}
+        data={restList} // 4위부터 리스트로 출력
         keyExtractor={(item, index) => item.id ? item.id.toString() : index.toString()}
-        contentContainerClassName="px-5 pb-10"
+        renderItem={renderListItem}
+        contentContainerStyle={{ paddingBottom: 40 }}
         showsVerticalScrollIndicator={false}
+        ListHeaderComponent={
+            // [Top 3 Section] 포디움 (리스트 헤더로 삽입)
+            <View className="bg-white px-5 pt-4 pb-8">
+                <Text className="text-gray-900 font-bold text-lg mb-6">🏆 명예의 전당</Text>
+                
+                {/* 포디움 배치: 2위(왼쪽) - 1위(가운데) - 3위(오른쪽) */}
+                <View className="flex-row items-end justify-between px-2">
+                    {/* 2위 */}
+                    {topThree[1] ? renderPodiumItem(topThree[1], 2) : <View style={{ width: '30%' }} />}
+                    
+                    {/* 1위 */}
+                    {topThree[0] ? renderPodiumItem(topThree[0], 1) : <View style={{ width: '30%' }} />}
+                    
+                    {/* 3위 */}
+                    {topThree[2] ? renderPodiumItem(topThree[2], 3) : <View style={{ width: '30%' }} />}
+                </View>
+
+                {/* 구분선 */}
+                <View className="h-[1px] bg-gray-100 mt-8" />
+            </View>
+        }
+        ListEmptyComponent={
+            <View className="items-center justify-center py-20">
+                <Text className="text-gray-400 font-medium">데이터가 없습니다.</Text>
+            </View>
+        }
       />
     </SafeAreaView>
   );
