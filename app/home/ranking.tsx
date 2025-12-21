@@ -24,7 +24,7 @@ interface TeamRankInfo {
   isDeleted?: boolean;
 }
 
-// --- [Data] KUSF 전체 데이터 (기존 데이터 유지) ---
+// --- [Data] KUSF 전체 데이터 ---
 export const KUSF_TEAMS: TeamRankInfo[] = [
   // [남자부]
   { id: 'm1', name: '서울대학교 배구부', affiliation: '서울대학교', gender: 'male', stats: { wins: 8, losses: 1, points: 25, total: 9 } },
@@ -192,10 +192,14 @@ export const KUSF_TEAMS: TeamRankInfo[] = [
 export default function RankingScreen() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<'male' | 'female'>('male');
-  const [rankingList, setRankingList] = useState<TeamRankInfo[]>([]);
+  
+  // 초기 상태 로딩
+  const getInitialData = (gender: string) => KUSF_TEAMS.filter(t => t.gender === gender).sort((a, b) => b.stats.points - a.stats.points);
+  const [rankingList, setRankingList] = useState<TeamRankInfo[]>(getInitialData('male'));
 
   useEffect(() => {
-    // 1. [Firebase] 팀 데이터 실시간 리스너
+    setRankingList(getInitialData(activeTab));
+
     const q = query(
         collection(db, "teams"), 
         orderBy("stats.points", "desc"), 
@@ -233,7 +237,6 @@ export default function RankingScreen() {
         }
     });
 
-    // 승점 > 승리 > 경기수 순 정렬
     baseList.sort((a, b) => {
         if (b.stats.points !== a.stats.points) return b.stats.points - a.stats.points;
         if (b.stats.wins !== a.stats.wins) return b.stats.wins - a.stats.wins;
@@ -246,10 +249,8 @@ export default function RankingScreen() {
   const topThree = rankingList.slice(0, 3);
   const restList = rankingList.slice(3);
 
-  // [Component] 포디움 아이템 (디자인 대폭 개선)
+  // [UI] 포디움 아이템
   const renderPodiumItem = (item: TeamRankInfo, place: 1 | 2 | 3) => {
-    // 컬러 팔레트 (Professional Look)
-    // 1위: Amber(골드), 2위: Slate(실버), 3위: Orange(브론즈) - 채도 조절
     const rankColors = {
         1: { border: 'border-amber-300', bg: 'bg-white', text: 'text-amber-500', shadow: 'shadow-amber-200' },
         2: { border: 'border-slate-300', bg: 'bg-white', text: 'text-slate-500', shadow: 'shadow-slate-200' },
@@ -257,16 +258,17 @@ export default function RankingScreen() {
     };
     
     const style = rankColors[place];
-    // 높이 차등: 1위는 독보적으로, 2/3위는 보좌하듯이
     const height = place === 1 ? 160 : 130;
-    const translateY = place === 1 ? 0 : 15; // 2,3위를 살짝 내려서 1위 강조
+    const translateY = place === 1 ? 0 : 15; 
 
     return (
-      <View 
+      <TouchableOpacity 
         className="items-center justify-end px-1" 
-        style={{ flex: 1, transform: [{ translateY }] }} // flex: 1로 너비 균등 분할 + 간격 확보
+        style={{ flex: 1, transform: [{ translateY }] }}
+        // 👇 [Fix] router.push에 as any를 사용하여 타입 에러 우회
+        onPress={() => router.push(`/team/${item.id}` as any)} 
+        activeOpacity={0.9}
       >
-        {/* 순위 아이콘 (왕관/숫자) */}
         <View className="items-center mb-2 z-10">
             {place === 1 && <FontAwesome5 name="crown" size={18} color="#F59E0B" style={{ marginBottom: 4 }} />}
             <Text className={`font-black italic text-[16px] ${style.text}`}>
@@ -274,21 +276,18 @@ export default function RankingScreen() {
             </Text>
         </View>
 
-        {/* 카드 본문 (Card Design) */}
         <View 
             className={`w-full rounded-2xl items-center justify-start pt-5 px-2 border-t-4 shadow-sm ${style.bg} ${style.border}`}
             style={{ height }}
         >
-            {/* 팀 로고 자리 (원형) */}
             <View className="w-10 h-10 rounded-full bg-gray-50 items-center justify-center mb-2 shadow-sm border border-gray-100">
                 <FontAwesome5 name="shield-alt" size={14} color={place === 1 ? '#F59E0B' : '#9CA3AF'} />
             </View>
             
-            {/* 텍스트 영역: 잘림 방지 (numberOfLines={2}) + 높이 확보 */}
             <View className="w-full items-center">
                 <Text 
                     className="text-gray-900 font-bold text-[13px] text-center leading-4 mb-1" 
-                    numberOfLines={2} // ⭐ [Fix] 2줄 허용
+                    numberOfLines={2} 
                     ellipsizeMode="tail"
                 >
                     {item.name}
@@ -301,17 +300,17 @@ export default function RankingScreen() {
                 </Text>
             </View>
 
-            {/* 승점 뱃지 */}
             <View className="mt-auto mb-3 bg-gray-50 px-2 py-0.5 rounded-md">
                 <Text className="text-gray-900 text-[12px] font-extrabold">
                     {item.stats.points} <Text className="text-[10px] font-normal text-gray-500">pts</Text>
                 </Text>
             </View>
         </View>
-      </View>
+      </TouchableOpacity>
     );
   };
 
+  // [UI] 리스트 아이템
   const renderListItem = ({ item, index }: { item: TeamRankInfo, index: number }) => {
     const realRank = index + 4;
     const winRate = item.stats.total > 0 
@@ -319,13 +318,16 @@ export default function RankingScreen() {
         : 0;
 
     return (
-      <View className="flex-row items-center py-4 px-5 border-b border-gray-50 bg-white">
-        {/* 1. 순위: 이탤릭체로 스타일리시하게 */}
+      <TouchableOpacity 
+        // 👇 [Fix] 여기도 as any 추가
+        onPress={() => router.push(`/team/${item.id}` as any)}
+        activeOpacity={0.7}
+        className="flex-row items-center py-4 px-5 border-b border-gray-50 bg-white"
+      >
         <View className="w-[40px] mr-3 items-center justify-center">
             <Text className="text-[16px] font-black text-gray-300 italic">{realRank}</Text>
         </View>
 
-        {/* 2. 정보: 가독성 강화 */}
         <View className="flex-1 justify-center pr-2">
             <View className="flex-row items-center mb-0.5">
                 <Text className="text-[15px] font-bold text-gray-900 mr-2 shrink" numberOfLines={1}>
@@ -337,7 +339,6 @@ export default function RankingScreen() {
             </Text>
         </View>
 
-        {/* 3. 승률: 미니멀한 뱃지 */}
         <View className="ml-1 shrink-0">
             <View className={`px-2 py-1 rounded-md ${winRate >= 70 ? 'bg-red-50' : 'bg-blue-50'}`}>
                 <Text className={`${winRate >= 70 ? 'text-red-600' : 'text-blue-600'} text-[11px] font-bold`}>
@@ -345,7 +346,7 @@ export default function RankingScreen() {
                 </Text>
             </View>
         </View>
-      </View>
+      </TouchableOpacity>
     );
   };
 
@@ -353,7 +354,6 @@ export default function RankingScreen() {
     <SafeAreaView className="flex-1 bg-white" edges={['top']}>
       <StatusBar barStyle="dark-content" />
 
-      {/* Header */}
       <View className="bg-white px-5 pt-2 pb-2 flex-row items-center border-b border-gray-50">
         <TouchableOpacity 
             onPress={() => router.back()} 
@@ -365,9 +365,7 @@ export default function RankingScreen() {
         <Text className="text-xl font-extrabold text-gray-900 tracking-tighter">SEASON RANKING</Text>
       </View>
 
-      {/* Tabs */}
       <View className="flex-row px-5 py-3 bg-white">
-        {/* 커스텀 탭 디자인: Pill Shape */}
         <View className="flex-1 flex-row bg-gray-100 p-1 rounded-xl">
             <TouchableOpacity 
                 onPress={() => setActiveTab('male')}
@@ -393,25 +391,20 @@ export default function RankingScreen() {
         contentContainerStyle={{ paddingBottom: 50 }}
         showsVerticalScrollIndicator={false}
         ListHeaderComponent={
-            // [Podium Section]
             <View className="bg-white px-4 pt-6 pb-8 mb-2">
                 <View className="flex-row items-center justify-center mb-8">
                      <Text className="text-gray-900 font-extrabold text-lg tracking-tight">🏆 HALL OF FAME</Text>
                 </View>
                 
-                {/* 2위 - 1위 - 3위 배치 */}
                 <View className="flex-row items-end justify-center">
-                    {/* 2위 */}
                     <View style={{ width: '32%' }}> 
                         {topThree[1] ? renderPodiumItem(topThree[1], 2) : <View style={{ height: 130 }} />} 
                     </View>
 
-                    {/* 1위 */}
                     <View style={{ width: '34%', zIndex: 10 }}> 
                         {topThree[0] ? renderPodiumItem(topThree[0], 1) : <View style={{ height: 160 }} />} 
                     </View>
 
-                    {/* 3위 */}
                     <View style={{ width: '32%' }}> 
                         {topThree[2] ? renderPodiumItem(topThree[2], 3) : <View style={{ height: 130 }} />} 
                     </View>
@@ -420,7 +413,7 @@ export default function RankingScreen() {
         }
         ListEmptyComponent={
             <View className="items-center justify-center py-20">
-                <Text className="text-gray-300 font-bold">랭킹 데이터 집계 중</Text>
+                <Text className="text-gray-300 font-bold">랭킹 데이터가 없습니다.</Text>
             </View>
         }
       />
