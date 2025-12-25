@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
-// 👇 [Fix] 경로 수정: ../ -> ../../ (최상위 configs 폴더 참조)
+// 👇 [Path Check] app/context/UserContext.tsx -> ../../configs
 import { auth, db } from '../../configs/firebaseConfig';
 
 // [타입 정의]
@@ -9,7 +9,7 @@ export interface UserData {
   uid: string;
   email: string | null;
   name?: string;
-  teamId?: string | null; // 핵심: 이 값이 있어야 팀 유무를 판단하여 "팀 찾기" 화면을 건너뜀
+  teamId?: string | null;
   role?: string;
   appliedTeamId?: string | null;
   position?: string;
@@ -25,7 +25,7 @@ interface UserContextType {
 // Context 생성
 const UserContext = createContext<UserContextType>({
   user: null,
-  loading: true,
+  loading: true, // 초기 로딩 상태는 true
   refreshUser: async () => {},
 });
 
@@ -49,36 +49,44 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
             uid, 
             email: auth.currentUser?.email || null,
             name: data.name,
-            teamId: data.teamId, // 여기서 팀 정보를 가져옵니다
+            teamId: data.teamId,
             role: data.role,
             appliedTeamId: data.appliedTeamId,
             position: data.position,
             affiliation: data.affiliation,
         });
       } else {
+        // DB에 정보가 없더라도 로그인은 유지 (신규 유저 등)
         setUser({ uid, email: auth.currentUser?.email || null });
       }
     } catch (e) {
       console.error("[UserContext] Fetch Error:", e);
+      // 👇 [Fix] 에러가 발생해도 로그인은 풀리지 않도록 최소 정보로 설정
+      // 이렇게 해야 DB 오류 시에도 '로그인 창'으로 튕기지 않고, '재시도' 등을 안내할 수 있음
+      setUser({ uid, email: auth.currentUser?.email || null });
     }
   };
 
   // 정보 강제 새로고침 (팀 생성/가입 직후 사용)
   const refreshUser = async () => {
     if (auth.currentUser) {
+      // 로딩 상태를 잠깐 주어서 UI가 갱신되도록 유도 가능 (선택사항)
       await fetchUserData(auth.currentUser.uid);
     }
   };
 
   useEffect(() => {
+    // Auth 상태 감지 리스너
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-      setLoading(true);
+      setLoading(true); // 상태 변경 시작 시 로딩 ON
       if (currentUser) {
+        // 로그인 상태라면 DB 정보 조회
         await fetchUserData(currentUser.uid);
       } else {
+        // 로그아웃 상태
         setUser(null);
       }
-      setLoading(false);
+      setLoading(false); // 작업 완료 후 로딩 OFF
     });
 
     return () => unsubscribe();
