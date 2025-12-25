@@ -104,7 +104,12 @@ export default function TeamDetailScreen() {
   if (!team) return null;
 
   return (
-    <SafeAreaView className="flex-1 bg-white" edges={['top']}>
+    // 👇 [Fix] Web 패딩 추가 (SafeAreaView 이슈 해결)
+    <SafeAreaView 
+        className="flex-1 bg-white" 
+        edges={['top']}
+        style={{ paddingTop: Platform.OS === 'web' ? 20 : 0 }}
+    >
       {/* 1. Header */}
       <View className="px-5 py-3 flex-row items-center justify-between bg-white border-b border-gray-100">
         <TouchableOpacity onPress={() => router.back()} className="p-2 -ml-2">

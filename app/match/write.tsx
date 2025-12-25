@@ -26,6 +26,7 @@ export default function MatchWriteScreen() {
   const [step, setStep] = useState(1); // 1: 기본정보, 2: 일시/장소, 3: 상세정보
   const [submitting, setSubmitting] = useState(false);
   const [teamInfo, setTeamInfo] = useState<any>(null);
+  const [pageLoading, setPageLoading] = useState(true); // 페이지 자체 로딩 상태
 
   // Form State
   const [matchType, setMatchType] = useState<'6man' | '9man'>('6man');
@@ -40,41 +41,49 @@ export default function MatchWriteScreen() {
 
   // 1. 권한 및 팀 정보 체크
   useEffect(() => {
+    // 유저 정보 로딩 중이면 아무것도 하지 않음 (리다이렉트 방지)
     if (userLoading) return;
 
-    if (!user) {
-        Alert.alert("알림", "로그인이 필요합니다.");
-        return router.replace('/auth/login' as any);
-    }
-    
-    if (!user.teamId) {
-        Alert.alert("알림", "팀에 소속되어 있어야 매치를 생성할 수 있습니다.");
-        return router.back();
-    }
+    const init = async () => {
+        if (!user) {
+            Alert.alert("알림", "로그인이 필요합니다.");
+            return router.replace('/auth/login' as any);
+        }
+        
+        if (!user.teamId) {
+            Alert.alert("알림", "팀에 소속되어 있어야 매치를 생성할 수 있습니다.");
+            return router.back();
+        }
 
-    // 팀 정보(이름 등) 가져오기
-    const fetchMyTeam = async () => {
+        // 팀 정보(이름 등) 가져오기
         try {
-            const teamSnap = await getDoc(doc(db, "teams", user.teamId!));
+            const teamSnap = await getDoc(doc(db, "teams", user.teamId));
             if (teamSnap.exists()) {
                 const data = teamSnap.data();
+                
+                // 팀장 권한 체크
                 if (data.captainId !== user.uid) {
                     Alert.alert("권한 없음", "팀 대표(리더)만 매치를 개설할 수 있습니다.");
                     return router.back();
                 }
+
                 setTeamInfo({ id: teamSnap.id, ...data });
-                // 기본값 설정
+                // 기본값 설정 (팀 설정 따라가기)
                 setGender(data.gender === 'female' ? 'female' : 'male'); 
                 setLocation(data.region || '');
+                setPageLoading(false); // 로딩 완료
             } else {
                 Alert.alert("오류", "팀 정보를 찾을 수 없습니다.");
                 router.back();
             }
         } catch (e) {
             console.error(e);
+            Alert.alert("오류", "팀 정보를 불러오는 중 문제가 발생했습니다.");
+            router.back();
         }
     };
-    fetchMyTeam();
+
+    init();
   }, [user, userLoading]);
 
   // 2. 날짜 유효성 검사 및 포맷팅 (YYYY.MM.DD)
@@ -149,9 +158,15 @@ export default function MatchWriteScreen() {
             applicants: [] // 신청자 목록 초기화
         });
 
-        Alert.alert("등록 완료", "매치가 성공적으로 등록되었습니다.", [
-            { text: "확인", onPress: () => router.replace('/home' as any) }
-        ]);
+        const successMsg = "매치가 성공적으로 등록되었습니다.";
+        if (Platform.OS === 'web') {
+            alert(successMsg);
+            router.replace('/home');
+        } else {
+            Alert.alert("등록 완료", successMsg, [
+                { text: "확인", onPress: () => router.replace('/home' as any) }
+            ]);
+        }
     } catch (e) {
         console.error("Match Create Error:", e);
         Alert.alert("등록 실패", "매치 등록 중 오류가 발생했습니다.");
@@ -160,12 +175,18 @@ export default function MatchWriteScreen() {
     }
   };
 
-  if (userLoading || !teamInfo) {
-    return <View className="flex-1 bg-white justify-center items-center"><ActivityIndicator color="#4F46E5" /></View>;
+  // 👇 [Fix] 유저 로딩 or 팀 정보 로딩 중일 때 로딩 화면 유지 (로그인 튕김 방지)
+  if (userLoading || pageLoading || !teamInfo) {
+    return <View className="flex-1 bg-white justify-center items-center"><ActivityIndicator size="large" color="#4F46E5" /></View>;
   }
 
   return (
-    <SafeAreaView className="flex-1 bg-white" edges={['top']}>
+    // 👇 [Fix] Web 패딩 추가 (SafeAreaView 이슈 해결)
+    <SafeAreaView 
+        className="flex-1 bg-white" 
+        edges={['top']}
+        style={{ paddingTop: Platform.OS === 'web' ? 20 : 0 }}
+    >
         {/* Header */}
         <View className="px-5 py-3 border-b border-gray-100 flex-row items-center justify-between">
             <TouchableOpacity onPress={() => step === 1 ? router.back() : setStep(step - 1)} className="p-2 -ml-2">

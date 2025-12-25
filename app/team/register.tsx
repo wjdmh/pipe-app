@@ -1,17 +1,36 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, Alert, ScrollView, ActivityIndicator, FlatList, KeyboardAvoidingView, Platform, Dimensions } from 'react-native';
+import { 
+  View, 
+  Text, 
+  TextInput, 
+  TouchableOpacity, 
+  Alert, 
+  ScrollView, 
+  ActivityIndicator, 
+  FlatList, 
+  KeyboardAvoidingView, 
+  Platform 
+} from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { collection, query, getDocs, doc, getDoc, runTransaction, serverTimestamp } from 'firebase/firestore';
+// 👇 [Path Check] app/team/register.tsx -> ../../configs (2단계 위)
 import { db, auth } from '../../configs/firebaseConfig';
+// 👇 [Path Check] app/team/register.tsx -> ../home/ranking (1단계 위 -> home)
 import { KUSF_TEAMS } from '../home/ranking';
+// 👇 [New] 상태 동기화를 위해 useUser 훅 가져오기
+import { useUser } from '../context/UserContext';
 
 const REGIONS = ["서울", "경기", "인천", "강원", "충북", "충남", "대전", "세종", "전북", "전남", "광주", "경북", "경남", "대구", "울산", "부산", "제주"];
 
 export default function TeamRegister() {
   const router = useRouter();
   const { mode } = useLocalSearchParams(); // 'search' or 'create'
+  
+  // 👇 [New] 유저 상태 갱신 함수 가져오기
+  const { refreshUser } = useUser();
+
   const [step, setStep] = useState(mode === 'create' ? 'INFO_FORM' : 'SEARCH');
   const [loading, setLoading] = useState(false);
   
@@ -150,7 +169,7 @@ export default function TeamRegister() {
     setStep('VERIFY');
   };
 
-  // [수정된 부분] 가입 신청 시 유저 DB에 appliedTeamId 저장
+  // [수정된 부분] 가입 신청 시 유저 DB에 appliedTeamId 저장 + UserContext 갱신
   const sendJoinRequest = async (teamDocData: any) => {
       if (!auth.currentUser || !userInfo) return;
       setLoading(true);
@@ -184,6 +203,9 @@ export default function TeamRegister() {
                   appliedTeamId: teamDocData.docId
               });
           });
+
+          // 👇 [Fix] 전역 상태 갱신 (앱이 신청 상태임을 인지하도록 함)
+          await refreshUser();
 
           const successMsg = '가입 신청을 보냈습니다.\n대표자가 승인하면 팀원으로 등록됩니다.';
           if(Platform.OS === 'web') {
@@ -300,6 +322,10 @@ export default function TeamRegister() {
             });
         });
         
+        // 👇 [Fix] 핵심 수정: 팀 생성 성공 직후 전역 상태(UserContext) 갱신!
+        // 이 코드가 있어야 '팀 없음' -> '팀 있음'으로 앱이 인식하고 매치 생성 등이 가능해집니다.
+        await refreshUser();
+
         const successMsg = '팀 등록이 완료되었습니다!';
         if(Platform.OS === 'web') {
             window.alert(successMsg);
@@ -323,7 +349,12 @@ export default function TeamRegister() {
   if (loading) return <View className="flex-1 justify-center items-center bg-white"><ActivityIndicator size="large" color="#3182F6" /></View>;
 
   return (
-    <SafeAreaView className="flex-1 bg-white">
+    // 👇 [Fix] Web에서 상단 여백이 없는 문제 해결 (paddingTop 추가)
+    <SafeAreaView 
+      className="flex-1 bg-white" 
+      edges={['top', 'left', 'right']}
+      style={{ paddingTop: Platform.OS === 'web' ? 20 : 0 }}
+    >
       <View className="px-5 py-3 border-b border-gray-100 flex-row items-center z-10 bg-white">
         <TouchableOpacity onPress={() => router.back()} className="p-2 -ml-2">
           <FontAwesome5 name="arrow-left" size={20} color="#191F28" />

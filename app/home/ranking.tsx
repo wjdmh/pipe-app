@@ -5,9 +5,12 @@ import {
   TouchableOpacity, 
   FlatList, 
   StatusBar, 
-  Dimensions 
+  Dimensions,
+  Platform,
+  Alert
 } from 'react-native';
 import { collection, query, orderBy, onSnapshot, limit } from 'firebase/firestore';
+// 👇 [Fix] 경로 재확인 (home 폴더 기준 2단계 상위)
 import { db } from '../../configs/firebaseConfig';
 import { useRouter } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
@@ -25,6 +28,7 @@ interface TeamRankInfo {
 }
 
 // --- [Data] KUSF 전체 데이터 ---
+// 다른 파일(register.tsx)에서 import해서 쓰므로 export 유지
 export const KUSF_TEAMS: TeamRankInfo[] = [
   // [남자부]
   { id: 'm1', name: '서울대학교 배구부', affiliation: '서울대학교', gender: 'male', stats: { wins: 8, losses: 1, points: 25, total: 9 } },
@@ -221,11 +225,19 @@ export default function RankingScreen() {
 
     dbTeams.forEach(dbTeam => {
         if (dbTeam.gender !== activeTab) return;
+        
+        // 1. 기존 KUSF 팀과 매칭 (이름 또는 KUSF ID)
         const index = baseList.findIndex(t => t.id === dbTeam.kusfId || t.name === dbTeam.name);
 
         if (index !== -1) {
-            baseList[index] = { ...baseList[index], ...dbTeam, stats: dbTeam.stats || baseList[index].stats };
+            // [중요] DB 데이터로 덮어씌울 때, id도 Firestore ID로 교체됨 -> 상세 페이지 이동 가능
+            baseList[index] = { 
+                ...baseList[index], 
+                ...dbTeam, 
+                stats: dbTeam.stats || baseList[index].stats 
+            };
         } else {
+            // 2. 매칭되지 않는 새로운 팀(커스텀 팀) 추가
             baseList.push({
                 id: dbTeam.id,
                 name: dbTeam.name,
@@ -244,6 +256,20 @@ export default function RankingScreen() {
     });
 
     setRankingList(baseList);
+  };
+
+  // 상세 페이지 이동 핸들러 (안전장치 추가)
+  const handleTeamPress = (teamId: string) => {
+      // 1. ID 길이가 짧으면(예: 'm1', 'f1') 아직 앱에 등록되지 않은 KUSF 정적 데이터임
+      // 2. Firestore ID는 보통 20자 이상의 난수 문자열임
+      if (teamId.length < 10) {
+          Alert.alert(
+              "등록되지 않은 팀", 
+              "아직 앱에 등록되지 않은 팀입니다.\n상세 정보를 볼 수 없습니다."
+          );
+      } else {
+          router.push(`/team/${teamId}` as any);
+      }
   };
 
   const topThree = rankingList.slice(0, 3);
@@ -265,8 +291,7 @@ export default function RankingScreen() {
       <TouchableOpacity 
         className="items-center justify-end px-1" 
         style={{ flex: 1, transform: [{ translateY }] }}
-        // 👇 [Fix] router.push에 as any를 사용하여 타입 에러 우회
-        onPress={() => router.push(`/team/${item.id}` as any)} 
+        onPress={() => handleTeamPress(item.id)} 
         activeOpacity={0.9}
       >
         <View className="items-center mb-2 z-10">
@@ -319,8 +344,7 @@ export default function RankingScreen() {
 
     return (
       <TouchableOpacity 
-        // 👇 [Fix] 여기도 as any 추가
-        onPress={() => router.push(`/team/${item.id}` as any)}
+        onPress={() => handleTeamPress(item.id)}
         activeOpacity={0.7}
         className="flex-row items-center py-4 px-5 border-b border-gray-50 bg-white"
       >
@@ -351,7 +375,12 @@ export default function RankingScreen() {
   };
 
   return (
-    <SafeAreaView className="flex-1 bg-white" edges={['top']}>
+    // 👇 [Fix] Web 상단 패딩 추가
+    <SafeAreaView 
+        className="flex-1 bg-white" 
+        edges={['top']}
+        style={{ paddingTop: Platform.OS === 'web' ? 20 : 0 }}
+    >
       <StatusBar barStyle="dark-content" />
 
       <View className="bg-white px-5 pt-2 pb-2 flex-row items-center border-b border-gray-50">
