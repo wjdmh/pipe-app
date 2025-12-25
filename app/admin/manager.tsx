@@ -1,15 +1,34 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, Alert, TextInput, ActivityIndicator, Modal, KeyboardAvoidingView, Platform } from 'react-native';
+import { 
+  View, 
+  Text, 
+  ScrollView, 
+  TouchableOpacity, 
+  Alert, 
+  TextInput, 
+  ActivityIndicator, 
+  Modal, 
+  KeyboardAvoidingView, 
+  Platform 
+} from 'react-native';
 import { collection, query, where, getDocs, updateDoc, doc, runTransaction, getDoc, orderBy, serverTimestamp } from 'firebase/firestore';
-import { db } from '../../configs/firebaseConfig';
+// 👇 [Path Check] auth 추가 (보안 검증용)
+import { db, auth } from '../../configs/firebaseConfig';
 import { FontAwesome5 } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function AdminManager() {
+  const router = useRouter();
+  
+  // [보안] 관리자 이메일 상수 (MyPage와 동일)
+  const ADMIN_EMAIL = 'wjdangus6984@gmail.com';
+
   const [activeTab, setActiveTab] = useState<'dispute' | 'recruiting' | 'teams'>('dispute');
   const [disputes, setDisputes] = useState<any[]>([]);
   const [recruitings, setRecruitings] = useState<any[]>([]);
   const [teams, setTeams] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   
   // --- 분쟁 관리 상태 ---
   const [adminScoreHost, setAdminScoreHost] = useState('');
@@ -29,6 +48,20 @@ export default function AdminManager() {
   const [selectedMatch, setSelectedMatch] = useState<any>(null);
   const [matchEditForm, setMatchEditForm] = useState({ time: '', loc: '', note: '' });
   const [hostContact, setHostContact] = useState('');
+
+  // 1. 관리자 보안 검증 및 데이터 로드
+  useEffect(() => {
+    const init = async () => {
+        // 로그인 체크 & 관리자 이메일 체크
+        if (!auth.currentUser || auth.currentUser.email !== ADMIN_EMAIL) {
+            Alert.alert("접근 거부", "관리자 권한이 없습니다.");
+            router.replace('/home'); // 홈으로 강제 이동
+            return;
+        }
+        await loadData();
+    };
+    init();
+  }, []);
 
   const loadData = async () => {
     setLoading(true);
@@ -64,13 +97,11 @@ export default function AdminManager() {
 
     } catch (e) {
       console.error(e);
-      Alert.alert('오류', '데이터 로드 실패 (권한 문제일 수 있음)');
+      Alert.alert('오류', '데이터 로드 실패');
     } finally {
       setLoading(false);
     }
   };
-
-  useEffect(() => { loadData(); }, []);
 
   const getContact = async (teamId: string) => {
       if (!teamId) return '정보없음';
@@ -84,7 +115,7 @@ export default function AdminManager() {
       return '정보없음';
   }
 
-  // --- TAB 1: 분쟁 관리 ---
+  // --- TAB 1: 분쟁 관리 로직 ---
   const handleSelectDispute = async (match: any) => {
       if (selectedDisputeId === match.id) {
           setSelectedDisputeId(null);
@@ -113,7 +144,6 @@ export default function AdminManager() {
                   const currentMatch = await transaction.get(matchRef);
                   if (!currentMatch.exists()) throw "Match not found";
                   
-                  // 이미 종료된 경기는 재처리 방지
                   if (currentMatch.data().status === 'finished') throw "이미 처리된 경기입니다.";
 
                   const hostRef = doc(db, "teams", match.hostId);
@@ -121,20 +151,18 @@ export default function AdminManager() {
                   const hDoc = await transaction.get(hostRef);
                   const gDoc = await transaction.get(guestRef);
                   
-                  // ㅎㅎㅎㅎㅎ팀이 존재하지 않아도 경기는 종료 처리 (Soft Fail)
-                  
                   if(hDoc.exists()) {
                       const hStats = hDoc.data().stats || { wins: 0, losses: 0, points: 0, total: 0 };
                       const isHostWin = hScore > gScore;
                       const isDraw = hScore === gScore;
-                      const hPoints = isHostWin ? 3 : (isDraw ? 1 : 1); // 패배 1점
+                      const hPoints = isHostWin ? 3 : (isDraw ? 1 : 1);
                       
                       transaction.update(hostRef, { 
                           "stats.total": (hStats.total || 0) + 1, 
                           "stats.wins": (hStats.wins || 0) + (isHostWin ? 1 : 0), 
                           "stats.losses": (hStats.losses || 0) + (!isHostWin && !isDraw ? 1 : 0), 
                           "stats.points": (hStats.points || 0) + hPoints,
-                          lastActiveAt: serverTimestamp() // 활동 기록 갱신
+                          lastActiveAt: serverTimestamp()
                       });
                   }
 
@@ -167,7 +195,7 @@ export default function AdminManager() {
     ]);
   };
 
-  // --- TAB 2: 모집 관리 ---
+  // --- TAB 2: 모집 관리 로직 ---
   const handleSelectRecruiting = async (match: any) => {
       setSelectedMatch(match);
       setMatchEditForm({ 
@@ -202,7 +230,7 @@ export default function AdminManager() {
       } catch(e) { Alert.alert('오류', '수정 실패'); }
   };
 
-  // --- TAB 3: 팀 관리 ---
+  // --- TAB 3: 팀 관리 로직 ---
   const handleSelectTeam = async (team: any) => {
       setSelectedTeam(team);
       setTeamCaptain(null);
@@ -242,7 +270,6 @@ export default function AdminManager() {
       } catch(e) { Alert.alert('오류', '수정 실패'); }
   };
 
-  // [Critical] 안전한 팀 삭제 (연쇄 삭제)
   const deleteTeam = async () => {
     if (!selectedTeam) return;
     Alert.alert('팀 삭제 (Soft Delete)', `'${selectedTeam.name}' 팀을 삭제 처리하시겠습니까?\n소속된 모든 멤버는 자동으로 탈퇴(Guest) 처리됩니다.`, [
@@ -252,13 +279,11 @@ export default function AdminManager() {
               await runTransaction(db, async (transaction) => {
                   const teamRef = doc(db, "teams", selectedTeam.id);
                   const teamDoc = await transaction.get(teamRef);
-                  
                   if (!teamDoc.exists()) throw "팀 데이터가 존재하지 않습니다.";
                   
                   const teamData = teamDoc.data();
                   const memberIds = teamData.members || []; 
 
-                  // 2. 모든 멤버(대표 포함)의 소속 해제
                   memberIds.forEach((uid: string) => {
                       const userRef = doc(db, "users", uid);
                       transaction.update(userRef, { 
@@ -268,13 +293,12 @@ export default function AdminManager() {
                       });
                   });
 
-                  // 3. 팀 소프트 삭제 처리
                   transaction.update(teamRef, { 
                       isDeleted: true, 
                       deletedAt: new Date().toISOString(),
-                      captainId: null, // 대표자 정보 제거
-                      members: [],     // 멤버 리스트 초기화
-                      roster: []       // 로스터 초기화
+                      captainId: null,
+                      members: [],
+                      roster: []
                   });
               });
 
@@ -300,13 +324,27 @@ export default function AdminManager() {
   }
 
   return (
-    <View className="flex-1 bg-slate-900 pt-12 px-5">
-      <View className="flex-row justify-between items-center mb-4">
-          <Text className="text-2xl font-bold text-white">🕵️ 관리자 페이지</Text>
-          <TouchableOpacity onPress={loadData} className="bg-slate-800 p-2 rounded-lg"><FontAwesome5 name="sync" size={16} color="white" /></TouchableOpacity>
+    // 👇 [Fix] Web 호환성 패딩 적용 (상단 여백 확보)
+    <SafeAreaView 
+        className="flex-1 bg-slate-900" 
+        edges={['top']}
+        style={{ paddingTop: Platform.OS === 'web' ? 20 : 0 }}
+    >
+      {/* 헤더: 뒤로가기 및 타이틀 */}
+      <View className="px-5 pb-4 flex-row justify-between items-center border-b border-slate-800">
+          <View className="flex-row items-center">
+            <TouchableOpacity onPress={() => router.back()} className="mr-3 p-2 -ml-2">
+                <FontAwesome5 name="arrow-left" size={20} color="white" />
+            </TouchableOpacity>
+            <Text className="text-xl font-bold text-white">🕵️ 관리자 페이지</Text>
+          </View>
+          <TouchableOpacity onPress={loadData} className="bg-slate-800 p-2 rounded-lg">
+              <FontAwesome5 name="sync" size={16} color="white" />
+          </TouchableOpacity>
       </View>
       
-      <View className="flex-row bg-slate-800 p-1 rounded-xl mb-6">
+      {/* 탭 네비게이션 */}
+      <View className="flex-row bg-slate-800 p-1 mx-5 mt-4 rounded-xl mb-4">
         {['dispute', 'recruiting', 'teams'].map(tab => (
             <TouchableOpacity key={tab} onPress={() => setActiveTab(tab as any)} className={`flex-1 py-3 rounded-lg items-center ${activeTab === tab ? 'bg-indigo-600' : ''}`}>
                 <Text className="text-white font-bold text-xs">
@@ -317,8 +355,10 @@ export default function AdminManager() {
         ))}
       </View>
 
+      {/* 메인 컨텐츠 리스트 */}
       {loading ? <ActivityIndicator color="white" className="mt-10" /> : (
-        <ScrollView contentContainerClassName="pb-20">
+        <ScrollView contentContainerClassName="pb-20 px-5">
+          
           {/* TAB 1: 분쟁 */}
           {activeTab === 'dispute' && (
             disputes.length === 0 ? <Text className="text-slate-500 text-center mt-10">접수된 분쟁이 없습니다.</Text> :
@@ -378,7 +418,9 @@ export default function AdminManager() {
         </ScrollView>
       )}
 
-      {/* 모달들 (팀 수정 / 매치 수정) */}
+      {/* --- Modals (수정 및 삭제용) --- */}
+      
+      {/* 1. 팀 수정 모달 */}
       <Modal visible={teamModalVisible} animationType="slide" presentationStyle="pageSheet">
           <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} className="flex-1 bg-slate-900 p-6 pt-10">
               <ScrollView>
@@ -406,6 +448,7 @@ export default function AdminManager() {
           </KeyboardAvoidingView>
       </Modal>
 
+      {/* 2. 매치 수정 모달 */}
       <Modal visible={editMatchModalVisible} animationType="slide" transparent={true}>
           <View className="flex-1 justify-center bg-black/70 px-5">
               <View className="bg-slate-800 p-6 rounded-2xl w-full">
@@ -422,6 +465,6 @@ export default function AdminManager() {
               </View>
           </View>
       </Modal>
-    </View>
+    </SafeAreaView>
   );
 }
