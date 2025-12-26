@@ -1,28 +1,24 @@
 import React from 'react';
-import { Tabs, useRouter, Href } from 'expo-router'; // [Fix] Href 타입 추가
+import { Tabs } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { Platform } from 'react-native';
-import { useUser } from '../context/UserContext';
 
 export default function HomeLayout() {
-  const router = useRouter();
-  const { user } = useUser();
-
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: '#111827',
-        tabBarInactiveTintColor: '#9CA3AF',
+        tabBarActiveTintColor: '#111827', // Active: Gray-900 (검정)
+        tabBarInactiveTintColor: '#9CA3AF', // Inactive: Gray-400
         tabBarStyle: {
           borderTopWidth: 1,
-          borderTopColor: '#F3F4F6',
+          borderTopColor: '#F3F4F6', // Gray-100
           height: Platform.OS === 'ios' ? 88 : 60,
           paddingBottom: Platform.OS === 'ios' ? 28 : 8,
           paddingTop: 8,
           backgroundColor: 'white',
-          elevation: 0,
-          shadowOpacity: 0,
+          elevation: 0, // 안드로이드 그림자 제거
+          shadowOpacity: 0, // iOS 그림자 제거
         },
         tabBarLabelStyle: {
           fontWeight: '600',
@@ -40,21 +36,10 @@ export default function HomeLayout() {
         }}
       />
 
-      {/* 2. 팀 (기존 라커룸 -> 팀 관리로 변경) */}
+      {/* 2. 팀 (기존 라커룸 -> 팀) */}
       <Tabs.Screen
         name="locker"
-        listeners={{
-          tabPress: (e) => {
-            // [Logic] 탭 이동 기본 동작 막고, 팀 상태에 따라 리다이렉트
-            e.preventDefault();
-            if (user?.teamId) {
-              // [Fix] 동적 경로 타입 오류 해결을 위해 'as Href' 사용
-              router.push(`/team/${user.teamId}` as Href);
-            } else {
-              router.push('/team/register' as Href);
-            }
-          },
-        }}
+        // listeners 제거됨: 이제 탭을 누르면 locker.tsx가 정상적으로 렌더링됩니다.
         options={{
           title: '팀', 
           tabBarIcon: ({ color }) => <FontAwesome5 name="users" size={20} color={color} />,
@@ -70,7 +55,7 @@ export default function HomeLayout() {
         }}
       />
 
-      {/* 숨김 페이지들 */}
+      {/* 숨김 페이지들 (탭바에 노출되지 않음) */}
       <Tabs.Screen name="ranking" options={{ href: null }} />
       <Tabs.Screen name="notification" options={{ href: null }} />
       <Tabs.Screen name="liked" options={{ href: null }} /> 
