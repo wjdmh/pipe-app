@@ -5,233 +5,437 @@ import {
   TouchableOpacity, 
   ScrollView, 
   ActivityIndicator, 
+  Alert, 
   Modal, 
-  Alert,
-  Platform 
+  TextInput, 
+  Platform,
+  Share, 
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { FontAwesome5 } from '@expo/vector-icons';
-import { doc, getDoc, collection, query, where, getDocs, orderBy, limit } from 'firebase/firestore';
-// 👇 [Fix] 경로 수정: ../../ -> ../../ (firebaseConfig는 최상위에 있으므로 그대로)
-import { db } from '../../configs/firebaseConfig';
-// 👇 [Fix] 경로 수정: ../../ -> ../ (UserContext는 app 폴더 안에 있으므로 한 단계만 위로)
+import { 
+    doc, getDoc, updateDoc, arrayRemove, runTransaction, 
+    collection, query, where, getDocs, orderBy, serverTimestamp 
+} from 'firebase/firestore';
+// 👇 [Path Check]
+import { db, auth } from '../../configs/firebaseConfig';
 import { useUser } from '../context/UserContext';
 
-// [타입 정의]
-type TeamData = {
-  id: string;
-  name: string;
-  affiliation: string;
-  description?: string;
-  captainId: string;
-  stats: { wins: number; losses: number; points: number; total: number };
-  region?: string;
-  members?: string[];
-  gender: 'male' | 'female' | 'mixed';
-};
-
-type MatchHistory = {
-  id: string;
-  result: 'win' | 'loss' | 'draw' | 'unknown';
-  opponentName: string;
-  date: string;
-};
-
 export default function TeamDetailScreen() {
-  const router = useRouter();
   const { id } = useLocalSearchParams();
-  const { user } = useUser(); // 현재 로그인한 유저 정보
-
-  const [team, setTeam] = useState<TeamData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [history, setHistory] = useState<MatchHistory[]>([]);
-  
-  // 관리자 메뉴 모달 상태
-  const [showAdminMenu, setShowAdminMenu] = useState(false);
-
+  const router = useRouter();
+  const { user } = useUser();
   const teamId = Array.isArray(id) ? id[0] : id;
 
+  const [team, setTeam] = useState<any>(null);
+  const [members, setMembers] = useState<any[]>([]);
+  const [matches, setMatches] = useState<any[]>([]);
+  const [pendingMatches, setPendingMatches] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // --- Modals State ---
+  const [editModalVisible, setEditModalVisible] = useState(false);
+  const [memberModalVisible, setMemberModalVisible] = useState(false);
+  const [matchModalVisible, setMatchModalVisible] = useState(false);
+  const [resultModalVisible, setResultModalVisible] = useState(false);
+  
+  // --- Edit State ---
+  const [editName, setEditName] = useState('');
+  const [editIntro, setEditIntro] = useState('');
+  
+  // --- Match Result State ---
+  const [targetMatch, setTargetMatch] = useState<any>(null);
+  const [selectedWinner, setSelectedWinner] = useState<string | null>(null);
+
   useEffect(() => {
-    if (teamId) {
-      fetchTeamData(teamId);
-      // fetchMatchHistory(teamId); // 추후 매치 결과 로직 구현 시 활성화
-    }
+    if (teamId) fetchTeamData();
   }, [teamId]);
 
-  // 팀 정보 가져오기
-  const fetchTeamData = async (tid: string) => {
+  const fetchTeamData = async () => {
     try {
-      setLoading(true);
-      const docRef = doc(db, "teams", tid);
-      const docSnap = await getDoc(docRef);
+        setLoading(true);
+        // A. 팀 정보
+        const teamSnap = await getDoc(doc(db, "teams", teamId));
+        if (!teamSnap.exists()) {
+            Alert.alert("오류", "팀을 찾을 수 없습니다.");
+            return router.back();
+        }
+        // 👇 [Fix] as any를 사용하여 타입 오류 해결
+        const teamData = { id: teamSnap.id, ...teamSnap.data() } as any;
+        
+        setTeam(teamData);
+        setEditName(teamData.name);
+        setEditIntro(teamData.description || '');
 
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        setTeam({
-            id: docSnap.id,
-            name: data.name,
-            affiliation: data.affiliation || '소속 없음',
-            description: data.description,
-            captainId: data.captainId,
-            stats: data.stats || { wins: 0, losses: 0, points: 0, total: 0 },
-            region: data.region,
-            members: data.members || [],
-            gender: data.gender || 'mixed',
+        // B. 멤버 정보 가져오기
+        if (teamData.members && teamData.members.length > 0) {
+            const memberPromises = teamData.members.map((uid: string) => getDoc(doc(db, "users", uid)));
+            const memberSnaps = await Promise.all(memberPromises);
+            
+            // 👇 [Fix] 매개변수 s에 타입(any) 지정
+            const memberList = memberSnaps
+                .filter((s: any) => s.exists())
+                .map((s: any) => ({ id: s.id, ...s.data() }));
+            setMembers(memberList);
+        }
+
+        // C. 매치 정보 (최근 경기)
+        const q = query(
+            collection(db, "matches"), 
+            where("teamId", "==", teamId), 
+            orderBy("time", "desc")
+        );
+        const matchSnaps = await getDocs(q);
+        const matchList: any[] = [];
+        const pendingList: any[] = [];
+        
+        matchSnaps.forEach(d => {
+            // 👇 [Fix] as any를 사용하여 time, status 접근 허용
+            const m = { id: d.id, ...d.data() } as any;
+            matchList.push(m);
+            
+            // 종료됐는데 결과가 없는 경우 체크
+            if (m.status === 'scheduled' && new Date(m.time) < new Date()) {
+                pendingList.push(m);
+            }
         });
-      } else {
-        Alert.alert("오류", "팀 정보를 찾을 수 없습니다.");
-        router.back();
-      }
+        setMatches(matchList);
+        setPendingMatches(pendingList);
+
     } catch (e) {
-      console.error("Team Fetch Error:", e);
+        console.error(e);
     } finally {
-      setLoading(false);
+        setLoading(false);
     }
   };
 
-  // 관리자 권한 확인 (내 팀인지?)
-  const isCaptain = user && team && user.uid === team.captainId;
+  const handleInvite = async () => {
+      const shareUrl = `https://pipe-app.vercel.app/team/${teamId}`;
+      const message = `🏐 [PIPE 팀 초대장]\n'${team.name}' 팀에서 당신을 초대합니다!\n\n👇 팀 가입하러 가기\n${shareUrl}`;
 
-  if (loading) {
-    return (
-      <View className="flex-1 bg-white justify-center items-center">
-        <ActivityIndicator size="large" color="#4F46E5" />
-      </View>
-    );
+      if (Platform.OS !== 'web') {
+          try {
+              await Share.share({ message, url: Platform.OS === 'ios' ? shareUrl : undefined });
+          } catch (e) { Alert.alert('오류', '공유 실패'); }
+      } else {
+          try {
+              await navigator.clipboard.writeText(message);
+              window.alert('초대 링크가 복사되었습니다!');
+          } catch (e) { window.alert('복사 실패'); }
+      }
+  };
+
+  const handleUpdateTeam = async () => {
+      if(!editName.trim()) return Alert.alert('알림', '팀 이름을 입력해주세요.');
+      try {
+          await updateDoc(doc(db, "teams", teamId), {
+              name: editName,
+              description: editIntro,
+              updatedAt: new Date().toISOString()
+          });
+          Alert.alert('완료', '팀 정보가 수정되었습니다.');
+          setEditModalVisible(false);
+          fetchTeamData();
+      } catch(e) { Alert.alert('오류', '수정 실패'); }
+  };
+
+  const handleKickMember = async (targetUser: any) => {
+      Alert.alert('팀원 방출', `'${targetUser.name}'님을 팀에서 내보내시겠습니까?`, [
+          { text: '취소', style: 'cancel' },
+          { text: '방출', style: 'destructive', onPress: async () => {
+              try {
+                  await runTransaction(db, async (transaction) => {
+                      const teamRef = doc(db, "teams", teamId);
+                      const userRef = doc(db, "users", targetUser.id);
+                      
+                      transaction.update(teamRef, {
+                          members: arrayRemove(targetUser.id)
+                      });
+                      transaction.update(userRef, {
+                          teamId: null,
+                          role: 'guest', 
+                          updatedAt: new Date().toISOString()
+                      });
+                  });
+                  Alert.alert('완료', '해당 멤버를 방출했습니다.');
+                  fetchTeamData(); 
+              } catch(e) { Alert.alert('오류', '처리 실패'); }
+          }}
+      ]);
+  };
+
+  const handleInputResult = async () => {
+      if (!targetMatch || !selectedWinner) return;
+      try {
+        await runTransaction(db, async (transaction) => {
+            const matchRef = doc(db, "matches", targetMatch.id);
+            const teamRef = doc(db, "teams", targetMatch.teamId); 
+            const oppRef = doc(db, "teams", targetMatch.opponentId); 
+
+            const mDoc = await transaction.get(matchRef);
+            // 👇 [Fix] 안전한 접근을 위해 any 캐스팅
+            const mData = mDoc.data() as any;
+            if(mData?.status === 'finished') throw "이미 처리된 경기입니다.";
+
+            const homeDoc = await transaction.get(teamRef);
+            const oppDoc = await transaction.get(oppRef);
+
+            // 👇 [Fix] 안전한 접근
+            const hStats = (homeDoc.data() as any)?.stats || { wins:0, losses:0, points:0, total:0 };
+            const oStats = (oppDoc.data() as any)?.stats || { wins:0, losses:0, points:0, total:0 };
+
+            if (selectedWinner === targetMatch.teamId) {
+                hStats.wins++; hStats.points += 3;
+                oStats.losses++; oStats.points += 1;
+            } else {
+                oStats.wins++; oStats.points += 3;
+                hStats.losses++; hStats.points += 1;
+            }
+            hStats.total++; oStats.total++;
+
+            transaction.update(matchRef, { status: 'finished', winnerId: selectedWinner, endedAt: serverTimestamp() });
+            transaction.update(teamRef, { stats: hStats });
+            transaction.update(oppRef, { stats: oStats });
+        });
+        
+        Alert.alert('성공', '경기 결과가 반영되었습니다.');
+        setResultModalVisible(false);
+        setMatchModalVisible(false); 
+        fetchTeamData();
+
+      } catch(e) { Alert.alert('오류', '결과 처리 실패'); }
+  };
+
+
+  if (loading || !team) {
+      return <View className="flex-1 bg-white items-center justify-center"><ActivityIndicator color="#4F46E5" /></View>;
   }
 
-  if (!team) return null;
+  const isCaptain = user?.uid === team.captainId;
+  const isMember = team.members?.includes(user?.uid);
 
   return (
-    // 👇 [Fix] Web 패딩 추가 (SafeAreaView 이슈 해결)
-    <SafeAreaView 
-        className="flex-1 bg-white" 
-        edges={['top']}
-        style={{ paddingTop: Platform.OS === 'web' ? 20 : 0 }}
-    >
-      {/* 1. Header */}
-      <View className="px-5 py-3 flex-row items-center justify-between bg-white border-b border-gray-100">
+    <SafeAreaView className="flex-1 bg-white" edges={['top']}>
+      <View className="px-5 py-3 border-b border-gray-100 flex-row justify-between items-center">
         <TouchableOpacity onPress={() => router.back()} className="p-2 -ml-2">
-          <FontAwesome5 name="arrow-left" size={20} color="#111827" />
+            <FontAwesome5 name="arrow-left" size={20} color="#111827" />
         </TouchableOpacity>
-        
-        {/* 관리자(팀장)에게만 보이는 설정 버튼 */}
-        {isCaptain && (
-            <TouchableOpacity onPress={() => setShowAdminMenu(true)} className="p-2 -mr-2">
-                <FontAwesome5 name="cog" size={20} color="#4B5563" />
-            </TouchableOpacity>
-        )}
+        <Text className="font-bold text-lg">팀 상세</Text>
+        <TouchableOpacity onPress={handleInvite} className="p-2 -mr-2">
+            <FontAwesome5 name="share-square" size={20} color="#111827" />
+        </TouchableOpacity>
       </View>
 
-      <ScrollView contentContainerStyle={{ paddingBottom: 50 }}>
-        {/* 2. Hero Section (팀 브랜딩) */}
+      <ScrollView contentContainerStyle={{ paddingBottom: 100 }}>
         <View className="items-center py-8 bg-indigo-50/50">
-            <View className="w-24 h-24 rounded-full bg-white items-center justify-center shadow-sm border border-indigo-100 mb-4">
-                <FontAwesome5 name="users" size={32} color="#4F46E5" />
+            <View className="w-24 h-24 bg-white rounded-full items-center justify-center shadow-sm mb-4 border border-indigo-100">
+                <FontAwesome5 name="users" size={40} color="#4F46E5" />
             </View>
             <Text className="text-2xl font-black text-gray-900 mb-1">{team.name}</Text>
-            <Text className="text-gray-500 font-medium mb-4">{team.affiliation} · {team.region || '지역 미정'}</Text>
+            <Text className="text-gray-500 mb-4">{team.affiliation} · {team.level}급</Text>
             
-            {/* 전적 요약 뱃지 */}
-            <View className="flex-row gap-3">
-                <View className="items-center px-4 py-2 bg-white rounded-xl shadow-sm border border-gray-100">
-                    <Text className="text-gray-400 text-xs font-bold mb-0.5">승점</Text>
-                    <Text className="text-gray-900 text-lg font-black italic">{team.stats.points}</Text>
+            <View className="flex-row gap-4 bg-white px-6 py-3 rounded-xl shadow-sm">
+                <View className="items-center">
+                    <Text className="text-xs text-gray-400 font-bold">승리</Text>
+                    <Text className="text-lg font-black text-indigo-600">{team.stats?.wins || 0}</Text>
                 </View>
-                <View className="items-center px-4 py-2 bg-white rounded-xl shadow-sm border border-gray-100">
-                    <Text className="text-gray-400 text-xs font-bold mb-0.5">승률</Text>
-                    <Text className="text-indigo-600 text-lg font-black italic">
-                        {team.stats.total > 0 ? Math.round((team.stats.wins / team.stats.total) * 100) : 0}%
-                    </Text>
+                <View className="w-[1px] bg-gray-100" />
+                <View className="items-center">
+                    <Text className="text-xs text-gray-400 font-bold">패배</Text>
+                    <Text className="text-lg font-black text-gray-600">{team.stats?.losses || 0}</Text>
+                </View>
+                <View className="w-[1px] bg-gray-100" />
+                <View className="items-center">
+                    <Text className="text-xs text-gray-400 font-bold">승점</Text>
+                    <Text className="text-lg font-black text-gray-900">{team.stats?.points || 0}</Text>
                 </View>
             </View>
         </View>
 
-        {/* 3. Team Description */}
-        <View className="px-5 py-6 border-b border-gray-100">
-            <Text className="text-gray-900 font-bold text-lg mb-2">팀 소개</Text>
-            <Text className="text-gray-600 leading-relaxed">
-                {team.description || "아직 작성된 팀 소개가 없습니다."}
-            </Text>
+        {isCaptain ? (
+            <View className="flex-row px-5 py-6 gap-3">
+                <TouchableOpacity onPress={() => setEditModalVisible(true)} className="flex-1 bg-gray-50 py-4 rounded-xl items-center border border-gray-100 active:bg-gray-100">
+                    <FontAwesome5 name="edit" size={18} color="#4B5563" style={{marginBottom:6}}/>
+                    <Text className="text-gray-600 font-bold text-xs">정보 수정</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => setMemberModalVisible(true)} className="flex-1 bg-gray-50 py-4 rounded-xl items-center border border-gray-100 active:bg-gray-100">
+                    <FontAwesome5 name="user-friends" size={18} color="#4B5563" style={{marginBottom:6}}/>
+                    <Text className="text-gray-600 font-bold text-xs">멤버 관리</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => setMatchModalVisible(true)} className="flex-1 bg-gray-50 py-4 rounded-xl items-center border border-gray-100 active:bg-gray-100">
+                    <View>
+                        <FontAwesome5 name="trophy" size={18} color="#4B5563" style={{marginBottom:6, alignSelf:'center'}}/>
+                        {pendingMatches.length > 0 && <View className="absolute -top-1 -right-2 w-3 h-3 bg-red-500 rounded-full border border-white" />}
+                    </View>
+                    <Text className="text-gray-600 font-bold text-xs">매치 관리</Text>
+                </TouchableOpacity>
+            </View>
+        ) : isMember && (
+            <View className="px-5 py-4">
+                <TouchableOpacity onPress={handleInvite} className="bg-indigo-600 w-full py-4 rounded-xl flex-row justify-center items-center shadow-md shadow-indigo-200">
+                    <FontAwesome5 name="share-square" size={16} color="white" style={{marginRight:8}} />
+                    <Text className="text-white font-bold text-lg">팀원 초대하기</Text>
+                </TouchableOpacity>
+            </View>
+        )}
+
+        <View className="px-5 py-2">
+            <Text className="text-lg font-bold text-gray-900 mb-3">팀 소개</Text>
+            <View className="bg-gray-50 p-4 rounded-xl min-h-[100px]">
+                <Text className="text-gray-600 leading-relaxed">{team.description || "소개글이 없습니다."}</Text>
+            </View>
         </View>
 
-        {/* 4. Match History (Empty State UX) */}
         <View className="px-5 py-6">
-            <View className="flex-row justify-between items-center mb-4">
-                <Text className="text-gray-900 font-bold text-lg">최근 전적</Text>
+            <View className="flex-row justify-between items-center mb-3">
+                <Text className="text-lg font-bold text-gray-900">멤버 ({members.length})</Text>
+                <TouchableOpacity onPress={() => setMemberModalVisible(true)}>
+                    <Text className="text-gray-400 text-sm">더보기</Text>
+                </TouchableOpacity>
             </View>
-
-            {history.length === 0 ? (
-                <View className="bg-gray-50 rounded-2xl p-8 items-center justify-center border border-gray-100 border-dashed">
-                    <FontAwesome5 name="volleyball-ball" size={32} color="#D1D5DB" style={{ marginBottom: 16 }} />
-                    <Text className="text-gray-900 font-bold text-base mb-1">아직 진행한 매치가 없어요</Text>
-                    <Text className="text-gray-500 text-sm text-center mb-6">
-                        새로운 교류전을 시작하고{'\n'}첫 승리의 주인공이 되어보세요!
-                    </Text>
-                    
-                    <TouchableOpacity 
-                        onPress={() => router.push('/home')} // 매치 리스트(홈)로 이동
-                        className="bg-indigo-600 px-6 py-3 rounded-xl shadow-sm active:scale-95"
-                    >
-                        <Text className="text-white font-bold">매치 둘러보기</Text>
-                    </TouchableOpacity>
-                </View>
-            ) : (
-                <View>
-                    <Text>전적 리스트가 여기에 표시됩니다.</Text>
-                </View>
-            )}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} className="flex-row gap-3">
+                {members.slice(0, 5).map(m => (
+                    <View key={m.id} className="items-center mr-4">
+                        <View className="w-12 h-12 bg-gray-200 rounded-full items-center justify-center mb-1">
+                            <FontAwesome5 name="user" size={16} color="#9CA3AF" />
+                        </View>
+                        <Text className="text-xs text-gray-700 font-medium">{m.name}</Text>
+                    </View>
+                ))}
+            </ScrollView>
         </View>
       </ScrollView>
 
-      {/* 5. Admin Bottom Sheet (Modal) */}
-      <Modal
-        visible={showAdminMenu}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() => setShowAdminMenu(false)}
-      >
-        <TouchableOpacity 
-            className="flex-1 bg-black/40 justify-end"
-            activeOpacity={1} 
-            onPress={() => setShowAdminMenu(false)}
-        >
-            <View className="bg-white rounded-t-3xl p-6 pb-10">
-                <View className="w-12 h-1 bg-gray-300 rounded-full self-center mb-6" />
-                <Text className="text-xl font-bold text-gray-900 mb-6 px-2">팀 관리</Text>
-                
-                <TouchableOpacity className="flex-row items-center p-4 bg-gray-50 rounded-xl mb-3 active:bg-gray-100">
-                    <View className="w-10 h-10 rounded-full bg-blue-100 items-center justify-center mr-4">
-                        <FontAwesome5 name="edit" size={18} color="#2563EB" />
-                    </View>
-                    <View>
-                        <Text className="text-gray-900 font-bold text-base">팀 정보 수정</Text>
-                        <Text className="text-gray-500 text-xs">로고, 소개글, 지역 변경</Text>
-                    </View>
-                </TouchableOpacity>
-
-                <TouchableOpacity className="flex-row items-center p-4 bg-gray-50 rounded-xl mb-3 active:bg-gray-100">
-                    <View className="w-10 h-10 rounded-full bg-green-100 items-center justify-center mr-4">
-                        <FontAwesome5 name="users-cog" size={18} color="#16A34A" />
-                    </View>
-                    <View>
-                        <Text className="text-gray-900 font-bold text-base">멤버 관리</Text>
-                        <Text className="text-gray-500 text-xs">가입 신청 수락, 멤버 방출</Text>
-                    </View>
-                </TouchableOpacity>
-
-                <TouchableOpacity className="flex-row items-center p-4 bg-gray-50 rounded-xl mb-2 active:bg-gray-100">
-                    <View className="w-10 h-10 rounded-full bg-orange-100 items-center justify-center mr-4">
-                        <FontAwesome5 name="clipboard-list" size={18} color="#EA580C" />
-                    </View>
-                    <View>
-                        <Text className="text-gray-900 font-bold text-base">매치 관리</Text>
-                        <Text className="text-gray-500 text-xs">신청 내역 확인, 결과 입력</Text>
-                    </View>
+      {/* --- Modals --- */}
+      <Modal visible={editModalVisible} animationType="slide">
+        <SafeAreaView className="flex-1 bg-white">
+            <View className="px-5 py-4 border-b border-gray-100 flex-row justify-between items-center">
+                <Text className="font-bold text-lg">팀 정보 수정</Text>
+                <TouchableOpacity onPress={() => setEditModalVisible(false)}><FontAwesome5 name="times" size={20} color="#111827" /></TouchableOpacity>
+            </View>
+            <View className="p-5">
+                <Text className="text-sm font-bold text-gray-500 mb-1">팀 이름</Text>
+                <TextInput className="bg-gray-50 p-4 rounded-xl mb-4 text-lg" value={editName} onChangeText={setEditName} />
+                <Text className="text-sm font-bold text-gray-500 mb-1">팀 소개</Text>
+                <TextInput className="bg-gray-50 p-4 rounded-xl mb-6 min-h-[120px]" multiline textAlignVertical="top" value={editIntro} onChangeText={setEditIntro} />
+                <TouchableOpacity onPress={handleUpdateTeam} className="bg-indigo-600 p-4 rounded-xl items-center">
+                    <Text className="text-white font-bold">저장하기</Text>
                 </TouchableOpacity>
             </View>
-        </TouchableOpacity>
+        </SafeAreaView>
+      </Modal>
+
+      <Modal visible={memberModalVisible} animationType="slide">
+        <SafeAreaView className="flex-1 bg-white">
+            <View className="px-5 py-4 border-b border-gray-100 flex-row justify-between items-center">
+                <Text className="font-bold text-lg">멤버 관리</Text>
+                <TouchableOpacity onPress={() => setMemberModalVisible(false)}><FontAwesome5 name="times" size={20} color="#111827" /></TouchableOpacity>
+            </View>
+            <View className="px-5 py-4 bg-gray-50 border-b border-gray-100">
+                 <TouchableOpacity onPress={handleInvite} className="bg-white border border-indigo-200 py-3 rounded-xl flex-row justify-center items-center">
+                    <FontAwesome5 name="share-square" size={14} color="#4F46E5" style={{marginRight:6}} />
+                    <Text className="text-indigo-600 font-bold">팀원 초대 링크 공유</Text>
+                </TouchableOpacity>
+            </View>
+            <ScrollView className="px-5">
+                {members.map(m => (
+                    <View key={m.id} className="flex-row items-center justify-between py-4 border-b border-gray-50">
+                        <View className="flex-row items-center">
+                            <View className="w-10 h-10 bg-gray-100 rounded-full items-center justify-center mr-3">
+                                <FontAwesome5 name="user" size={14} color="#9CA3AF" />
+                            </View>
+                            <View>
+                                <Text className="font-bold text-gray-900">{m.name} {m.id === team.captainId && <Text className="text-indigo-600 text-xs"> (대표)</Text>}</Text>
+                                <Text className="text-xs text-gray-400">{m.phoneNumber || '연락처 없음'}</Text>
+                            </View>
+                        </View>
+                        {isCaptain && m.id !== user?.uid && (
+                            <TouchableOpacity onPress={() => handleKickMember(m)} className="bg-red-50 px-3 py-1.5 rounded-lg">
+                                <Text className="text-red-500 text-xs font-bold">방출</Text>
+                            </TouchableOpacity>
+                        )}
+                    </View>
+                ))}
+            </ScrollView>
+        </SafeAreaView>
+      </Modal>
+
+      <Modal visible={matchModalVisible} animationType="slide">
+        <SafeAreaView className="flex-1 bg-white">
+            <View className="px-5 py-4 border-b border-gray-100 flex-row justify-between items-center">
+                <Text className="font-bold text-lg">매치 관리</Text>
+                <TouchableOpacity onPress={() => setMatchModalVisible(false)}><FontAwesome5 name="times" size={20} color="#111827" /></TouchableOpacity>
+            </View>
+            <ScrollView className="p-5">
+                {pendingMatches.length > 0 && (
+                    <View className="mb-6">
+                        <Text className="font-bold text-red-500 mb-2">🚨 결과 입력이 필요합니다!</Text>
+                        {pendingMatches.map(m => (
+                            <View key={m.id} className="bg-red-50 border border-red-100 p-4 rounded-xl mb-2 flex-row justify-between items-center">
+                                <View>
+                                    <Text className="font-bold text-gray-900">{m.opponentName ? `vs ${m.opponentName}` : '상대 미정'}</Text>
+                                    <Text className="text-xs text-red-400">{m.timeDisplay}</Text>
+                                </View>
+                                <TouchableOpacity 
+                                    onPress={() => { setTargetMatch(m); setResultModalVisible(true); }}
+                                    className="bg-red-500 px-4 py-2 rounded-lg"
+                                >
+                                    <Text className="text-white font-bold text-xs">결과 입력</Text>
+                                </TouchableOpacity>
+                            </View>
+                        ))}
+                    </View>
+                )}
+                <Text className="font-bold text-gray-900 mb-3">경기 기록</Text>
+                {matches.map(m => (
+                    <View key={m.id} className="bg-white border border-gray-100 p-4 rounded-xl mb-3 shadow-sm">
+                        <View className="flex-row justify-between mb-2">
+                            <Text className={`text-xs font-bold ${m.status === 'finished' ? 'text-gray-400' : 'text-blue-500'}`}>
+                                {m.status === 'finished' ? '종료됨' : '예정됨'}
+                            </Text>
+                            <Text className="text-xs text-gray-400">{m.timeDisplay}</Text>
+                        </View>
+                        <Text className="font-bold text-lg mb-1">{m.opponentName ? `vs ${m.opponentName}` : '상대팀 미정'}</Text>
+                        <Text className="text-xs text-gray-500">{m.loc}</Text>
+                        {m.winnerId && (
+                            <View className="mt-2 bg-gray-100 self-start px-2 py-1 rounded">
+                                <Text className="text-xs text-gray-600 font-bold">
+                                    결과: {m.winnerId === teamId ? '승리 🏆' : '패배'}
+                                </Text>
+                            </View>
+                        )}
+                    </View>
+                ))}
+            </ScrollView>
+        </SafeAreaView>
+      </Modal>
+
+      <Modal visible={resultModalVisible} transparent animationType="fade">
+          <View className="flex-1 bg-black/60 justify-center items-center p-6">
+              <View className="bg-white w-full rounded-2xl p-6">
+                  <Text className="text-xl font-bold text-center mb-2">경기 결과 확정</Text>
+                  <Text className="text-center text-gray-500 text-xs mb-6">승리한 팀을 선택해주세요. 결과는 되돌릴 수 없습니다.</Text>
+                  
+                  {targetMatch && (
+                      <View className="flex-row gap-3 mb-6">
+                          <TouchableOpacity onPress={() => setSelectedWinner(targetMatch.teamId)} className={`flex-1 p-4 rounded-xl border-2 items-center ${selectedWinner === targetMatch.teamId ? 'border-indigo-600 bg-indigo-50' : 'border-gray-100'}`}>
+                              <Text className={`font-bold ${selectedWinner === targetMatch.teamId ? 'text-indigo-600' : 'text-gray-500'}`}>{team.name} (우리팀)</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity onPress={() => setSelectedWinner(targetMatch.opponentId)} className={`flex-1 p-4 rounded-xl border-2 items-center ${selectedWinner === targetMatch.opponentId ? 'border-indigo-600 bg-indigo-50' : 'border-gray-100'}`}>
+                              <Text className={`font-bold ${selectedWinner === targetMatch.opponentId ? 'text-indigo-600' : 'text-gray-500'}`}>{targetMatch.opponentName}</Text>
+                          </TouchableOpacity>
+                      </View>
+                  )}
+                  
+                  <TouchableOpacity onPress={handleInputResult} disabled={!selectedWinner} className={`w-full py-4 rounded-xl items-center ${selectedWinner ? 'bg-indigo-600' : 'bg-gray-300'}`}>
+                      <Text className="text-white font-bold">결과 저장</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => setResultModalVisible(false)} className="mt-4 items-center">
+                      <Text className="text-gray-500 font-bold">취소</Text>
+                  </TouchableOpacity>
+              </View>
+          </View>
       </Modal>
     </SafeAreaView>
   );

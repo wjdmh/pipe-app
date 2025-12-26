@@ -13,7 +13,8 @@ import {
   Share // 👇 [New] 공유 기능을 위해 추가
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { doc, getDoc, updateDoc, arrayUnion, deleteDoc } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, arrayUnion } from 'firebase/firestore';
+// 👇 [Path Check] 경로 유지
 import { auth, db } from '../../configs/firebaseConfig';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { FontAwesome5 } from '@expo/vector-icons';
@@ -87,16 +88,14 @@ export default function GuestDetailScreen() {
     } catch { return isoString; }
   };
 
-  // ✅ [New] 게스트 모집 공유 로직 (v1.24 핵심 기능)
+  // ✅ [Updated] 네이티브 공유 로직 적용 (v1.25)
   const handleShare = async () => {
       if (!post) return;
 
-      // URL 생성
-      const shareUrl = Platform.OS === 'web' 
-        ? window.location.href 
-        : `https://pipe-app.vercel.app/guest/${post.id}`;
+      // 앱/웹 공통 URL
+      const shareUrl = `https://pipe-app.vercel.app/guest/${post.id}`;
 
-      // 공유 텍스트 생성 (명세서 포맷 준수)
+      // 공유 텍스트 생성
       const shareMessage = `🏃‍♂️ [PIPE 게스트 모집] 함께 뛰실 분!
 
 🛡️ 포지션: ${post.positions}
@@ -108,21 +107,24 @@ ${post.note ? `📢 비고: ${post.note}` : ''}
 👇 게스트 지원하러 가기
 ${shareUrl}`;
 
-      // 플랫폼별 처리
-      if (Platform.OS === 'web') {
+      // 플랫폼별 분기 처리
+      if (Platform.OS !== 'web') {
+          // [App] 네이티브 공유 시트 호출
+          try {
+              await Share.share({
+                  message: shareMessage,
+                  url: Platform.OS === 'ios' ? shareUrl : undefined,
+              });
+          } catch (error) {
+              Alert.alert("오류", "공유 기능을 실행할 수 없습니다.");
+          }
+      } else {
+          // [Web] 클립보드 복사
           try {
               await navigator.clipboard.writeText(shareMessage);
               window.alert("초대장이 복사되었습니다!\n원하는 곳에 붙여넣기(Ctrl+V) 하세요.");
           } catch (err) {
               window.alert("복사에 실패했습니다. 수동으로 복사해주세요.");
-          }
-      } else {
-          try {
-              await Share.share({
-                  message: shareMessage,
-              });
-          } catch (error) {
-              Alert.alert("오류", "공유하기 기능을 사용할 수 없습니다.");
           }
       }
   };
@@ -165,7 +167,7 @@ ${shareUrl}`;
     }
   };
 
-  // [Logic] 삭제하기
+  // [Logic] 삭제하기 (호스트 전용)
   const handleDelete = async () => {
       Alert.alert('삭제 확인', '정말 이 모집글을 삭제하시겠습니까?', [
           { text: '취소', style: 'cancel' },
@@ -195,9 +197,9 @@ ${shareUrl}`;
             </TouchableOpacity>
             <Text className="font-bold text-[16px]">모집 상세</Text>
             
-            {/* 👇 [New] 공유 버튼 추가 */}
+            {/* 👇 [Updated] 공유 아이콘 변경 (share-square) */}
             <TouchableOpacity onPress={handleShare} className="p-2 -mr-2">
-                <FontAwesome5 name="link" size={18} color="#111827" />
+                <FontAwesome5 name="share-square" size={20} color="#111827" />
             </TouchableOpacity>
         </View>
 
@@ -205,7 +207,6 @@ ${shareUrl}`;
             {/* 1. Title Section */}
             <View className="px-6 pt-8 pb-6 border-b border-gray-100">
                 <View className="flex-row items-center mb-3">
-                    {/* [Term] 용병 -> 게스트 변경 */}
                     <View className="bg-orange-50 px-2.5 py-1 rounded-md mr-2">
                         <Text className="text-orange-600 font-bold text-[12px]">게스트모집</Text>
                     </View>

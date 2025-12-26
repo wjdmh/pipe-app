@@ -13,20 +13,18 @@ import {
 } from 'react-native';
 import { signOut, deleteUser } from 'firebase/auth'; 
 import { doc, getDoc, collection, addDoc, updateDoc, runTransaction } from 'firebase/firestore'; 
-// 👇 [Path Check] 경로 확인 완료
+// 👇 [Path Check] 경로 유지
 import { auth, db } from '../../configs/firebaseConfig';
 import { useRouter } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-// 👇 [New] 전역 상태 관리를 위한 Hook
 import { useUser } from '../context/UserContext';
 
-// 관리자 이메일 상수 (보안 및 유지보수용)
 const ADMIN_EMAIL = 'wjdangus6984@gmail.com';
 
 export default function MyPageScreen() {
   const router = useRouter();
-  const { user, refreshUser } = useUser(); // 전역 유저 상태 사용
+  const { user, refreshUser } = useUser();
   
   const [isAdmin, setIsAdmin] = useState(false);
   const [myTeam, setMyTeam] = useState<any>(null);
@@ -45,22 +43,13 @@ export default function MyPageScreen() {
   const [inquiryText, setInquiryText] = useState('');
   const [sendingInquiry, setSendingInquiry] = useState(false);
 
-  // 1. 초기 데이터 세팅 (관리자 여부 및 팀 정보)
   useEffect(() => {
     if (user) {
-      // 관리자 체크
-      if (user.email === ADMIN_EMAIL) {
-        setIsAdmin(true);
-      }
-      // 초기 수정 폼 데이터 세팅
+      if (user.email === ADMIN_EMAIL) setIsAdmin(true);
       setNewName(user.name || '');
-      // user 타입에 phoneNumber가 없을 경우를 대비해 any 처리 혹은 조건부 접근
       setNewPhone((user as any).phoneNumber || (user as any).phone || '');
 
-      // 팀 정보 가져오기 (소속된 경우만)
-      if (user.teamId) {
-        fetchMyTeam(user.teamId);
-      }
+      if (user.teamId) fetchMyTeam(user.teamId);
     }
   }, [user]);
 
@@ -78,7 +67,6 @@ export default function MyPageScreen() {
     }
   };
 
-  // 2. 로그아웃 로직 (웹/앱 호환)
   const handleLogout = async () => {
     const execute = async () => {
         try {
@@ -86,7 +74,6 @@ export default function MyPageScreen() {
             router.replace('/');
         } catch (e) { Alert.alert('오류', '로그아웃 실패'); }
     };
-
     if (Platform.OS === 'web') {
         if (window.confirm('정말 로그아웃 하시겠습니까?')) execute();
     } else {
@@ -97,7 +84,6 @@ export default function MyPageScreen() {
     }
   };
 
-  // 3. 회원 탈퇴 로직 (Transaction 유지 - 중요!)
   const handleWithdrawal = () => {
     const execute = async () => {
         if (!auth.currentUser) return;
@@ -109,53 +95,40 @@ export default function MyPageScreen() {
 
                 const uData = userSnap.data();
 
-                // 팀 처리 로직
                 if (uData.teamId) {
                     const teamRef = doc(db, "teams", uData.teamId);
                     const teamSnap = await transaction.get(teamRef);
 
                     if (teamSnap.exists()) {
                         const teamData = teamSnap.data();
-                        
-                        // 대표자인 경우 -> 팀 해체 및 팀원 해방
                         if (uData.role === 'leader') {
+                            // 팀장 탈퇴 시 팀 삭제 로직 (기존 유지)
                             const memberIds = teamData.members || [];
                             for (const memberUid of memberIds) {
                                 if (memberUid === auth.currentUser!.uid) continue;
                                 const memberRef = doc(db, "users", memberUid);
                                 transaction.update(memberRef, { teamId: null, role: 'guest', updatedAt: new Date().toISOString() });
                             }
-                            transaction.delete(teamRef); // 팀 삭제
-                        } 
-                        // 일반 팀원인 경우 -> 명단에서 제거
-                        else {
+                            transaction.delete(teamRef);
+                        } else {
+                            // 팀원 탈퇴 시 명단 제외
                             const newMembers = (teamData.members || []).filter((uid: string) => uid !== auth.currentUser!.uid);
-                            const newRoster = (teamData.roster || []).filter((p: any) => p.uid !== auth.currentUser!.uid);
-                            transaction.update(teamRef, { members: newMembers, roster: newRoster });
+                            transaction.update(teamRef, { members: newMembers });
                         }
                     }
                 }
-                transaction.delete(userRef); // 유저 DB 삭제
+                transaction.delete(userRef);
             });
 
-            await deleteUser(auth.currentUser); // Auth 계정 삭제
-            
+            await deleteUser(auth.currentUser);
             const msg = '회원 탈퇴가 완료되었습니다.';
             if (Platform.OS === 'web') window.alert(msg);
             else Alert.alert('완료', msg);
-            
             router.replace('/');
 
         } catch (e: any) {
             console.error("Withdrawal Error:", e);
-            if (e.code === 'auth/requires-recent-login') {
-                const msg = '보안을 위해 다시 로그인 후 시도해주세요.';
-                if(Platform.OS === 'web') window.alert(msg);
-                else Alert.alert('인증 필요', msg);
-                await signOut(auth);
-            } else {
-                Alert.alert('오류', '탈퇴 처리 중 문제가 발생했습니다.');
-            }
+            Alert.alert('오류', '탈퇴 처리 중 문제가 발생했습니다. (재로그인 필요할 수 있음)');
         }
     };
 
@@ -167,7 +140,6 @@ export default function MyPageScreen() {
     }
   };
 
-  // 4. 정보 수정 로직 (refreshUser 연동)
   const handleUpdateProfile = async () => {
     if (!newName.trim() || !newPhone.trim()) return Alert.alert('알림', '이름과 전화번호를 입력해주세요.');
     setUpdating(true);
@@ -179,7 +151,7 @@ export default function MyPageScreen() {
                 phoneNumber: newPhone,
                 phone: newPhone
             });
-            await refreshUser(); // 🔥 핵심: 앱 전역 상태 갱신
+            await refreshUser();
             Alert.alert('완료', '정보가 수정되었습니다.');
             setEditModalVisible(false);
         }
@@ -190,7 +162,6 @@ export default function MyPageScreen() {
     }
   };
 
-  // 5. 문의하기 로직
   const handleSendInquiry = async () => {
     if(!inquiryText.trim()) return Alert.alert('알림', '내용을 입력해주세요.');
     setSendingInquiry(true);
@@ -218,7 +189,6 @@ export default function MyPageScreen() {
         edges={['top']}
         style={{ paddingTop: Platform.OS === 'web' ? 20 : 0 }}
     >
-      {/* 헤더 */}
       <View className="px-6 py-4 border-b border-gray-50 flex-row items-center justify-between">
          <Text className="text-2xl font-extrabold text-[#191F28]">마이페이지</Text>
          {isAdmin && <View className="bg-red-100 px-2 py-1 rounded"><Text className="text-red-600 text-[10px] font-bold">ADMIN</Text></View>}
@@ -226,7 +196,7 @@ export default function MyPageScreen() {
 
       <ScrollView contentContainerClassName="pb-20">
         
-        {/* A. 관리자 대시보드 (Admin Only) */}
+        {/* A. 관리자 대시보드 */}
         {isAdmin && (
             <View className="mx-5 mt-5 bg-[#191F28] rounded-2xl p-5 shadow-lg">
                 <View className="flex-row items-center mb-4">
@@ -246,24 +216,28 @@ export default function MyPageScreen() {
             </View>
         )}
 
-        {/* B. 프로필 섹션 (Hero) */}
+        {/* B. 프로필 섹션 (간소화됨) */}
         <View className="items-center py-8 bg-indigo-50/30 mb-2">
             <View className="w-20 h-20 bg-white rounded-full items-center justify-center shadow-sm border border-indigo-100 mb-3">
                 <FontAwesome5 name="user" size={32} color="#4F46E5" />
             </View>
             <Text className="text-xl font-bold text-gray-900">{user?.name || '사용자'}</Text>
             <Text className="text-gray-500 text-sm mt-1">{user?.email}</Text>
-            <Text className="text-indigo-500 text-xs font-bold mt-2 bg-indigo-50 px-3 py-1 rounded-full">
-                {isAdmin ? '관리자' : user?.role === 'leader' ? '팀 대표자' : '일반 회원'}
-            </Text>
+            <View className="flex-row items-center mt-2">
+                <Text className="text-indigo-500 text-xs font-bold bg-indigo-50 px-3 py-1 rounded-full mr-1">
+                    {user?.role === 'leader' ? '팀 대표자' : '일반 회원'}
+                </Text>
+                <TouchableOpacity onPress={() => setEditModalVisible(true)} className="bg-gray-100 px-2 py-1 rounded-full">
+                    <FontAwesome5 name="pen" size={10} color="#6B7280" />
+                </TouchableOpacity>
+            </View>
         </View>
 
-        {/* C. 소속 팀 위젯 */}
+        {/* C. 소속 팀 위젯 (단순 이동 기능) */}
         <View className="px-5 -mt-4 mb-6">
             {loadingTeam ? (
                 <ActivityIndicator color="#4F46E5" />
             ) : user?.teamId && myTeam ? (
-                // 팀이 있을 때: 팀 카드
                 <TouchableOpacity 
                     onPress={() => router.push(`/team/${myTeam.id}` as any)}
                     className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex-row justify-between items-center active:bg-gray-50"
@@ -273,22 +247,21 @@ export default function MyPageScreen() {
                             <FontAwesome5 name="users" size={20} color="#2563EB" />
                         </View>
                         <View>
-                            <Text className="text-gray-400 text-xs font-bold mb-0.5">소속 팀</Text>
+                            <Text className="text-gray-400 text-xs font-bold mb-0.5">내 소속 팀</Text>
                             <Text className="text-gray-900 font-bold text-lg">{myTeam.name}</Text>
-                            <Text className="text-gray-500 text-xs">{myTeam.affiliation} · 승률 {myTeam.stats?.total > 0 ? Math.round((myTeam.stats.wins/myTeam.stats.total)*100) : 0}%</Text>
+                            <Text className="text-gray-500 text-xs">팀 페이지로 이동하기</Text>
                         </View>
                     </View>
                     <FontAwesome5 name="chevron-right" size={14} color="#CBD5E1" />
                 </TouchableOpacity>
             ) : (
-                // 팀이 없을 때: 팀 찾기 배너
                 <TouchableOpacity 
                     onPress={() => router.push('/team/register')}
                     className="bg-gray-900 p-5 rounded-2xl shadow-md flex-row justify-between items-center active:scale-[0.98]"
                 >
                     <View>
                         <Text className="text-white font-bold text-lg mb-1">아직 소속 팀이 없나요?</Text>
-                        <Text className="text-gray-400 text-xs">나에게 맞는 팀을 찾거나 만들어보세요!</Text>
+                        <Text className="text-gray-400 text-xs">팀을 찾거나 만들어보세요!</Text>
                     </View>
                     <View className="w-10 h-10 bg-gray-700 rounded-full items-center justify-center">
                         <FontAwesome5 name="plus" size={16} color="white" />
@@ -297,7 +270,7 @@ export default function MyPageScreen() {
             )}
         </View>
 
-        {/* D. 메뉴 리스트 */}
+        {/* D. 메뉴 리스트 (개인 설정 위주) */}
         <View className="px-5 gap-3">
             <TouchableOpacity onPress={() => setEditModalVisible(true)} className="flex-row items-center justify-between p-4 bg-gray-50 rounded-xl active:bg-gray-100">
                 <View className="flex-row items-center">
@@ -328,7 +301,7 @@ export default function MyPageScreen() {
             <TouchableOpacity onPress={handleWithdrawal} className="p-2">
                 <Text className="text-gray-300 text-xs underline">회원 탈퇴</Text>
             </TouchableOpacity>
-            <Text className="text-gray-300 text-[10px] mt-2">Version 1.23.0</Text>
+            <Text className="text-gray-300 text-[10px] mt-2">Version 1.25.0</Text>
         </View>
       </ScrollView>
 
@@ -337,23 +310,18 @@ export default function MyPageScreen() {
       {/* 1. 내 정보 수정 모달 */}
       <Modal visible={editModalVisible} animationType="slide" transparent>
           <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} className="flex-1 justify-end bg-black/50">
+              <TouchableOpacity className="flex-1" onPress={() => setEditModalVisible(false)} />
               <View className="bg-white rounded-t-3xl p-6 pb-10">
                   <View className="items-center mb-6">
                       <View className="w-12 h-1 bg-gray-300 rounded-full mb-4" />
                       <Text className="text-xl font-bold text-gray-900">내 정보 수정</Text>
                   </View>
-                  
                   <Text className="text-xs font-bold text-gray-500 mb-1 ml-1">이름</Text>
                   <TextInput className="bg-gray-50 p-4 rounded-xl border border-gray-200 mb-4" value={newName} onChangeText={setNewName} placeholder="이름 입력" />
-                  
                   <Text className="text-xs font-bold text-gray-500 mb-1 ml-1">전화번호</Text>
                   <TextInput className="bg-gray-50 p-4 rounded-xl border border-gray-200 mb-6" value={newPhone} onChangeText={setNewPhone} keyboardType="phone-pad" placeholder="010-0000-0000" />
-                  
                   <TouchableOpacity onPress={handleUpdateProfile} className="bg-indigo-600 p-4 rounded-xl items-center mb-2">
                       {updating ? <ActivityIndicator color="white"/> : <Text className="text-white font-bold">저장하기</Text>}
-                  </TouchableOpacity>
-                  <TouchableOpacity onPress={() => setEditModalVisible(false)} className="p-3 items-center">
-                      <Text className="text-gray-500 font-bold">취소</Text>
                   </TouchableOpacity>
               </View>
           </KeyboardAvoidingView>
@@ -365,7 +333,6 @@ export default function MyPageScreen() {
               <View className="bg-white rounded-2xl p-6">
                   <Text className="text-xl font-bold text-gray-900 mb-2">1:1 문의하기</Text>
                   <Text className="text-gray-500 text-xs mb-4">건의사항이나 불편한 점을 남겨주세요.</Text>
-                  
                   <TextInput 
                     className="bg-gray-50 p-4 rounded-xl border border-gray-200 h-32 mb-4" 
                     multiline 
@@ -374,7 +341,6 @@ export default function MyPageScreen() {
                     value={inquiryText}
                     onChangeText={setInquiryText}
                   />
-                  
                   <View className="flex-row gap-3">
                       <TouchableOpacity onPress={() => setInquiryModalVisible(false)} className="flex-1 bg-gray-200 p-3 rounded-xl items-center">
                           <Text className="text-gray-600 font-bold">취소</Text>

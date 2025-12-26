@@ -8,7 +8,7 @@ import {
   Alert, 
   Modal,
   Platform,
-  Share // 👇 [New] 공유 기능을 위해 추가
+  Share // 👇 [New] 네이티브 공유 기능을 위해 추가
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -16,7 +16,7 @@ import { FontAwesome5 } from '@expo/vector-icons';
 import { 
     doc, getDoc, runTransaction, serverTimestamp 
 } from 'firebase/firestore';
-// 👇 [Path Check] 경로 유지
+// 👇 [Path Check] 기존 경로 유지
 import { db } from '../../configs/firebaseConfig';
 import { useUser } from '../context/UserContext';
 
@@ -72,17 +72,15 @@ export default function MatchDetailScreen() {
     }
   };
 
-  // ✅ [New] 매치 초대장 공유 로직 (v1.24 핵심 기능)
+  // ✅ [Updated] 네이티브 공유 로직 적용 (v1.25)
   const handleShare = async () => {
       if (!match) return;
 
-      // 1. 공유 텍스트 생성 (명세서 포맷 준수)
       const typeText = `${match.type === '6man' ? '6인제' : '9인제'} | ${match.gender === 'male' ? '남자부' : match.gender === 'female' ? '여자부' : '혼성'} | ${match.level}`;
-      // URL 생성: 웹이면 현재 주소, 앱이면 배포된 웹 주소 조합
-      const shareUrl = Platform.OS === 'web' 
-        ? window.location.href 
-        : `https://pipe-app.vercel.app/match/${match.id}`;
+      // 앱/웹 공통으로 사용할 수 있는 배포 URL
+      const shareUrl = `https://pipe-app.vercel.app/match/${match.id}`;
 
+      // 공유 텍스트 포맷팅
       const shareMessage = `🏐 [PIPE 매치 초청] 상대 팀을 찾습니다!
 
 📅 ${match.timeDisplay}
@@ -93,21 +91,25 @@ ${match.description ? `📢 비고: ${match.description}` : ''}
 👇 매치 신청하러 가기
 ${shareUrl}`;
 
-      // 2. 플랫폼별 공유 처리
-      if (Platform.OS === 'web') {
+      // 플랫폼별 분기 처리
+      if (Platform.OS !== 'web') {
+          // [App] 네이티브 공유 시트 호출 (카카오톡, 문자 등 선택 가능)
+          try {
+              await Share.share({
+                  message: shareMessage,
+                  // iOS는 url 파라미터를 따로 주면 미리보기가 더 잘 나옴
+                  url: Platform.OS === 'ios' ? shareUrl : undefined, 
+              });
+          } catch (error) {
+              Alert.alert("오류", "공유 기능을 실행할 수 없습니다.");
+          }
+      } else {
+          // [Web] 클립보드 복사 (PC/모바일 웹 브라우저)
           try {
               await navigator.clipboard.writeText(shareMessage);
               window.alert("초대장이 복사되었습니다!\n원하는 곳에 붙여넣기(Ctrl+V) 하세요.");
           } catch (err) {
               window.alert("복사에 실패했습니다. 수동으로 복사해주세요.");
-          }
-      } else {
-          try {
-              await Share.share({
-                  message: shareMessage,
-              });
-          } catch (error) {
-              Alert.alert("오류", "공유하기 기능을 사용할 수 없습니다.");
           }
       }
   };
@@ -117,6 +119,7 @@ ${shareUrl}`;
     if (!user?.teamId) return Alert.alert("알림", "팀에 소속되어야 신청할 수 있습니다.");
     if (user.teamId === match?.teamId) return Alert.alert("알림", "자신의 팀 매치에는 신청할 수 없습니다.");
     
+    // 실제 신청 로직은 applicants 관리 페이지에서 처리하거나 별도 구현
     Alert.alert("신청", "매치 신청 기능은 '신청자 관리' 페이지와 연동됩니다.");
   };
 
@@ -203,10 +206,10 @@ ${shareUrl}`;
         </TouchableOpacity>
         <Text className="text-lg font-bold text-gray-900">매치 상세</Text>
         
-        {/* 👇 [New] 공유 버튼 추가 (모집 중일 때만 노출 추천) */}
+        {/* 👇 [Updated] 공유 아이콘 변경 (share-square) */}
         {match.status === 'recruiting' ? (
             <TouchableOpacity onPress={handleShare} className="p-2 -mr-2">
-                <FontAwesome5 name="link" size={18} color="#111827" />
+                <FontAwesome5 name="share-square" size={20} color="#111827" />
             </TouchableOpacity>
         ) : (
             <View className="w-8" />
