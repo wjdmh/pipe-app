@@ -9,7 +9,8 @@ import {
   Platform, 
   Modal, 
   TextInput,
-  KeyboardAvoidingView
+  KeyboardAvoidingView,
+  Share // 👇 [New] 공유 기능을 위해 추가
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { doc, getDoc, updateDoc, arrayUnion, deleteDoc } from 'firebase/firestore';
@@ -26,7 +27,7 @@ type GuestPost = {
   hostCaptainId: string;
   teamName: string;
   gender: 'male' | 'female' | 'mixed';
-  positions: string; // "세터, 레프트" (String)
+  positions: string; 
   targetLevel: string;
   time: string;
   loc: string;
@@ -86,22 +87,61 @@ export default function GuestDetailScreen() {
     } catch { return isoString; }
   };
 
+  // ✅ [New] 게스트 모집 공유 로직 (v1.24 핵심 기능)
+  const handleShare = async () => {
+      if (!post) return;
+
+      // URL 생성
+      const shareUrl = Platform.OS === 'web' 
+        ? window.location.href 
+        : `https://pipe-app.vercel.app/guest/${post.id}`;
+
+      // 공유 텍스트 생성 (명세서 포맷 준수)
+      const shareMessage = `🏃‍♂️ [PIPE 게스트 모집] 함께 뛰실 분!
+
+🛡️ 포지션: ${post.positions}
+📅 ${formatTime(post.time)}
+📍 ${post.loc}
+👕 팀명: ${post.teamName} (${post.gender === 'male' ? '남' : post.gender === 'female' ? '여' : '혼성'})
+${post.note ? `📢 비고: ${post.note}` : ''}
+
+👇 게스트 지원하러 가기
+${shareUrl}`;
+
+      // 플랫폼별 처리
+      if (Platform.OS === 'web') {
+          try {
+              await navigator.clipboard.writeText(shareMessage);
+              window.alert("초대장이 복사되었습니다!\n원하는 곳에 붙여넣기(Ctrl+V) 하세요.");
+          } catch (err) {
+              window.alert("복사에 실패했습니다. 수동으로 복사해주세요.");
+          }
+      } else {
+          try {
+              await Share.share({
+                  message: shareMessage,
+              });
+          } catch (error) {
+              Alert.alert("오류", "공유하기 기능을 사용할 수 없습니다.");
+          }
+      }
+  };
+
   // [Logic] 지원하기 제출
   const handleApply = async () => {
     if (!myPosition) return Alert.alert('알림', '주 포지션을 선택해주세요.');
     if (!user) {
         Alert.alert('로그인 필요', '로그인 후 이용해주세요.');
-        return router.push('/auth/login');
+        return router.push('/auth/login' as any);
     }
 
     setSubmitting(true);
     try {
         const docRef = doc(db, "guest_posts", id as string);
         
-        // 신청 데이터 구조
         const applicationData = {
             uid: user.uid,
-            name: user.displayName || '익명', // 닉네임이 있다면 그것을 사용
+            name: user.displayName || '익명',
             position: myPosition,
             message: message.trim(),
             appliedAt: new Date().toISOString()
@@ -114,7 +154,6 @@ export default function GuestDetailScreen() {
         Alert.alert('신청 완료', '호스트에게 신청을 보냈습니다.', [
             { text: '확인', onPress: () => {
                 setShowApplyModal(false);
-                // 로컬 상태 업데이트 (리패치 없이 즉시 반영)
                 setPost(prev => prev ? ({...prev, applicants: [...prev.applicants, applicationData]}) : null);
             }}
         ]);
@@ -126,7 +165,7 @@ export default function GuestDetailScreen() {
     }
   };
 
-  // [Logic] 삭제하기 (호스트 전용)
+  // [Logic] 삭제하기
   const handleDelete = async () => {
       Alert.alert('삭제 확인', '정말 이 모집글을 삭제하시겠습니까?', [
           { text: '취소', style: 'cancel' },
@@ -155,15 +194,20 @@ export default function GuestDetailScreen() {
                 <FontAwesome5 name="arrow-left" size={20} color="#111827" />
             </TouchableOpacity>
             <Text className="font-bold text-[16px]">모집 상세</Text>
-            <View className="w-8" />
+            
+            {/* 👇 [New] 공유 버튼 추가 */}
+            <TouchableOpacity onPress={handleShare} className="p-2 -mr-2">
+                <FontAwesome5 name="link" size={18} color="#111827" />
+            </TouchableOpacity>
         </View>
 
         <ScrollView contentContainerStyle={{ paddingBottom: 100 }}>
             {/* 1. Title Section */}
             <View className="px-6 pt-8 pb-6 border-b border-gray-100">
                 <View className="flex-row items-center mb-3">
+                    {/* [Term] 용병 -> 게스트 변경 */}
                     <View className="bg-orange-50 px-2.5 py-1 rounded-md mr-2">
-                        <Text className="text-orange-600 font-bold text-[12px]">용병구인</Text>
+                        <Text className="text-orange-600 font-bold text-[12px]">게스트모집</Text>
                     </View>
                     <Text className="text-gray-500 font-medium text-[13px]">{post.gender === 'male' ? '남자부' : post.gender === 'female' ? '여자부' : '혼성'} · {post.targetLevel}</Text>
                 </View>
@@ -233,7 +277,7 @@ export default function GuestDetailScreen() {
           <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} className="flex-1 justify-end">
               <TouchableOpacity className="flex-1 bg-black/40" onPress={() => setShowApplyModal(false)} />
               <View className="bg-white rounded-t-[24px] p-6 pb-10">
-                  <Text className="text-xl font-bold text-gray-900 mb-6">용병 지원하기</Text>
+                  <Text className="text-xl font-bold text-gray-900 mb-6">게스트 지원하기</Text>
                   
                   {/* 포지션 선택 */}
                   <Text className="text-[14px] font-bold text-gray-500 mb-3">내 포지션</Text>

@@ -7,16 +7,17 @@ import {
   ActivityIndicator, 
   Alert, 
   Modal,
-  Platform
+  Platform,
+  Share // 👇 [New] 공유 기능을 위해 추가
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { 
-    doc, getDoc, runTransaction, serverTimestamp, updateDoc 
+    doc, getDoc, runTransaction, serverTimestamp 
 } from 'firebase/firestore';
-// 👇 [Path Check]
-import { db, auth } from '../../configs/firebaseConfig';
+// 👇 [Path Check] 경로 유지
+import { db } from '../../configs/firebaseConfig';
 import { useUser } from '../context/UserContext';
 
 type MatchData = {
@@ -32,9 +33,9 @@ type MatchData = {
   loc: string;
   description: string;
   status: 'recruiting' | 'scheduled' | 'finished';
-  opponentId?: string; // 매칭된 상대 팀 ID
-  opponentName?: string; // 매칭된 상대 팀 이름
-  winnerId?: string; // 승리 팀 ID
+  opponentId?: string; 
+  opponentName?: string; 
+  winnerId?: string; 
 };
 
 export default function MatchDetailScreen() {
@@ -71,32 +72,66 @@ export default function MatchDetailScreen() {
     }
   };
 
-  // [Action] 매치 신청하기 (상대 팀 입장)
+  // ✅ [New] 매치 초대장 공유 로직 (v1.24 핵심 기능)
+  const handleShare = async () => {
+      if (!match) return;
+
+      // 1. 공유 텍스트 생성 (명세서 포맷 준수)
+      const typeText = `${match.type === '6man' ? '6인제' : '9인제'} | ${match.gender === 'male' ? '남자부' : match.gender === 'female' ? '여자부' : '혼성'} | ${match.level}`;
+      // URL 생성: 웹이면 현재 주소, 앱이면 배포된 웹 주소 조합
+      const shareUrl = Platform.OS === 'web' 
+        ? window.location.href 
+        : `https://pipe-app.vercel.app/match/${match.id}`;
+
+      const shareMessage = `🏐 [PIPE 매치 초청] 상대 팀을 찾습니다!
+
+📅 ${match.timeDisplay}
+📍 ${match.loc}
+🔥 ${typeText}
+${match.description ? `📢 비고: ${match.description}` : ''}
+
+👇 매치 신청하러 가기
+${shareUrl}`;
+
+      // 2. 플랫폼별 공유 처리
+      if (Platform.OS === 'web') {
+          try {
+              await navigator.clipboard.writeText(shareMessage);
+              window.alert("초대장이 복사되었습니다!\n원하는 곳에 붙여넣기(Ctrl+V) 하세요.");
+          } catch (err) {
+              window.alert("복사에 실패했습니다. 수동으로 복사해주세요.");
+          }
+      } else {
+          try {
+              await Share.share({
+                  message: shareMessage,
+              });
+          } catch (error) {
+              Alert.alert("오류", "공유하기 기능을 사용할 수 없습니다.");
+          }
+      }
+  };
+
+  // [Action] 매치 신청하기
   const applyMatch = async () => {
     if (!user?.teamId) return Alert.alert("알림", "팀에 소속되어야 신청할 수 있습니다.");
     if (user.teamId === match?.teamId) return Alert.alert("알림", "자신의 팀 매치에는 신청할 수 없습니다.");
     
-    // *실제 신청 로직은 applicants 페이지나 별도 로직으로 연결되지만,
-    // 여기서는 UX 흐름상 신청자 관리 페이지로 넘기거나 신청 함수 호출
-    // V1.1에서는 '신청' 버튼 클릭 시 간단한 확인 후 신청자 배열에 추가하는 로직이 필요하나,
-    // 이번 요청 범위인 '결과 처리'에 집중하기 위해 생략하거나 간단히 구현합니다.
     Alert.alert("신청", "매치 신청 기능은 '신청자 관리' 페이지와 연동됩니다.");
   };
 
-  // [Logic] 경기 결과 입력 및 승점 반영 (핵심)
+  // [Logic] 경기 결과 입력
   const submitResult = async () => {
     if (!selectedWinner || !match || !match.opponentId) return;
     
     setProcessing(true);
     try {
         await runTransaction(db, async (transaction) => {
-            // 1. 최신 매치 상태 확인
             const matchRef = doc(db, "matches", match.id);
             const matchDoc = await transaction.get(matchRef);
             if (!matchDoc.exists()) throw "매치가 존재하지 않습니다.";
             if (matchDoc.data().status === 'finished') throw "이미 종료된 경기입니다.";
 
-            // 2. 팀 정보 가져오기
             const homeRef = doc(db, "teams", match.teamId);
             const awayRef = doc(db, "teams", match.opponentId!);
             
@@ -108,17 +143,12 @@ export default function MatchDetailScreen() {
             const homeStats = homeDoc.data().stats || { wins: 0, losses: 0, points: 0, total: 0 };
             const awayStats = awayDoc.data().stats || { wins: 0, losses: 0, points: 0, total: 0 };
 
-            // 3. 승점 및 전적 계산
-            // 승리 팀: 승점 +3, 승 +1, 경기수 +1
-            // 패배 팀: 승점 +1, 패 +1, 경기수 +1
             if (selectedWinner === match.teamId) {
-                // 홈팀 승리
                 homeStats.wins += 1;
                 homeStats.points += 3;
                 awayStats.losses += 1;
                 awayStats.points += 1;
             } else {
-                // 원정팀 승리
                 awayStats.wins += 1;
                 awayStats.points += 3;
                 homeStats.losses += 1;
@@ -127,7 +157,6 @@ export default function MatchDetailScreen() {
             homeStats.total += 1;
             awayStats.total += 1;
 
-            // 4. DB 업데이트 (Atomicity 보장)
             transaction.update(matchRef, {
                 status: 'finished',
                 winnerId: selectedWinner,
@@ -140,7 +169,7 @@ export default function MatchDetailScreen() {
         Alert.alert("처리 완료", "경기 결과가 랭킹에 반영되었습니다.", [
             { text: "확인", onPress: () => {
                 setShowResultModal(false);
-                fetchMatchInfo(); // 화면 갱신
+                fetchMatchInfo();
             }}
         ]);
 
@@ -156,11 +185,9 @@ export default function MatchDetailScreen() {
     return <View className="flex-1 bg-white justify-center items-center"><ActivityIndicator color="#4F46E5" /></View>;
   }
 
-  // 권한 체크: 작성자(팀장) 또는 관리자
   const isWriter = user?.uid === match.writerId;
   const canManage = isWriter || user?.role === 'admin';
 
-  // 상태 뱃지 스타일
   const statusBadge = {
       recruiting: { text: '모집중', color: 'text-blue-600', bg: 'bg-blue-50' },
       scheduled: { text: '경기 예정', color: 'text-green-600', bg: 'bg-green-50' },
@@ -175,7 +202,15 @@ export default function MatchDetailScreen() {
             <FontAwesome5 name="arrow-left" size={20} color="#111827" />
         </TouchableOpacity>
         <Text className="text-lg font-bold text-gray-900">매치 상세</Text>
-        <View className="w-8" />
+        
+        {/* 👇 [New] 공유 버튼 추가 (모집 중일 때만 노출 추천) */}
+        {match.status === 'recruiting' ? (
+            <TouchableOpacity onPress={handleShare} className="p-2 -mr-2">
+                <FontAwesome5 name="link" size={18} color="#111827" />
+            </TouchableOpacity>
+        ) : (
+            <View className="w-8" />
+        )}
       </View>
 
       <ScrollView contentContainerStyle={{ paddingBottom: 100 }}>
