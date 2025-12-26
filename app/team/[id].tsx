@@ -8,8 +8,8 @@ import {
   Alert, 
   Modal, 
   TextInput, 
-  Platform,
-  Share, 
+  Platform
+  // Share 제거 (utils/share.ts 사용)
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -21,6 +21,8 @@ import {
 // 👇 [Path Check] 경로가 맞는지 확인해주세요
 import { db, auth } from '../../configs/firebaseConfig';
 import { useUser } from '../context/UserContext';
+// 👇 [New] 공유 유틸리티 불러오기
+import { shareLink } from '../../utils/share';
 
 export default function TeamDetailScreen() {
   const { id } = useLocalSearchParams();
@@ -107,23 +109,16 @@ export default function TeamDetailScreen() {
     }
   };
 
-  // ✅ [UX Unified] OS 기본 공유 기능 사용 (Share Sheet)
+  // ✅ [Updated] 공유 유틸리티(shareLink) 적용
   const handleInvite = async () => {
       const shareUrl = `https://pipe-app.vercel.app/team/${teamId}`;
-      const message = `🏐 [PIPE 팀 초대장]\n'${team.name}' 팀에서 당신을 초대합니다!\n\n👇 팀 가입하러 가기\n${shareUrl}`;
+      const message = `🏐 [PIPE 팀 초대장]\n'${team.name}' 팀에서 당신을 초대합니다!`;
 
-      if (Platform.OS !== 'web') {
-          try {
-              // 네이티브 공유 시트 호출
-              await Share.share({ message, url: Platform.OS === 'ios' ? shareUrl : undefined });
-          } catch (e) { Alert.alert('오류', '공유 실패'); }
-      } else {
-          try {
-              // 웹: 클립보드 복사
-              await navigator.clipboard.writeText(message);
-              window.alert('초대 링크가 복사되었습니다!');
-          } catch (e) { window.alert('복사 실패'); }
-      }
+      await shareLink({
+          title: 'PIPE 팀 초대',
+          message: message,
+          url: shareUrl
+      });
   };
 
   const handleUpdateTeam = async () => {

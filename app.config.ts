@@ -1,8 +1,8 @@
 import { ExpoConfig, ConfigContext } from 'expo/config';
 
 export default ({ config }: ConfigContext): ExpoConfig => {
-  // [Vercel Fix] Vercel 배포는 루트 경로(/)를 사용하므로 baseUrl을 비워둡니다.
-  // GitHub Pages용 설정('/pipe-app/')은 삭제했습니다.
+  // [Vercel Fix] SPA 모드 설정을 위해 output을 'single'로 변경했습니다.
+  // 이제 새로고침 시 404 에러 없이 index.html이 로드되어 라우팅을 처리합니다.
   
   return {
     ...config,
@@ -34,7 +34,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     web: {
       "favicon": "./assets/favicon.png",
       "bundler": "metro",
-      "output": "static",
+      "output": "single", // 👈 [핵심 변경] static -> single (SPA 모드)
       "name": "Pipe - 배구 매칭 플랫폼",
       "display": "standalone",
       "backgroundColor": "#ffffff",
@@ -45,8 +45,6 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     ],
     experiments: {
       "typedRoutes": true,
-      // baseUrl 설정을 삭제하거나 주석 처리하여 기본값(/)을 사용하게 합니다.
-      // "baseUrl": "/pipe-app/"  <-- 이 줄이 문제였습니다.
     }
   };
 };

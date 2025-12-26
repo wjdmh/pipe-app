@@ -9,14 +9,16 @@ import {
   Platform, 
   Modal, 
   TextInput,
-  KeyboardAvoidingView,
-  Share // ✅ [New] 네이티브 공유 기능을 위해 추가
+  KeyboardAvoidingView
+  // Share 제거 (utils/share.ts 사용)
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { doc, getDoc, updateDoc, arrayUnion } from 'firebase/firestore';
 import { auth, db } from '../../configs/firebaseConfig';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { FontAwesome5 } from '@expo/vector-icons';
+// 👇 [New] 공유 유틸리티 불러오기
+import { shareLink } from '../../utils/share';
 
 // [상수] 포지션 선택지
 const POSITIONS = ['세터', '레프트', '라이트', '센터', '리베로', '올라운더'];
@@ -87,46 +89,27 @@ export default function GuestDetailScreen() {
     } catch { return isoString; }
   };
 
-  // ✅ [Updated] 네이티브 공유 로직 적용 (OS 기본 공유 시트 호출)
+  // ✅ [Updated] 공유 유틸리티(shareLink) 적용
   const handleShare = async () => {
       if (!post) return;
 
-      // 앱/웹 공통 URL
       const shareUrl = `https://pipe-app.vercel.app/guest/${post.id}`;
 
-      // 공유 텍스트 생성 (팀원 모집과 유사한 포맷)
+      // 본문 메시지 생성
       const shareMessage = `🏃‍♂️ [PIPE 게스트 모집] 함께 뛰실 분!
 
 🛡️ 포지션: ${post.positions}
 📅 ${formatTime(post.time)}
 📍 ${post.loc}
 👕 팀명: ${post.teamName} (${post.gender === 'male' ? '남' : post.gender === 'female' ? '여' : '혼성'})
-${post.note ? `📢 비고: ${post.note}` : ''}
+${post.note ? `📢 비고: ${post.note}` : ''}`;
 
-👇 게스트 지원하러 가기
-${shareUrl}`;
-
-      // 플랫폼별 분기 처리
-      if (Platform.OS !== 'web') {
-          // [App] 네이티브 공유 시트 호출
-          try {
-              await Share.share({
-                  message: shareMessage,
-                  // iOS에서는 url 필드를 활용하면 미리보기 썸네일 처리가 더 원활함
-                  url: Platform.OS === 'ios' ? shareUrl : undefined,
-              });
-          } catch (error) {
-              Alert.alert("오류", "공유 기능을 실행할 수 없습니다.");
-          }
-      } else {
-          // [Web] 클립보드 복사
-          try {
-              await navigator.clipboard.writeText(shareMessage);
-              window.alert("초대장이 복사되었습니다!\n원하는 곳에 붙여넣기(Ctrl+V) 하세요.");
-          } catch (err) {
-              window.alert("복사에 실패했습니다. 수동으로 복사해주세요.");
-          }
-      }
+      // 공통 공유 함수 호출
+      await shareLink({
+          title: 'PIPE 게스트 모집',
+          message: shareMessage,
+          url: shareUrl
+      });
   };
 
   // [Logic] 지원하기 제출

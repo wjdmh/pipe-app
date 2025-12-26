@@ -1,16 +1,19 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { 
   View, Text, TouchableOpacity, ScrollView, Alert, ActivityIndicator, 
-  Modal, FlatList, Linking, Share, Platform, TextInput 
+  Modal, FlatList, Linking, Platform, TextInput 
 } from 'react-native';
 import { 
   doc, getDoc, updateDoc, arrayRemove, arrayUnion, runTransaction, 
-  collection, query, onSnapshot, serverTimestamp 
+  collection, query, onSnapshot, serverTimestamp, getDocs 
 } from 'firebase/firestore';
 import { auth, db } from '../../configs/firebaseConfig';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+// 👇 [New] 랭킹 데이터 및 공유 유틸리티 불러오기
+import { KUSF_TEAMS } from './ranking';
+import { shareLink } from '../../utils/share';
 
 // --- [디자인 테마 상수] ---
 const THEME = {
@@ -26,18 +29,24 @@ const THEME = {
 type JoinRequest = { uid: string; name: string; position: string; requestedAt: string; };
 type Player = { id: number; uid?: string; name: string; position: string; };
 type TeamData = { 
-    id: string; name: string; affiliation: string; level: string; region?: string;
-    description?: string; // 추가됨
+    id: string; 
+    name: string; 
+    affiliation: string; 
+    level: string; 
+    gender?: 'male' | 'female' | 'mixed'; // 랭킹 계산용 성별 추가
+    region?: string;
+    description?: string; 
     stats: { wins: number; losses: number; points: number; total: number; rank?: number }; 
     roster: Player[]; members: string[]; captainId: string; 
     joinRequests?: JoinRequest[]; 
+    kusfId?: string; // KUSF 매칭용 ID
 };
 type MatchData = {
   id: string; hostId: string; guestId?: string; team: string; time: string; loc: string; 
-  status: 'recruiting' | 'scheduled' | 'finished' | 'dispute'; // status 수정 ('matched' -> 'scheduled' 호환)
+  status: 'recruiting' | 'scheduled' | 'finished' | 'dispute'; 
   applicants: string[];
-  opponentName?: string; // 추가됨
-  winnerId?: string; // 추가됨
+  opponentName?: string; 
+  winnerId?: string; 
   result?: { hostScore: number; guestScore: number; status: 'waiting' | 'verified' | 'dispute'; submitterId?: string };
   isDeleted?: boolean;
 };
@@ -82,6 +91,7 @@ export default function LockerScreen() {
   const [myTeamId, setMyTeamId] = useState<string | null>(null);
   const [isCaptain, setIsCaptain] = useState(false);
   const [matches, setMatches] = useState<MatchData[]>([]);
+  const [myRank, setMyRank] = useState<number | null>(null); // ✅ 실시간 랭킹 State
 
   // Action States
   const [selectedMember, setSelectedMember] = useState<Player | null>(null);
@@ -170,7 +180,71 @@ export default function LockerScreen() {
     return () => unsub();
   }, [myTeamId, status]);
 
-  // --- [3. 리스트 가공] ---
+  // --- [New] 3. 실시간 랭킹 계산 로직 ---
+  useEffect(() => {
+    if (!teamData) return;
+    
+    const calculateRank = async () => {
+        try {
+            // A. 전체 팀 데이터 가져오기 (DB)
+            const q = query(collection(db, "teams"));
+            const snapshot = await getDocs(q);
+            const dbTeams: any[] = [];
+            snapshot.forEach(d => dbTeams.push({ ...d.data(), id: d.id }));
+
+            // B. 성별 필터링 (내 팀과 같은 성별만)
+            const myGender = teamData.gender || 'male'; 
+            
+            // C. KUSF 데이터와 DB 데이터 병합 (ranking.tsx 로직 복제)
+            // KUSF 기본 리스트 복사
+            let combinedList = KUSF_TEAMS.filter(t => t.gender === myGender).map(t => ({...t}));
+
+            dbTeams.forEach(dbT => {
+                if (dbT.gender !== myGender) return;
+                
+                // 이름이나 KUSF ID로 매칭 시도
+                const index = combinedList.findIndex(t => t.id === dbT.kusfId || t.name === dbT.name);
+
+                if (index !== -1) {
+                    // 매칭된 경우 DB 데이터로 덮어쓰기 (내 팀도 여기서 업데이트됨)
+                    combinedList[index] = { 
+                        ...combinedList[index], 
+                        ...dbT, 
+                        stats: dbT.stats || combinedList[index].stats 
+                    };
+                } else {
+                    // 매칭되지 않은 팀 추가 (커스텀 팀)
+                    combinedList.push({
+                        id: dbT.id,
+                        name: dbT.name,
+                        affiliation: dbT.affiliation || 'Unknown',
+                        gender: dbT.gender,
+                        stats: dbT.stats || { wins:0, losses:0, points:0, total:0 }
+                    } as any);
+                }
+            });
+
+            // D. 정렬 (승점 -> 승수 -> 경기수)
+            combinedList.sort((a, b) => {
+                if (b.stats.points !== a.stats.points) return b.stats.points - a.stats.points;
+                if (b.stats.wins !== a.stats.wins) return b.stats.wins - a.stats.wins;
+                return b.stats.total - a.stats.total;
+            });
+
+            // E. 내 순위 찾기
+            const myIndex = combinedList.findIndex(t => t.id === teamData.id);
+            if (myIndex !== -1) {
+                setMyRank(myIndex + 1);
+            }
+        } catch (e) {
+            console.error("Rank Calc Error:", e);
+        }
+    };
+
+    calculateRank();
+  }, [teamData]); // teamData(점수 등)가 바뀌면 재계산
+
+  // --- [4. 리스트 가공] ---
   const { upcomingMatch, futureMatches, pastMatches, recruitingMatches, pendingMatches } = useMemo(() => {
       const now = new Date().toISOString();
       const confirmed = matches.filter(m => m.status === 'scheduled' || m.status === 'finished' || m.status === 'dispute');
@@ -179,7 +253,6 @@ export default function LockerScreen() {
       const future = confirmed.filter(m => m.time > now).sort((a, b) => a.time.localeCompare(b.time));
       const past = confirmed.filter(m => m.time <= now).sort((a, b) => b.time.localeCompare(a.time));
       
-      // 결과 입력이 필요한 매치 (시간 지남 + status가 scheduled)
       const pending = confirmed.filter(m => m.status === 'scheduled' && m.time < now);
 
       const upcoming = future.length > 0 ? future[0] : null;
@@ -194,27 +267,22 @@ export default function LockerScreen() {
       };
   }, [matches]);
 
-  // --- [4. 액션 핸들러] ---
+  // --- [5. 액션 핸들러] ---
   
-  // 4-1. 팀원 초대 (Share Sheet)
+  // ✅ 5-1. 팀원 초대 (Updated: shareLink 사용)
   const handleInvite = async () => {
       if (!teamData) return;
       const shareUrl = `https://pipe-app.vercel.app/team/${teamData.id}`;
-      const message = `🏐 [PIPE 팀 초대장]\n'${teamData.name}' 팀에서 당신을 초대합니다!\n\n👇 팀 가입하러 가기\n${shareUrl}`;
+      const message = `🏐 [PIPE 팀 초대장]\n'${teamData.name}' 팀에서 당신을 초대합니다!`;
 
-      if (Platform.OS !== 'web') {
-          try {
-              await Share.share({ message, url: Platform.OS === 'ios' ? shareUrl : undefined });
-          } catch (e) { Alert.alert('오류', '공유 실패'); }
-      } else {
-          try {
-              await navigator.clipboard.writeText(message);
-              Alert.alert('알림', '초대 링크가 복사되었습니다!');
-          } catch (e) { Alert.alert('오류', '복사 실패'); }
-      }
+      await shareLink({
+          title: 'PIPE 팀 초대',
+          message: message,
+          url: shareUrl
+      });
   };
 
-  // 4-2. 팀 정보 수정
+  // 5-2. 팀 정보 수정
   const handleUpdateTeam = async () => {
       if(!editName.trim()) return Alert.alert('알림', '팀 이름을 입력해주세요.');
       if(!myTeamId) return;
@@ -229,7 +297,7 @@ export default function LockerScreen() {
       } catch(e) { Alert.alert('오류', '수정 실패'); }
   };
 
-  // 4-3. 팀원 방출 (Transaction)
+  // 5-3. 팀원 방출 (Transaction)
   const handleKickMember = () => {
       if (!selectedMember || !selectedMember.uid || !myTeamId) return;
       
@@ -241,7 +309,6 @@ export default function LockerScreen() {
                       const teamRef = doc(db, "teams", myTeamId);
                       const userRef = doc(db, "users", selectedMember.uid!); // uid check done above
                       
-                      // Roster에서 해당 멤버 제거 필터링
                       const newRoster = teamData?.roster.filter(p => p.uid !== selectedMember.uid) || [];
                       
                       transaction.update(teamRef, {
@@ -261,7 +328,7 @@ export default function LockerScreen() {
       ]);
   };
 
-  // 4-4. 주장 위임
+  // 5-4. 주장 위임
   const handleTransferCaptain = async () => {
       if (!selectedMember || !selectedMember.uid || !myTeamId || !auth.currentUser) return;
       const targetName = selectedMember.name;
@@ -287,7 +354,7 @@ export default function LockerScreen() {
       ]);
   };
 
-  // 4-5. 전화 걸기
+  // 5-5. 전화 걸기
   const handleCallMember = async () => {
       if (!selectedMember?.uid) return;
       if (!isCaptain) return; 
@@ -299,7 +366,7 @@ export default function LockerScreen() {
       } catch(e) { Alert.alert('오류', '정보 로드 실패'); }
   };
 
-  // 4-6. 가입 승인
+  // 5-6. 가입 승인
   const handleApproveRequest = async (req: JoinRequest) => {
     if (!myTeamId) return;
     try {
@@ -314,14 +381,14 @@ export default function LockerScreen() {
     } catch (e) { Alert.alert('오류', '승인 실패'); }
   };
 
-  // 4-7. 경기 결과 입력 (Transaction)
+  // 5-7. 경기 결과 입력 (Transaction)
   const handleInputResult = async () => {
       if (!targetMatch || !selectedWinner || !myTeamId) return;
       try {
         await runTransaction(db, async (transaction) => {
             const matchRef = doc(db, "matches", targetMatch.id);
             const teamRef = doc(db, "teams", myTeamId);
-            // 상대팀 ID 찾기 (호스트/게스트 구분에 따라)
+            
             const isHost = targetMatch.hostId === myTeamId;
             const oppId = isHost ? targetMatch.guestId : targetMatch.hostId;
             if(!oppId) throw "상대팀 정보 오류";
@@ -359,14 +426,14 @@ export default function LockerScreen() {
   };
 
 
-  // --- [5. 렌더링 분기] ---
+  // --- [6. 렌더링 분기] ---
 
-  // 5-1. 로딩
+  // 6-1. 로딩
   if (status === 'loading') {
       return <View className="flex-1 justify-center items-center bg-white"><ActivityIndicator size="large" color={THEME.primary} /></View>;
   }
 
-  // 5-2. 가입 대기
+  // 6-2. 가입 대기
   if (status === 'pending') {
       return (
           <SafeAreaView className="flex-1 bg-white justify-center items-center px-6">
@@ -381,7 +448,7 @@ export default function LockerScreen() {
       );
   }
 
-  // 5-3. 팀 없음
+  // 6-3. 팀 없음
   if (status === 'noTeam') {
       return (
           <SafeAreaView className="flex-1 bg-white justify-center items-center px-6">
@@ -403,7 +470,7 @@ export default function LockerScreen() {
       );
   }
 
-  // 5-4. 팀 관리 화면 (Has Team)
+  // 6-4. 팀 관리 화면 (Has Team)
   const sortedRoster = teamData?.roster ? [...teamData.roster].sort((a, b) => {
       const aIsCapt = a.uid === teamData.captainId;
       const bIsCapt = b.uid === teamData.captainId;
@@ -461,7 +528,8 @@ export default function LockerScreen() {
              <View className="flex-1 items-center border-r border-gray-200">
                  <Text className="text-gray-400 text-xs font-bold mb-1">랭킹</Text>
                  <View className="flex-row items-baseline">
-                     <Text className="text-xl font-black text-gray-900">{teamData?.stats?.rank || '-'}</Text>
+                     {/* ✅ 실시간 계산된 랭킹 표시 */}
+                     <Text className="text-xl font-black text-gray-900">{myRank ? myRank : '-'}</Text>
                      <Text className="text-xs text-gray-500 font-medium ml-0.5">위</Text>
                  </View>
              </View>
@@ -665,7 +733,7 @@ export default function LockerScreen() {
           )}
       </ScrollView>
 
-      {/* --- [Modals] --- */}
+      {/* --- Modals --- */}
       
       {/* 1. Edit Info Modal (New) */}
       <Modal visible={editModalVisible} animationType="slide">

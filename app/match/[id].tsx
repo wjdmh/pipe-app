@@ -7,8 +7,8 @@ import {
   ActivityIndicator, 
   Alert, 
   Modal,
-  Platform,
-  Share // [New] 네이티브 공유 기능을 위해 추가
+  Platform
+  // Share 제거 (utils/share.ts 사용)
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -18,6 +18,8 @@ import {
 } from 'firebase/firestore';
 import { db } from '../../configs/firebaseConfig';
 import { useUser } from '../context/UserContext';
+// 👇 [New] 공유 유틸리티 불러오기
+import { shareLink } from '../../utils/share';
 
 type MatchData = {
   id: string;
@@ -71,46 +73,27 @@ export default function MatchDetailScreen() {
     }
   };
 
-  // ✅ [Updated] 네이티브 공유 로직 적용 (OS 기본 공유 시트 호출)
+  // ✅ [Updated] 공유 유틸리티(shareLink) 적용
   const handleShare = async () => {
       if (!match) return;
 
       const typeText = `${match.type === '6man' ? '6인제' : '9인제'} | ${match.gender === 'male' ? '남자부' : match.gender === 'female' ? '여자부' : '혼성'} | ${match.level}`;
-      // 앱/웹 공통으로 사용할 수 있는 배포 URL
       const shareUrl = `https://pipe-app.vercel.app/match/${match.id}`;
 
-      // 공유 텍스트 포맷팅
+      // 본문 메시지 (링크는 shareLink 함수가 자동으로 붙여줍니다)
       const shareMessage = `🏐 [PIPE 매치 초청] 상대 팀을 찾습니다!
 
 📅 ${match.timeDisplay}
 📍 ${match.loc}
 🔥 ${typeText}
-${match.description ? `📢 비고: ${match.description}` : ''}
+${match.description ? `📢 비고: ${match.description}` : ''}`;
 
-👇 매치 신청하러 가기
-${shareUrl}`;
-
-      // 플랫폼별 분기 처리
-      if (Platform.OS !== 'web') {
-          // [App] 네이티브 공유 시트 호출 (카카오톡, 문자 등 선택 가능)
-          try {
-              await Share.share({
-                  message: shareMessage,
-                  // iOS는 url 파라미터를 따로 주면 미리보기 썸네일 처리가 더 잘 됨
-                  url: Platform.OS === 'ios' ? shareUrl : undefined, 
-              });
-          } catch (error) {
-              Alert.alert("오류", "공유 기능을 실행할 수 없습니다.");
-          }
-      } else {
-          // [Web] 클립보드 복사 (PC/모바일 웹 브라우저)
-          try {
-              await navigator.clipboard.writeText(shareMessage);
-              window.alert("초대장이 복사되었습니다!\n원하는 곳에 붙여넣기(Ctrl+V) 하세요.");
-          } catch (err) {
-              window.alert("복사에 실패했습니다. 수동으로 복사해주세요.");
-          }
-      }
+      // 공통 공유 함수 호출
+      await shareLink({
+          title: 'PIPE 매치 공유',
+          message: shareMessage,
+          url: shareUrl
+      });
   };
 
   // [Action] 매치 신청하기
