@@ -18,7 +18,7 @@ import {
     doc, getDoc, updateDoc, arrayRemove, runTransaction, 
     collection, query, where, getDocs, orderBy, serverTimestamp 
 } from 'firebase/firestore';
-// 👇 [Path Check]
+// 👇 [Path Check] 경로가 맞는지 확인해주세요
 import { db, auth } from '../../configs/firebaseConfig';
 import { useUser } from '../context/UserContext';
 
@@ -61,19 +61,17 @@ export default function TeamDetailScreen() {
             Alert.alert("오류", "팀을 찾을 수 없습니다.");
             return router.back();
         }
-        // 👇 [Fix] as any를 사용하여 타입 오류 해결
         const teamData = { id: teamSnap.id, ...teamSnap.data() } as any;
         
         setTeam(teamData);
         setEditName(teamData.name);
         setEditIntro(teamData.description || '');
 
-        // B. 멤버 정보 가져오기
+        // B. 멤버 정보
         if (teamData.members && teamData.members.length > 0) {
             const memberPromises = teamData.members.map((uid: string) => getDoc(doc(db, "users", uid)));
             const memberSnaps = await Promise.all(memberPromises);
             
-            // 👇 [Fix] 매개변수 s에 타입(any) 지정
             const memberList = memberSnaps
                 .filter((s: any) => s.exists())
                 .map((s: any) => ({ id: s.id, ...s.data() }));
@@ -91,7 +89,6 @@ export default function TeamDetailScreen() {
         const pendingList: any[] = [];
         
         matchSnaps.forEach(d => {
-            // 👇 [Fix] as any를 사용하여 time, status 접근 허용
             const m = { id: d.id, ...d.data() } as any;
             matchList.push(m);
             
@@ -110,16 +107,19 @@ export default function TeamDetailScreen() {
     }
   };
 
+  // ✅ [UX Unified] OS 기본 공유 기능 사용 (Share Sheet)
   const handleInvite = async () => {
       const shareUrl = `https://pipe-app.vercel.app/team/${teamId}`;
       const message = `🏐 [PIPE 팀 초대장]\n'${team.name}' 팀에서 당신을 초대합니다!\n\n👇 팀 가입하러 가기\n${shareUrl}`;
 
       if (Platform.OS !== 'web') {
           try {
+              // 네이티브 공유 시트 호출
               await Share.share({ message, url: Platform.OS === 'ios' ? shareUrl : undefined });
           } catch (e) { Alert.alert('오류', '공유 실패'); }
       } else {
           try {
+              // 웹: 클립보드 복사
               await navigator.clipboard.writeText(message);
               window.alert('초대 링크가 복사되었습니다!');
           } catch (e) { window.alert('복사 실패'); }
@@ -165,6 +165,7 @@ export default function TeamDetailScreen() {
       ]);
   };
 
+  // ✅ [Logic Verified] Transaction을 통한 안전한 결과 처리
   const handleInputResult = async () => {
       if (!targetMatch || !selectedWinner) return;
       try {
@@ -174,17 +175,19 @@ export default function TeamDetailScreen() {
             const oppRef = doc(db, "teams", targetMatch.opponentId); 
 
             const mDoc = await transaction.get(matchRef);
-            // 👇 [Fix] 안전한 접근을 위해 any 캐스팅
             const mData = mDoc.data() as any;
+            
+            // 중복 처리 방지
             if(mData?.status === 'finished') throw "이미 처리된 경기입니다.";
 
             const homeDoc = await transaction.get(teamRef);
             const oppDoc = await transaction.get(oppRef);
 
-            // 👇 [Fix] 안전한 접근
+            // 데이터 안전 접근 (기존 스탯이 없으면 0으로 초기화)
             const hStats = (homeDoc.data() as any)?.stats || { wins:0, losses:0, points:0, total:0 };
             const oStats = (oppDoc.data() as any)?.stats || { wins:0, losses:0, points:0, total:0 };
 
+            // 승점 로직: 승리 3점, 패배 1점
             if (selectedWinner === targetMatch.teamId) {
                 hStats.wins++; hStats.points += 3;
                 oStats.losses++; oStats.points += 1;
@@ -194,6 +197,7 @@ export default function TeamDetailScreen() {
             }
             hStats.total++; oStats.total++;
 
+            // 상태 업데이트 및 종료 시간 기록
             transaction.update(matchRef, { status: 'finished', winnerId: selectedWinner, endedAt: serverTimestamp() });
             transaction.update(teamRef, { stats: hStats });
             transaction.update(oppRef, { stats: oStats });
@@ -217,17 +221,18 @@ export default function TeamDetailScreen() {
 
   return (
     <SafeAreaView className="flex-1 bg-white" edges={['top']}>
+      {/* 1. Header (공유 버튼 제거됨) */}
       <View className="px-5 py-3 border-b border-gray-100 flex-row justify-between items-center">
         <TouchableOpacity onPress={() => router.back()} className="p-2 -ml-2">
             <FontAwesome5 name="arrow-left" size={20} color="#111827" />
         </TouchableOpacity>
         <Text className="font-bold text-lg">팀 상세</Text>
-        <TouchableOpacity onPress={handleInvite} className="p-2 -mr-2">
-            <FontAwesome5 name="share-square" size={20} color="#111827" />
-        </TouchableOpacity>
+        <View className="w-8" /> {/* 레이아웃 균형을 위한 빈 공간 */}
       </View>
 
       <ScrollView contentContainerStyle={{ paddingBottom: 100 }}>
+        
+        {/* 2. Team Profile */}
         <View className="items-center py-8 bg-indigo-50/50">
             <View className="w-24 h-24 bg-white rounded-full items-center justify-center shadow-sm mb-4 border border-indigo-100">
                 <FontAwesome5 name="users" size={40} color="#4F46E5" />
@@ -253,23 +258,30 @@ export default function TeamDetailScreen() {
             </View>
         </View>
 
+        {/* 3. [Updated] Captain Dashboard UI */}
         {isCaptain ? (
-            <View className="flex-row px-5 py-6 gap-3">
-                <TouchableOpacity onPress={() => setEditModalVisible(true)} className="flex-1 bg-gray-50 py-4 rounded-xl items-center border border-gray-100 active:bg-gray-100">
-                    <FontAwesome5 name="edit" size={18} color="#4B5563" style={{marginBottom:6}}/>
-                    <Text className="text-gray-600 font-bold text-xs">정보 수정</Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={() => setMemberModalVisible(true)} className="flex-1 bg-gray-50 py-4 rounded-xl items-center border border-gray-100 active:bg-gray-100">
-                    <FontAwesome5 name="user-friends" size={18} color="#4B5563" style={{marginBottom:6}}/>
-                    <Text className="text-gray-600 font-bold text-xs">멤버 관리</Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={() => setMatchModalVisible(true)} className="flex-1 bg-gray-50 py-4 rounded-xl items-center border border-gray-100 active:bg-gray-100">
-                    <View>
-                        <FontAwesome5 name="trophy" size={18} color="#4B5563" style={{marginBottom:6, alignSelf:'center'}}/>
-                        {pendingMatches.length > 0 && <View className="absolute -top-1 -right-2 w-3 h-3 bg-red-500 rounded-full border border-white" />}
-                    </View>
-                    <Text className="text-gray-600 font-bold text-xs">매치 관리</Text>
-                </TouchableOpacity>
+            <View className="mx-5 mt-6 bg-[#191F28] rounded-2xl p-5 shadow-lg">
+                <View className="flex-row items-center mb-4">
+                    <FontAwesome5 name="crown" size={16} color="#FBBF24" />
+                    <Text className="text-white font-bold text-lg ml-2">대표자 관리 모드</Text>
+                </View>
+                <View className="flex-row gap-3">
+                    <TouchableOpacity onPress={() => setEditModalVisible(true)} className="flex-1 bg-gray-700 py-4 rounded-xl items-center active:bg-gray-600">
+                        <FontAwesome5 name="edit" size={18} color="#9CA3AF" style={{marginBottom:6}}/>
+                        <Text className="text-gray-300 font-bold text-xs">정보 수정</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => setMemberModalVisible(true)} className="flex-1 bg-gray-700 py-4 rounded-xl items-center active:bg-gray-600">
+                        <FontAwesome5 name="user-friends" size={18} color="#60A5FA" style={{marginBottom:6}}/>
+                        <Text className="text-blue-300 font-bold text-xs">멤버 관리</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => setMatchModalVisible(true)} className="flex-1 bg-gray-700 py-4 rounded-xl items-center active:bg-gray-600">
+                        <View>
+                            <FontAwesome5 name="trophy" size={18} color="#FBBF24" style={{marginBottom:6, alignSelf:'center'}}/>
+                            {pendingMatches.length > 0 && <View className="absolute -top-1 -right-2 w-3 h-3 bg-red-500 rounded-full border border-white" />}
+                        </View>
+                        <Text className="text-yellow-500 font-bold text-xs">매치 관리</Text>
+                    </TouchableOpacity>
+                </View>
             </View>
         ) : isMember && (
             <View className="px-5 py-4">
@@ -280,14 +292,16 @@ export default function TeamDetailScreen() {
             </View>
         )}
 
-        <View className="px-5 py-2">
+        {/* Team Description */}
+        <View className="px-5 py-6">
             <Text className="text-lg font-bold text-gray-900 mb-3">팀 소개</Text>
             <View className="bg-gray-50 p-4 rounded-xl min-h-[100px]">
                 <Text className="text-gray-600 leading-relaxed">{team.description || "소개글이 없습니다."}</Text>
             </View>
         </View>
 
-        <View className="px-5 py-6">
+        {/* Members List */}
+        <View className="px-5 pb-6">
             <View className="flex-row justify-between items-center mb-3">
                 <Text className="text-lg font-bold text-gray-900">멤버 ({members.length})</Text>
                 <TouchableOpacity onPress={() => setMemberModalVisible(true)}>
@@ -308,6 +322,8 @@ export default function TeamDetailScreen() {
       </ScrollView>
 
       {/* --- Modals --- */}
+      
+      {/* Edit Modal */}
       <Modal visible={editModalVisible} animationType="slide">
         <SafeAreaView className="flex-1 bg-white">
             <View className="px-5 py-4 border-b border-gray-100 flex-row justify-between items-center">
@@ -326,6 +342,7 @@ export default function TeamDetailScreen() {
         </SafeAreaView>
       </Modal>
 
+      {/* Member Modal */}
       <Modal visible={memberModalVisible} animationType="slide">
         <SafeAreaView className="flex-1 bg-white">
             <View className="px-5 py-4 border-b border-gray-100 flex-row justify-between items-center">
@@ -361,6 +378,7 @@ export default function TeamDetailScreen() {
         </SafeAreaView>
       </Modal>
 
+      {/* Match Modal */}
       <Modal visible={matchModalVisible} animationType="slide">
         <SafeAreaView className="flex-1 bg-white">
             <View className="px-5 py-4 border-b border-gray-100 flex-row justify-between items-center">
@@ -411,6 +429,7 @@ export default function TeamDetailScreen() {
         </SafeAreaView>
       </Modal>
 
+      {/* Result Input Modal */}
       <Modal visible={resultModalVisible} transparent animationType="fade">
           <View className="flex-1 bg-black/60 justify-center items-center p-6">
               <View className="bg-white w-full rounded-2xl p-6">

@@ -10,11 +10,10 @@ import {
   Modal, 
   TextInput,
   KeyboardAvoidingView,
-  Share // 👇 [New] 공유 기능을 위해 추가
+  Share // ✅ [New] 네이티브 공유 기능을 위해 추가
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { doc, getDoc, updateDoc, arrayUnion } from 'firebase/firestore';
-// 👇 [Path Check] 경로 유지
 import { auth, db } from '../../configs/firebaseConfig';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { FontAwesome5 } from '@expo/vector-icons';
@@ -88,14 +87,14 @@ export default function GuestDetailScreen() {
     } catch { return isoString; }
   };
 
-  // ✅ [Updated] 네이티브 공유 로직 적용 (v1.25)
+  // ✅ [Updated] 네이티브 공유 로직 적용 (OS 기본 공유 시트 호출)
   const handleShare = async () => {
       if (!post) return;
 
       // 앱/웹 공통 URL
       const shareUrl = `https://pipe-app.vercel.app/guest/${post.id}`;
 
-      // 공유 텍스트 생성
+      // 공유 텍스트 생성 (팀원 모집과 유사한 포맷)
       const shareMessage = `🏃‍♂️ [PIPE 게스트 모집] 함께 뛰실 분!
 
 🛡️ 포지션: ${post.positions}
@@ -113,6 +112,7 @@ ${shareUrl}`;
           try {
               await Share.share({
                   message: shareMessage,
+                  // iOS에서는 url 필드를 활용하면 미리보기 썸네일 처리가 더 원활함
                   url: Platform.OS === 'ios' ? shareUrl : undefined,
               });
           } catch (error) {
@@ -197,7 +197,7 @@ ${shareUrl}`;
             </TouchableOpacity>
             <Text className="font-bold text-[16px]">모집 상세</Text>
             
-            {/* 👇 [Updated] 공유 아이콘 변경 (share-square) */}
+            {/* 공유 아이콘 */}
             <TouchableOpacity onPress={handleShare} className="p-2 -mr-2">
                 <FontAwesome5 name="share-square" size={20} color="#111827" />
             </TouchableOpacity>

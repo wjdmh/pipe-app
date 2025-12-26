@@ -13,7 +13,6 @@ import {
 } from 'react-native';
 import { signOut, deleteUser } from 'firebase/auth'; 
 import { doc, getDoc, collection, addDoc, updateDoc, runTransaction } from 'firebase/firestore'; 
-// 👇 [Path Check] 경로 유지
 import { auth, db } from '../../configs/firebaseConfig';
 import { useRouter } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
@@ -216,7 +215,7 @@ export default function MyPageScreen() {
             </View>
         )}
 
-        {/* B. 프로필 섹션 (간소화됨) */}
+        {/* B. 프로필 섹션 */}
         <View className="items-center py-8 bg-indigo-50/30 mb-2">
             <View className="w-20 h-20 bg-white rounded-full items-center justify-center shadow-sm border border-indigo-100 mb-3">
                 <FontAwesome5 name="user" size={32} color="#4F46E5" />
@@ -233,14 +232,14 @@ export default function MyPageScreen() {
             </View>
         </View>
 
-        {/* C. 소속 팀 위젯 (단순 이동 기능) */}
+        {/* C. 소속 팀 위젯 (단순 정보 확인용) */}
         <View className="px-5 -mt-4 mb-6">
             {loadingTeam ? (
                 <ActivityIndicator color="#4F46E5" />
             ) : user?.teamId && myTeam ? (
-                <TouchableOpacity 
-                    onPress={() => router.push(`/team/${myTeam.id}` as any)}
-                    className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex-row justify-between items-center active:bg-gray-50"
+                // [Modified] TouchableOpacity -> View (Read-Only)
+                <View 
+                    className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex-row justify-between items-center"
                 >
                     <View className="flex-row items-center">
                         <View className="w-12 h-12 bg-blue-50 rounded-xl items-center justify-center mr-4">
@@ -249,28 +248,28 @@ export default function MyPageScreen() {
                         <View>
                             <Text className="text-gray-400 text-xs font-bold mb-0.5">내 소속 팀</Text>
                             <Text className="text-gray-900 font-bold text-lg">{myTeam.name}</Text>
-                            <Text className="text-gray-500 text-xs">팀 페이지로 이동하기</Text>
                         </View>
                     </View>
-                    <FontAwesome5 name="chevron-right" size={14} color="#CBD5E1" />
-                </TouchableOpacity>
+                    {/* Chevron 및 이동 텍스트 제거됨 */}
+                    <Text className="text-xs text-gray-400 font-bold bg-gray-50 px-2 py-1 rounded">소속중</Text>
+                </View>
             ) : (
-                <TouchableOpacity 
-                    onPress={() => router.push('/team/register')}
-                    className="bg-gray-900 p-5 rounded-2xl shadow-md flex-row justify-between items-center active:scale-[0.98]"
+                // [Modified] TouchableOpacity -> View (Read-Only)
+                <View 
+                    className="bg-gray-900 p-5 rounded-2xl shadow-md flex-row justify-between items-center"
                 >
                     <View>
                         <Text className="text-white font-bold text-lg mb-1">아직 소속 팀이 없나요?</Text>
-                        <Text className="text-gray-400 text-xs">팀을 찾거나 만들어보세요!</Text>
+                        <Text className="text-gray-400 text-xs">하단 중앙의 '팀' 탭에서 팀을 찾아보세요!</Text>
                     </View>
                     <View className="w-10 h-10 bg-gray-700 rounded-full items-center justify-center">
-                        <FontAwesome5 name="plus" size={16} color="white" />
+                        <FontAwesome5 name="info" size={16} color="white" />
                     </View>
-                </TouchableOpacity>
+                </View>
             )}
         </View>
 
-        {/* D. 메뉴 리스트 (개인 설정 위주) */}
+        {/* D. 메뉴 리스트 */}
         <View className="px-5 gap-3">
             <TouchableOpacity onPress={() => setEditModalVisible(true)} className="flex-row items-center justify-between p-4 bg-gray-50 rounded-xl active:bg-gray-100">
                 <View className="flex-row items-center">

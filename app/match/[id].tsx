@@ -8,7 +8,7 @@ import {
   Alert, 
   Modal,
   Platform,
-  Share // 👇 [New] 네이티브 공유 기능을 위해 추가
+  Share // [New] 네이티브 공유 기능을 위해 추가
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -16,7 +16,6 @@ import { FontAwesome5 } from '@expo/vector-icons';
 import { 
     doc, getDoc, runTransaction, serverTimestamp 
 } from 'firebase/firestore';
-// 👇 [Path Check] 기존 경로 유지
 import { db } from '../../configs/firebaseConfig';
 import { useUser } from '../context/UserContext';
 
@@ -72,7 +71,7 @@ export default function MatchDetailScreen() {
     }
   };
 
-  // ✅ [Updated] 네이티브 공유 로직 적용 (v1.25)
+  // ✅ [Updated] 네이티브 공유 로직 적용 (OS 기본 공유 시트 호출)
   const handleShare = async () => {
       if (!match) return;
 
@@ -97,7 +96,7 @@ ${shareUrl}`;
           try {
               await Share.share({
                   message: shareMessage,
-                  // iOS는 url 파라미터를 따로 주면 미리보기가 더 잘 나옴
+                  // iOS는 url 파라미터를 따로 주면 미리보기 썸네일 처리가 더 잘 됨
                   url: Platform.OS === 'ios' ? shareUrl : undefined, 
               });
           } catch (error) {
@@ -206,7 +205,7 @@ ${shareUrl}`;
         </TouchableOpacity>
         <Text className="text-lg font-bold text-gray-900">매치 상세</Text>
         
-        {/* 👇 [Updated] 공유 아이콘 변경 (share-square) */}
+        {/* 공유 아이콘 (모집중일 때만 표시) */}
         {match.status === 'recruiting' ? (
             <TouchableOpacity onPress={handleShare} className="p-2 -mr-2">
                 <FontAwesome5 name="share-square" size={20} color="#111827" />
