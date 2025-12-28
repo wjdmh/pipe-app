@@ -19,7 +19,6 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { db } from '../../configs/firebaseConfig';
 import { useUser } from '../context/UserContext';
 
-// 포지션 목록
 const POSITIONS = ['세터', '레프트', '라이트', '센터', '리베로', '올라운더'];
 
 export default function GuestWriteScreen() {
@@ -37,10 +36,8 @@ export default function GuestWriteScreen() {
   const [targetLevel, setTargetLevel] = useState('Mid');
   const [gender, setGender] = useState<'male' | 'female' | 'mixed'>('male');
   
-  // ✅ [NEW] 모집 인원 State (기본 1명)
   const [recruitmentCount, setRecruitmentCount] = useState(1);
   
-  // 날짜/시간 State
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [selectedTime, setSelectedTime] = useState(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -49,7 +46,6 @@ export default function GuestWriteScreen() {
   const [location, setLocation] = useState('');
   const [note, setNote] = useState('');
 
-  // 1. 권한 체크 (팀 소속 여부 & 주장 권한)
   useEffect(() => {
       if (userLoading) return;
 
@@ -63,13 +59,10 @@ export default function GuestWriteScreen() {
               const teamSnap = await getDoc(doc(db, "teams", user.teamId));
               if (teamSnap.exists()) {
                   const data = teamSnap.data();
-                  
-                  // 주장 권한 체크
                   if (data.captainId !== user.uid) {
                       Alert.alert("권한 없음", "팀 대표만 게스트 모집글을 작성할 수 있습니다.");
                       return router.back();
                   }
-
                   setTeamInfo({ id: teamSnap.id, ...data });
                   setGender(data.gender === 'female' ? 'female' : 'male');
                   setLocation(data.region || '');
@@ -83,52 +76,37 @@ export default function GuestWriteScreen() {
       init();
   }, [user, userLoading]);
 
-  // 이탈 방지 로직
+  // 이탈 방지
   useEffect(() => {
       const beforeRemoveListener = navigation.addListener('beforeRemove', (e) => {
           const hasUnsavedChanges = step > 1 || selectedPositions.length > 0 || location.length > 0 || note.length > 0;
-          
-          if (!hasUnsavedChanges || submitting) {
-              return;
-          }
-
+          if (!hasUnsavedChanges || submitting) return;
           e.preventDefault();
-
           Alert.alert(
               '작성 중인 내용이 있습니다',
               '정말 나가시겠습니까?\n작성하신 내용은 저장되지 않습니다.',
               [
                   { text: '계속 작성', style: 'cancel', onPress: () => {} },
-                  { 
-                      text: '나가기', 
-                      style: 'destructive', 
-                      onPress: () => navigation.dispatch(e.data.action) 
-                  },
+                  { text: '나가기', style: 'destructive', onPress: () => navigation.dispatch(e.data.action) },
               ]
           );
       });
-
       return beforeRemoveListener;
   }, [navigation, step, selectedPositions, location, note, submitting]);
 
-  // [Logic] Date/Time Handlers (Mobile)
   const onChangeDateMobile = (event: any, date?: Date) => {
       if (Platform.OS === 'android') setShowDatePicker(false);
       if (date) setSelectedDate(date);
   };
-
   const onChangeTimeMobile = (event: any, time?: Date) => {
       if (Platform.OS === 'android') setShowTimePicker(false);
       if (time) setSelectedTime(time);
   };
-
-  // [Logic] Date/Time Handlers (Web)
   const onChangeDateWeb = (e: any) => {
       const val = e.target.value; 
       if (!val) return;
       setSelectedDate(new Date(val));
   };
-
   const onChangeTimeWeb = (e: any) => {
       const val = e.target.value; 
       if (!val) return;
@@ -146,20 +124,17 @@ export default function GuestWriteScreen() {
       const days = ['일', '월', '화', '수', '목', '금', '토'];
       return `${y}.${m}.${d} (${days[selectedDate.getDay()]})`;
   };
-
   const getTimeDisplay = () => {
       const h = selectedTime.getHours().toString().padStart(2, '0');
       const m = selectedTime.getMinutes().toString().padStart(2, '0');
       return `${h}:${m}`;
   };
-
   const getWebDateValue = () => {
       const y = selectedDate.getFullYear();
       const m = (selectedDate.getMonth() + 1).toString().padStart(2, '0');
       const d = selectedDate.getDate().toString().padStart(2, '0');
       return `${y}-${m}-${d}`;
   };
-
   const getWebTimeValue = () => {
       const h = selectedTime.getHours().toString().padStart(2, '0');
       const m = selectedTime.getMinutes().toString().padStart(2, '0');
@@ -175,12 +150,8 @@ export default function GuestWriteScreen() {
   };
 
   const goNext = () => {
-      if (step === 1 && selectedPositions.length === 0) {
-          return Alert.alert('알림', '최소 하나의 포지션을 선택해주세요.');
-      }
-      if (step === 2 && !location.trim()) {
-          return Alert.alert('알림', '장소를 입력해주세요.');
-      }
+      if (step === 1 && selectedPositions.length === 0) return Alert.alert('알림', '최소 하나의 포지션을 선택해주세요.');
+      if (step === 2 && !location.trim()) return Alert.alert('알림', '장소를 입력해주세요.');
       setStep(prev => prev + 1);
   };
 
@@ -196,16 +167,18 @@ export default function GuestWriteScreen() {
               teamId: teamInfo.id,
               teamName: teamInfo.name,
               gender: gender,
-              positions: selectedPositions.join(', '), 
+              
+              // 🚨 [Fix] .join(', ') 제거 -> 배열 그대로 저장
+              positions: selectedPositions, 
+              
               targetLevel: targetLevel,
-              // ✅ [NEW] 모집 인원 저장
               recruitmentCount: recruitmentCount, 
               time: finalDate.toISOString(),
               loc: location,
               note: note,
               status: 'recruiting',
-              applicants: [], // 상세 정보용 (객체 배열 예정)
-              applicantIds: [], // ✅ [NEW] 검색용 인덱스 (UID 문자열 배열)
+              applicants: [], 
+              applicantIds: [], 
               createdAt: serverTimestamp()
           });
 
@@ -229,7 +202,6 @@ export default function GuestWriteScreen() {
 
   return (
     <SafeAreaView className="flex-1 bg-white" edges={['top']} style={{ paddingTop: Platform.OS === 'web' ? 20 : 0 }}>
-      {/* Header */}
       <View className="px-5 py-3 border-b border-gray-100 flex-row items-center justify-between">
           <TouchableOpacity onPress={() => step === 1 ? router.back() : setStep(step - 1)} className="p-2 -ml-2">
               <FontAwesome5 name="arrow-left" size={20} color="#111827" />
@@ -241,7 +213,6 @@ export default function GuestWriteScreen() {
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} className="flex-1">
           <ScrollView contentContainerStyle={{ padding: 20 }}>
               
-              {/* Step 1: 모집 정보 */}
               {step === 1 && (
                   <View className="gap-8">
                       <View>
@@ -259,7 +230,6 @@ export default function GuestWriteScreen() {
                           </View>
                       </View>
 
-                      {/* ✅ [NEW] 모집 인원 설정 UI */}
                       <View>
                           <Text className="text-lg font-bold text-gray-900 mb-3">몇 명을 모집하나요?</Text>
                           <View className="flex-row items-center bg-gray-50 rounded-xl border border-gray-200 p-2 self-start">
@@ -269,11 +239,9 @@ export default function GuestWriteScreen() {
                               >
                                   <FontAwesome5 name="minus" size={12} color="#111827" />
                               </TouchableOpacity>
-                              
                               <View className="w-16 items-center">
                                   <Text className="text-xl font-bold text-gray-900">{recruitmentCount}명</Text>
                               </View>
-
                               <TouchableOpacity 
                                   onPress={() => setRecruitmentCount(prev => prev + 1)}
                                   className="w-10 h-10 bg-white rounded-lg items-center justify-center border border-gray-200 shadow-sm"
@@ -317,13 +285,11 @@ export default function GuestWriteScreen() {
                   </View>
               )}
 
-              {/* Step 2: 일시 및 장소 */}
               {step === 2 && (
                   <View className="gap-6">
                       <View>
                           <Text className="text-lg font-bold text-gray-900 mb-3">언제 경기하나요?</Text>
                           <View className="flex-row gap-3">
-                              {/* 날짜 */}
                               <View className="flex-1">
                                   <Text className="text-xs text-gray-500 mb-1 ml-1">날짜</Text>
                                   {Platform.OS === 'web' ? (
@@ -345,7 +311,6 @@ export default function GuestWriteScreen() {
                                       </TouchableOpacity>
                                   )}
                               </View>
-                              {/* 시간 */}
                               <View className="flex-1">
                                   <Text className="text-xs text-gray-500 mb-1 ml-1">시간</Text>
                                   {Platform.OS === 'web' ? (
@@ -369,7 +334,6 @@ export default function GuestWriteScreen() {
                               </View>
                           </View>
                       </View>
-
                       <View>
                           <Text className="text-lg font-bold text-gray-900 mb-3">어디서 하나요?</Text>
                           <TextInput 
@@ -382,14 +346,13 @@ export default function GuestWriteScreen() {
                   </View>
               )}
 
-              {/* Step 3: 상세 내용 */}
               {step === 3 && (
                   <View className="gap-6">
                       <View>
                           <Text className="text-lg font-bold text-gray-900 mb-3">상세 내용 (비고)</Text>
                           <TextInput 
                               className="bg-gray-50 p-4 rounded-xl border border-gray-200 text-base min-h-[150px]"
-                              placeholder={`게스트에게 전할 말을 자유롭게 적어주세요.\n\n예시)\n- 참가비 없음\n- 즐겁게 운동하실 분 환영합니다!`}
+                              placeholder={`게스트에게 전할 말을 자유롭게 적어주세요.`}
                               multiline
                               textAlignVertical="top"
                               value={note}
@@ -400,7 +363,6 @@ export default function GuestWriteScreen() {
               )}
           </ScrollView>
 
-          {/* Footer Button */}
           <View className="p-5 border-t border-gray-100 bg-white">
               <TouchableOpacity 
                   onPress={step < 3 ? goNext : submitPost}
@@ -412,7 +374,6 @@ export default function GuestWriteScreen() {
           </View>
       </KeyboardAvoidingView>
 
-      {/* --- Modals for Mobile --- */}
       {Platform.OS !== 'web' && (
           <>
               {Platform.OS === 'ios' && (

@@ -1,40 +1,38 @@
 import { useState, useEffect } from 'react';
 import { 
   collection, query, where, orderBy, onSnapshot, 
-  addDoc, updateDoc, doc, arrayUnion, 
-  getDoc, runTransaction, deleteDoc,
-  serverTimestamp
+  addDoc, doc, runTransaction, deleteDoc,
+  serverTimestamp, getDoc 
 } from 'firebase/firestore';
 import { db, auth } from '../configs/firebaseConfig';
 import { Alert, Platform } from 'react-native';
 import { sendPushNotification } from '../utils/notificationHelper';
 
-// ✅ [Type Fix] matchDate의 물음표(?)를 제거하여 필수 속성으로 변경
 export type GuestPost = {
   id: string;
   hostTeamId: string;
   hostTeamName: string;
   hostCaptainId: string;
   
-  time: string;       // 경기 일시 (ISO String)
-  matchDate: string;  // ✅ [Fix] 하위 호환용 (필수로 지정하여 TS 오류 해결)
+  time: string;       
+  matchDate: string;  
   
-  location: string;   // loc 필드와 매핑됨
-  loc?: string;       // DB 원본 필드
+  location: string;   
+  loc?: string;       
 
-  positions: string[]; 
+  positions: string[]; // ✅ 무조건 문자열 배열임을 보장
   gender: 'male' | 'female' | 'mixed';
-  targetLevel: string; // 상/중/하
+  targetLevel: string; 
   fee: string; 
   
-  note?: string;       // 상세 내용
-  description?: string; // (Legacy)
+  note?: string;       
+  description?: string; 
 
   status: 'recruiting' | 'closed';
   
-  recruitmentCount?: number; // 모집 인원
-  applicantIds?: string[];   // 검색용
-  applicants?: any[];        // 상세 정보
+  recruitmentCount?: number; 
+  applicantIds?: string[];   
+  applicants?: any[];        
   
   createdAt: string;
 };
@@ -53,7 +51,6 @@ export const useGuest = () => {
 
   // 1. 모집글 목록 조회
   useEffect(() => {
-    // time 기준 정렬 (인덱스 필요 시 콘솔 링크 확인)
     const q = query(
       collection(db, "guest_posts"),
       where("status", "==", "recruiting"),
@@ -65,18 +62,26 @@ export const useGuest = () => {
       snapshot.forEach((doc) => {
         const data = doc.data();
         
-        // 🛡️ [Data Guard] 데이터가 비어있을 경우 기본값 주입
+        // [Data Guard] 시간/장소 데이터 표준화
         const standardizedTime = data.time || data.matchDate || new Date().toISOString();
         const standardizedLoc = data.loc || data.location || '';
+
+        // 🚨 [Fix] 포지션 데이터 타입 안전 변환 (String -> Array)
+        let safePositions: string[] = [];
+        if (Array.isArray(data.positions)) {
+            safePositions = data.positions;
+        } else if (typeof data.positions === 'string') {
+            // "레프트, 세터" 문자열을 ["레프트", "세터"] 배열로 변환
+            safePositions = data.positions.split(',').map((s: string) => s.trim()).filter((s: string) => s.length > 0);
+        }
 
         list.push({ 
             id: doc.id, 
             ...data,
-            // 표준화된 필드 주입 (항상 값이 존재함을 보장)
             time: standardizedTime,
             matchDate: standardizedTime, 
             location: standardizedLoc,
-            
+            positions: safePositions, // ✅ 변환된 배열 주입
             applicants: data.applicants || [] 
         } as GuestPost);
       });
@@ -165,7 +170,6 @@ export const useGuest = () => {
         });
       });
       
-      // 알림 발송
       try {
         await addDoc(collection(db, "notifications"), {
             userId: post.hostCaptainId,
@@ -233,7 +237,6 @@ export const useGuest = () => {
     }
   };
 
-  // 5. 게시글 삭제
   const deletePost = async (postId: string) => {
       try {
           await deleteDoc(doc(db, "guest_posts", postId));
