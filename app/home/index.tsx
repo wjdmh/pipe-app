@@ -14,16 +14,12 @@ import { collection, query, orderBy, where, limit, getDocs } from 'firebase/fire
 import { db } from '../../configs/firebaseConfig';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-
-// ✅ [Step 2 & 3] 공통 컴포넌트 및 타입 가져오기
 import GuestCard from '../../components/GuestCard';
 import { GuestPost } from '../../hooks/useGuest';
 
-// [디자인 상수]
-const TEAM_COLOR = '#4F46E5'; // Indigo
-const GUEST_COLOR = '#EA580C'; // Orange
+const TEAM_COLOR = '#4F46E5'; 
+const GUEST_COLOR = '#EA580C'; 
 
-// [팀 매치 데이터 타입] - 기존 유지
 type MatchData = { 
   id: string; 
   team: string; 
@@ -37,14 +33,11 @@ type MatchData = {
 
 export default function HomeScreen() {
   const router = useRouter();
-  
-  // 상태 관리
   const [activeTab, setActiveTab] = useState<'match' | 'guest'>('match');
   const [items, setItems] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   
-  // [Logic] 데이터 Fetching
   const fetchData = async () => {
       setLoading(true);
       
@@ -52,13 +45,11 @@ export default function HomeScreen() {
           const collectionName = activeTab === 'match' ? 'matches' : 'guest_posts';
           const nowISO = new Date().toISOString();
 
-          // [Query] 
-          // Step 1에서 'time' 필드로 표준화했으므로, 여기서도 'time' 기준으로 쿼리합니다.
           const q = query(
               collection(db, collectionName), 
-              where("status", "==", "recruiting"), // 모집중인 글만
-              where("time", ">=", nowISO),         // 지난 경기는 제외
-              orderBy("time", "asc"),              // 가까운 경기부터
+              where("status", "==", "recruiting"), 
+              where("time", ">=", nowISO),         
+              orderBy("time", "asc"),              
               limit(50) 
           );
 
@@ -68,9 +59,25 @@ export default function HomeScreen() {
           snapshot.forEach(d => {
               const data = d.data();
               if (!data.isDeleted) {
-                  // GuestPost의 경우 Step 1의 표준화 로직을 여기서도 가볍게 적용
+                  // [Fix] 홈 화면에서도 포지션/시간 데이터 정제
                   const time = data.time || data.matchDate || nowISO;
-                  rawItems.push({ id: d.id, ...data, time });
+                  
+                  let safePositions: string[] = [];
+                  if (activeTab === 'guest') {
+                      if (Array.isArray(data.positions)) {
+                          safePositions = data.positions;
+                      } else if (typeof data.positions === 'string') {
+                          safePositions = data.positions.split(',').map((s: string) => s.trim()).filter((s: string) => s.length > 0);
+                      }
+                  }
+
+                  rawItems.push({ 
+                      id: d.id, 
+                      ...data, 
+                      time,
+                      positions: safePositions, // 정제된 배열 주입
+                      applicants: data.applicants || []
+                  });
               }
           });
 
@@ -93,11 +100,9 @@ export default function HomeScreen() {
     fetchData();
   };
 
-  // [UI] 리스트 아이템 렌더링
   const renderItem = ({ item }: { item: any }) => {
     const isMatch = activeTab === 'match';
 
-    // ✅ [Case 1] 게스트 모집 탭일 경우 -> GuestCard 사용 (통일된 디자인)
     if (!isMatch) {
         return (
             <GuestCard 
@@ -108,8 +113,6 @@ export default function HomeScreen() {
         );
     }
 
-    // ✅ [Case 2] 팀 매치 탭일 경우 -> 기존 디자인 유지 (약간 다듬음)
-    // 팀 매치는 데이터 구조가 다르므로 GuestCard를 쓰지 않고 전용 UI 유지
     let dateStr = "";
     let timeStr = "";
     try {
@@ -130,13 +133,11 @@ export default function HomeScreen() {
         activeOpacity={0.7}
         className="flex-row items-center py-4 px-5 border-b border-gray-100 bg-white mb-1"
       >
-        {/* 날짜 & 시간 */}
         <View className="w-[72px] mr-3 items-start justify-center">
             <Text className="text-[12px] font-medium text-gray-500 mb-0.5">{dateStr}</Text>
             <Text className="text-[16px] font-bold text-gray-900 tracking-tight">{timeStr}</Text>
         </View>
 
-        {/* 팀 정보 */}
         <View className="flex-1 justify-center pr-2">
             <Text className="text-[16px] font-bold text-gray-900 mb-1" numberOfLines={1}>
                 {item.team}
@@ -146,7 +147,6 @@ export default function HomeScreen() {
             </Text>
         </View>
 
-        {/* 매치 상태 태그 */}
         <View className="ml-1 shrink-0">
             <View className="bg-blue-50 px-2.5 py-1.5 rounded-lg border border-blue-100">
                 <Text className="text-blue-600 text-[11px] font-bold">신청가능</Text>
@@ -160,7 +160,6 @@ export default function HomeScreen() {
     <SafeAreaView className="flex-1 bg-white" edges={['top']}>
       <StatusBar barStyle="dark-content" />
       
-      {/* 1. Header & Tabs */}
       <View className="bg-white px-5 pt-2 pb-0 z-10">
         <Text className="text-xl font-extrabold text-gray-900 italic tracking-tighter mb-4">PIPE</Text>
         
@@ -185,7 +184,6 @@ export default function HomeScreen() {
         </View>
       </View>
 
-      {/* 2. Banner */}
       <TouchableOpacity 
             onPress={() => router.push('/home/ranking')}
             className="mx-5 mb-2 mt-2 bg-gray-900 rounded-xl px-4 py-3 flex-row justify-between items-center shadow-sm"
@@ -198,7 +196,6 @@ export default function HomeScreen() {
             <FontAwesome5 name="chevron-right" size={12} color="white" />
       </TouchableOpacity>
 
-      {/* 3. Content List */}
       <FlatList
         data={items}
         keyExtractor={(item) => item.id}
@@ -220,7 +217,6 @@ export default function HomeScreen() {
         }
       />
       
-      {/* Floating Write Button */}
       <TouchableOpacity 
         onPress={() => router.push(activeTab === 'match' ? '/match/write' : '/guest/write')}
         className="absolute bottom-6 right-5 w-14 h-14 bg-gray-900 rounded-full items-center justify-center shadow-lg shadow-gray-400/50"
