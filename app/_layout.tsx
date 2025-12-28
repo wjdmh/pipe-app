@@ -1,48 +1,56 @@
+import "../global.css"; // ✅ [복구] 스타일 파일 (이게 없어서 UI가 깨졌습니다)
+import "../shim";       // ✅ [복구] Firebase 호환 패치
 import { useEffect } from 'react';
-import { Slot, useRouter, useSegments } from 'expo-router';
+import { Stack, useRouter, useSegments } from 'expo-router';
 import { UserProvider, useUser } from './context/UserContext';
 import * as SplashScreen from 'expo-splash-screen';
 import { useFonts } from 'expo-font';
-import { View, ActivityIndicator } from 'react-native';
+import { View, Platform, LogBox, ActivityIndicator } from 'react-native';
+import { StatusBar } from 'expo-status-bar';
 
-// 1. 스플래시 스크린 자동 숨김 방지 (인증 체크가 끝날 때까지 유지)
-SplashScreen.preventAutoHideAsync();
+// 콘솔 경고 무시
+LogBox.ignoreLogs([
+  'Blocked aria-hidden on an element',
+  'props.pointerEvents is deprecated',
+  'shadow* style props are deprecated',
+  'TouchableWithoutFeedback is deprecated',
+]);
 
+// 1. 스플래시 스크린 자동 숨김 방지
+SplashScreen.preventAutoHideAsync().catch(() => {});
+
+// 인증 및 라우팅을 관리하는 내부 컴포넌트
 function InitialLayout() {
   const { user, authInitialized } = useUser();
   const segments = useSegments();
   const router = useRouter();
+  const isWeb = Platform.OS === 'web';
 
   useEffect(() => {
-    // 2. 인증 체크가 아직 안 끝났으면 아무것도 하지 않음 (스플래시 유지)
+    // 2. 인증 체크가 아직 안 끝났으면 대기
     if (!authInitialized) return;
 
     // 3. 인증 체크 완료 후 스플래시 숨김
-    SplashScreen.hideAsync();
+    SplashScreen.hideAsync().catch(() => {});
 
-    // 현재 경로 그룹 확인
     const inAuthGroup = segments[0] === 'auth';
     const inHomeGroup = segments[0] === 'home';
     
-    // [시나리오 A] 비로그인 유저
+    // [시나리오 A] 비로그인 유저 -> 홈 접근 시 로그인으로
     if (!user) {
-      // 로그인이 필요한 페이지(home)로 접근 시 로그인 페이지로 보냄
       if (inHomeGroup) {
         router.replace('/auth/login');
       }
     } 
-    // [시나리오 B] 로그인 유저
+    // [시나리오 B] 로그인 유저 -> 로그인 페이지 접근 시 홈으로
     else if (user) {
-      // 이미 로그인했는데 로그인/회원가입 페이지에 있다면 홈으로 보냄
       if (inAuthGroup) {
         router.replace('/home');
       }
-      // ⚠️ 중요: 공유 링크(예: /match/123)로 들어온 경우는 
-      // 여기서 간섭하지 않으므로(else), 자연스럽게 해당 페이지가 열립니다.
     }
   }, [user, authInitialized, segments]);
 
-  // 인증 초기화 중에는 빈 화면(스플래시가 덮고 있어서 실제로는 안 보임) 렌더링
+  // 인증 초기화 중에는 로딩 표시
   if (!authInitialized) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#fff' }}>
@@ -51,23 +59,68 @@ function InitialLayout() {
     );
   }
 
-  // 실제 페이지 렌더링 (Slot은 현재 라우트에 맞는 화면을 끼워넣음)
-  return <Slot />;
+  // ✅ [복구] 웹 레이아웃 컨테이너 적용
+  return (
+    <View 
+      style={isWeb ? {
+        flex: 1,
+        backgroundColor: '#f3f4f6', 
+        alignItems: 'center',       
+        justifyContent: 'center',
+      } : { flex: 1, backgroundColor: 'white' }}
+    >
+      <StatusBar style="auto" />
+      
+      {/* 앱 컨테이너 (웹에서 430px 고정) */}
+      <View 
+        style={isWeb ? { 
+          width: '100%', 
+          maxWidth: 430,
+          height: '100%',
+          backgroundColor: 'white',
+          shadowColor: "#000",
+          shadowOffset: { width: 0, height: 0 },
+          shadowOpacity: 0.1,
+          shadowRadius: 20,
+          // @ts-ignore
+          boxShadow: '0 0 20px rgba(0,0,0,0.1)', 
+          overflow: 'hidden',        
+        } : { flex: 1, width: '100%' }}
+      >
+        {/* 네비게이션 Stack (기존 라우트 설정 유지) */}
+        <Stack screenOptions={{ headerShown: false, animation: isWeb ? 'none' : 'default' }}>
+            <Stack.Screen name="home" options={{ headerShown: false }} />
+            <Stack.Screen name="index" options={{ headerShown: false }} />
+            <Stack.Screen name="auth/login" options={{ headerShown: false }} />
+            <Stack.Screen name="auth/signup" options={{ title: '회원가입', headerBackTitle: '뒤로', headerShown: true }} />
+            <Stack.Screen name="match/write" options={{ title: '매치 개설', headerBackTitle: '취소', headerShown: true }} />
+            <Stack.Screen name="match/[id]" options={{ title: '매치 상세', headerBackTitle: '목록', headerShown: true }} />
+            <Stack.Screen name="match/applicants" options={{ title: '신청자 관리', headerShown: true }} />
+            <Stack.Screen name="match/edit" options={{ title: '매치 수정', headerShown: true }} />
+            <Stack.Screen name="guest/list" options={{ title: '게스트 모집', headerShown: true }} />
+            <Stack.Screen name="guest/write" options={{ title: '게스트 등록', headerShown: true }} />
+            <Stack.Screen name="guest/[id]" options={{ title: '게스트 상세', headerShown: true }} />
+            <Stack.Screen name="admin/manager" options={{ title: '관리자 페이지', headerShown: true }} />
+        </Stack>
+      </View>
+    </View>
+  );
 }
 
 export default function RootLayout() {
-  // 4. 폰트 로드 (앱 전반에서 사용)
-  const [loaded] = useFonts({
-    'FontAwesome5_Regular': require('../assets/fonts/FontAwesome5_Regular.ttf'),
-    'FontAwesome5_Solid': require('../assets/fonts/FontAwesome5_Solid.ttf'),
-    'FontAwesome5_Brands': require('../assets/fonts/FontAwesome5_Brands.ttf'),
+  const [loaded, error] = useFonts({
+    "FontAwesome": require("../assets/fonts/FontAwesome.ttf"),
+    "FontAwesome5Free-Solid": require("../assets/fonts/FontAwesome5_Solid.ttf"),
+    "FontAwesome5Free-Regular": require("../assets/fonts/FontAwesome5_Regular.ttf"),
+    "FontAwesome5Brands-Regular": require("../assets/fonts/FontAwesome5_Brands.ttf"),
   });
 
-  if (!loaded) {
-    return null;
-  }
+  useEffect(() => {
+    if (error) console.error("[Layout] Font loading error:", error);
+  }, [error]);
 
-  // UserProvider로 앱 전체를 감싸서 어디서든 로그인 정보를 쓸 수 있게 함
+  if (!loaded && !error) return null;
+
   return (
     <UserProvider>
       <InitialLayout />
