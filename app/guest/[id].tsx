@@ -10,14 +10,13 @@ import {
   Modal, 
   TextInput,
   KeyboardAvoidingView
-  // Share 제거 (utils/share.ts 사용)
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { doc, getDoc, updateDoc, arrayUnion } from 'firebase/firestore';
 import { auth, db } from '../../configs/firebaseConfig';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { FontAwesome5 } from '@expo/vector-icons';
-// 👇 [New] 공유 유틸리티 불러오기
+// 공유 유틸리티
 import { shareLink } from '../../utils/share';
 
 // [상수] 포지션 선택지
@@ -36,6 +35,7 @@ type GuestPost = {
   note: string;
   status: string;
   applicants: any[];
+  isDeleted?: boolean;
 };
 
 export default function GuestDetailScreen() {
@@ -89,22 +89,24 @@ export default function GuestDetailScreen() {
     } catch { return isoString; }
   };
 
-  // ✅ [Updated] 공유 유틸리티(shareLink) 적용
+  // ✅ [Updated] 공유 유틸리티(shareLink) 고도화 적용
   const handleShare = async () => {
       if (!post) return;
 
+      const genderText = post.gender === 'male' ? '남자부' : post.gender === 'female' ? '여자부' : '혼성';
       const shareUrl = `https://pipe-app.vercel.app/guest/${post.id}`;
 
-      // 본문 메시지 생성
+      // 본문 메시지 (링크는 shareLink 내부에서 붙음)
       const shareMessage = `🏃‍♂️ [PIPE 게스트 모집] 함께 뛰실 분!
+      
+${post.teamName}팀에서 용병을 찾고 있어요.
 
-🛡️ 포지션: ${post.positions}
-📅 ${formatTime(post.time)}
-📍 ${post.loc}
-👕 팀명: ${post.teamName} (${post.gender === 'male' ? '남' : post.gender === 'female' ? '여' : '혼성'})
+🛡️ 필요 포지션: ${post.positions}
+📅 일시: ${formatTime(post.time)}
+📍 장소: ${post.loc}
+🏐 레벨: ${genderText} (${post.targetLevel})
 ${post.note ? `📢 비고: ${post.note}` : ''}`;
 
-      // 공통 공유 함수 호출
       await shareLink({
           title: 'PIPE 게스트 모집',
           message: shareMessage,

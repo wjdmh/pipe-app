@@ -9,18 +9,20 @@ import {
   Platform,
   KeyboardAvoidingView,
   ActivityIndicator,
-  Modal
+  Modal,
+  BackHandler
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useNavigation } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { collection, addDoc, serverTimestamp, doc, getDoc } from 'firebase/firestore';
-import DateTimePicker from '@react-native-community/datetimepicker'; // ✅ [New] 달력/시간 선택기
+import DateTimePicker from '@react-native-community/datetimepicker'; 
 import { db } from '../../configs/firebaseConfig';
 import { useUser } from '../context/UserContext';
 
 export default function MatchWriteScreen() {
   const router = useRouter();
+  const navigation = useNavigation(); // 네비게이션 제어를 위한 Hook 추가
   const { user, loading: userLoading } = useUser();
   
   const [step, setStep] = useState(1);
@@ -33,8 +35,7 @@ export default function MatchWriteScreen() {
   const [gender, setGender] = useState<'male' | 'female' | 'mixed'>('male');
   const [level, setLevel] = useState<'High' | 'Mid' | 'Low'>('Mid');
   
-  // ✅ [Updated] 날짜/시간 State (Date 객체 사용)
-  // 초기값을 오늘/현재 시간으로 설정
+  // 날짜/시간 State
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [selectedTime, setSelectedTime] = useState(new Date());
   
@@ -87,19 +88,69 @@ export default function MatchWriteScreen() {
     init();
   }, [user, userLoading]);
 
-  // [Logic] DatePicker 핸들러
-  const onChangeDate = (event: any, date?: Date) => {
-    if (Platform.OS === 'android') setShowDatePicker(false); // 안드로이드는 선택 시 자동 닫힘
+  // ✅ [NEW] 뒤로가기 방지 (이탈 방지) 로직
+  useEffect(() => {
+      const beforeRemoveListener = navigation.addListener('beforeRemove', (e) => {
+          // 이미 제출 중이거나, 작성을 완료해서 이동하는 경우(submitting이 true일 땐 막지 않음 - 근데 여기선 router.replace로 이동하므로 별도 처리 필요)
+          // 여기서는 '작성 중'인지 판단
+          const hasUnsavedChanges = step > 1 || location.length > 0 || description.length > 0;
+          
+          if (!hasUnsavedChanges || submitting) {
+              return; // 변경사항이 없거나 제출 완료 후 이동이면 그냥 통과
+          }
+
+          // 기본 뒤로가기 동작을 막음
+          e.preventDefault();
+
+          // 경고창 표시
+          Alert.alert(
+              '작성 중인 내용이 있습니다',
+              '정말 나가시겠습니까?\n작성하신 내용은 저장되지 않습니다.',
+              [
+                  { text: '계속 작성', style: 'cancel', onPress: () => {} },
+                  { 
+                      text: '나가기', 
+                      style: 'destructive', 
+                      onPress: () => navigation.dispatch(e.data.action) // 원래 하려던 이동 수행
+                  },
+              ]
+          );
+      });
+
+      return beforeRemoveListener;
+  }, [navigation, step, location, description, submitting]);
+
+
+  // [Logic] DatePicker 핸들러 (Mobile)
+  const onChangeDateMobile = (event: any, date?: Date) => {
+    if (Platform.OS === 'android') setShowDatePicker(false);
     if (date) setSelectedDate(date);
   };
 
-  // [Logic] TimePicker 핸들러
-  const onChangeTime = (event: any, time?: Date) => {
+  // [Logic] TimePicker 핸들러 (Mobile)
+  const onChangeTimeMobile = (event: any, time?: Date) => {
     if (Platform.OS === 'android') setShowTimePicker(false);
     if (time) setSelectedTime(time);
   };
 
-  // [Helper] 날짜 표시 문자열 (YYYY.MM.DD)
+  // [Logic] Web Input Handlers
+  const onChangeDateWeb = (e: any) => {
+      const val = e.target.value; 
+      if (!val) return;
+      const newDate = new Date(val);
+      setSelectedDate(newDate);
+  };
+  
+  const onChangeTimeWeb = (e: any) => {
+      const val = e.target.value; 
+      if (!val) return;
+      const [h, m] = val.split(':').map(Number);
+      const newTime = new Date();
+      newTime.setHours(h);
+      newTime.setMinutes(m);
+      setSelectedTime(newTime);
+  };
+
   const getDateDisplay = () => {
       const y = selectedDate.getFullYear();
       const m = (selectedDate.getMonth() + 1).toString().padStart(2, '0');
@@ -108,8 +159,20 @@ export default function MatchWriteScreen() {
       return `${y}.${m}.${d} (${dayName})`;
   };
 
-  // [Helper] 시간 표시 문자열 (HH:MM)
   const getTimeDisplay = () => {
+      const h = selectedTime.getHours().toString().padStart(2, '0');
+      const m = selectedTime.getMinutes().toString().padStart(2, '0');
+      return `${h}:${m}`;
+  };
+
+  const getWebDateValue = () => {
+      const y = selectedDate.getFullYear();
+      const m = (selectedDate.getMonth() + 1).toString().padStart(2, '0');
+      const d = selectedDate.getDate().toString().padStart(2, '0');
+      return `${y}-${m}-${d}`;
+  };
+
+  const getWebTimeValue = () => {
       const h = selectedTime.getHours().toString().padStart(2, '0');
       const m = selectedTime.getMinutes().toString().padStart(2, '0');
       return `${h}:${m}`;
@@ -129,14 +192,11 @@ export default function MatchWriteScreen() {
         return Alert.alert("입력 확인", "참가비, 주차 등 필수 정보를 입력해주세요.");
     }
 
-    // ✅ [Updated] Date + Time 병합
     const finalDate = new Date(selectedDate);
     finalDate.setHours(selectedTime.getHours());
     finalDate.setMinutes(selectedTime.getMinutes());
     
-    // 시간 검증 (과거 시간 체크 등 필요하다면 추가)
-    
-    setSubmitting(true);
+    setSubmitting(true); // 제출 시작 -> 이탈 방지 로직에서 예외 처리됨
     try {
         await addDoc(collection(db, "matches"), {
             teamId: teamInfo.id,
@@ -145,8 +205,8 @@ export default function MatchWriteScreen() {
             type: matchType,
             gender: gender,
             level: level,
-            time: finalDate.toISOString(), // ISO String (정렬용)
-            timeDisplay: `${getDateDisplay()} ${getTimeDisplay()}`, // 표시용
+            time: finalDate.toISOString(), 
+            timeDisplay: `${getDateDisplay()} ${getTimeDisplay()}`, 
             loc: location,
             description: description,
             status: 'recruiting',
@@ -157,7 +217,7 @@ export default function MatchWriteScreen() {
 
         const successMsg = "매치가 성공적으로 등록되었습니다.";
         if (Platform.OS === 'web') {
-            alert(successMsg);
+            window.alert(successMsg);
             router.replace('/home');
         } else {
             Alert.alert("등록 완료", successMsg, [
@@ -167,8 +227,7 @@ export default function MatchWriteScreen() {
     } catch (e) {
         console.error("Match Create Error:", e);
         Alert.alert("등록 실패", "매치 등록 중 오류가 발생했습니다.");
-    } finally {
-        setSubmitting(false);
+        setSubmitting(false); // 실패 시 다시 작성 모드로 복귀
     }
   };
 
@@ -184,6 +243,7 @@ export default function MatchWriteScreen() {
     >
         {/* Header */}
         <View className="px-5 py-3 border-b border-gray-100 flex-row items-center justify-between">
+            {/* 헤더의 뒤로가기 버튼도 navigation.goBack()을 호출하므로 beforeRemove가 작동함 */}
             <TouchableOpacity onPress={() => step === 1 ? router.back() : setStep(step - 1)} className="p-2 -ml-2">
                 <FontAwesome5 name="arrow-left" size={20} color="#111827" />
             </TouchableOpacity>
@@ -195,8 +255,7 @@ export default function MatchWriteScreen() {
 
         <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} className="flex-1">
             <ScrollView contentContainerStyle={{ padding: 20 }}>
-                
-                {/* --- Step 1: 기본 정보 --- */}
+                {/* Step 1 */}
                 {step === 1 && (
                     <View className="gap-8">
                         <View>
@@ -210,7 +269,6 @@ export default function MatchWriteScreen() {
                                 </TouchableOpacity>
                             </View>
                         </View>
-
                         <View>
                             <Text className="text-lg font-bold text-gray-900 mb-3">성별을 선택해주세요</Text>
                             <View className="flex-row gap-2">
@@ -227,7 +285,6 @@ export default function MatchWriteScreen() {
                                 ))}
                             </View>
                         </View>
-
                         <View>
                             <Text className="text-lg font-bold text-gray-900 mb-3">모집 레벨</Text>
                             <View className="flex-row gap-2">
@@ -247,64 +304,40 @@ export default function MatchWriteScreen() {
                     </View>
                 )}
 
-                {/* --- Step 2: 일시 및 장소 (전면 개편) --- */}
+                {/* Step 2 */}
                 {step === 2 && (
                     <View className="gap-6">
                         <View>
                             <Text className="text-lg font-bold text-gray-900 mb-3">언제 경기하나요?</Text>
                             <View className="flex-row gap-3">
-                                {/* 날짜 선택 */}
                                 <View className="flex-1">
                                     <Text className="text-xs text-gray-500 mb-1 ml-1">날짜</Text>
                                     {Platform.OS === 'web' ? (
-                                        // [Web] 브라우저 내장 Date Picker
-                                        <View className="bg-gray-50 rounded-xl border border-gray-200 overflow-hidden h-[56px] justify-center">
-                                             <DateTimePicker
-                                                value={selectedDate}
-                                                mode="date"
-                                                display="default"
-                                                onChange={onChangeDate}
-                                                style={{ width: '100%', height: '100%', opacity: 1 }}
-                                            />
+                                        <View className="bg-gray-50 rounded-xl border border-gray-200 h-[56px] justify-center px-2">
+                                            {/* @ts-ignore */}
+                                            <input type="date" value={getWebDateValue()} onChange={onChangeDateWeb} style={{ border: 'none', background: 'transparent', width: '100%', height: '100%', fontSize: '16px', fontFamily: 'inherit', fontWeight: 'bold' }} />
                                         </View>
                                     ) : (
-                                        // [Mobile] 터치 시 모달 호출
-                                        <TouchableOpacity 
-                                            onPress={() => setShowDatePicker(true)}
-                                            className="bg-gray-50 p-4 rounded-xl border border-gray-200 items-center justify-center h-[56px]"
-                                        >
+                                        <TouchableOpacity onPress={() => setShowDatePicker(true)} className="bg-gray-50 p-4 rounded-xl border border-gray-200 items-center justify-center h-[56px]">
                                             <Text className="text-lg font-bold text-gray-900">{getDateDisplay()}</Text>
                                         </TouchableOpacity>
                                     )}
                                 </View>
-
-                                {/* 시간 선택 */}
                                 <View className="flex-1">
                                     <Text className="text-xs text-gray-500 mb-1 ml-1">시간</Text>
                                     {Platform.OS === 'web' ? (
-                                        // [Web] 브라우저 내장 Time Picker
-                                        <View className="bg-gray-50 rounded-xl border border-gray-200 overflow-hidden h-[56px] justify-center">
-                                            <DateTimePicker
-                                                value={selectedTime}
-                                                mode="time"
-                                                display="default"
-                                                onChange={onChangeTime}
-                                                style={{ width: '100%', height: '100%' }}
-                                            />
+                                        <View className="bg-gray-50 rounded-xl border border-gray-200 h-[56px] justify-center px-2">
+                                            {/* @ts-ignore */}
+                                            <input type="time" value={getWebTimeValue()} onChange={onChangeTimeWeb} style={{ border: 'none', background: 'transparent', width: '100%', height: '100%', fontSize: '16px', fontFamily: 'inherit', fontWeight: 'bold' }} />
                                         </View>
                                     ) : (
-                                        // [Mobile] 터치 시 모달 호출
-                                        <TouchableOpacity 
-                                            onPress={() => setShowTimePicker(true)}
-                                            className="bg-gray-50 p-4 rounded-xl border border-gray-200 items-center justify-center h-[56px]"
-                                        >
+                                        <TouchableOpacity onPress={() => setShowTimePicker(true)} className="bg-gray-50 p-4 rounded-xl border border-gray-200 items-center justify-center h-[56px]">
                                             <Text className="text-lg font-bold text-gray-900">{getTimeDisplay()}</Text>
                                         </TouchableOpacity>
                                     )}
                                 </View>
                             </View>
                         </View>
-
                         <View>
                             <Text className="text-lg font-bold text-gray-900 mb-3">어디서 하나요?</Text>
                             <TextInput 
@@ -313,28 +346,25 @@ export default function MatchWriteScreen() {
                                 value={location}
                                 onChangeText={setLocation}
                             />
-                            <Text className="text-xs text-gray-400 mt-2 ml-1">
-                                * 상세한 주소를 적어주시면 상대팀에게 도움이 됩니다.
-                            </Text>
+                            <Text className="text-xs text-gray-400 mt-2 ml-1">* 상세한 주소를 적어주시면 상대팀에게 도움이 됩니다.</Text>
                         </View>
                     </View>
                 )}
 
-                {/* --- Step 3: 상세 정보 --- */}
+                {/* Step 3 */}
                 {step === 3 && (
                     <View className="gap-6">
                         <View className="bg-blue-50 p-4 rounded-xl flex-row items-start">
                             <FontAwesome5 name="info-circle" size={16} color="#2563EB" style={{ marginTop: 2, marginRight: 8 }} />
                             <Text className="text-blue-700 text-sm font-medium leading-5 flex-1">
-                                매치 신청이 들어오면 <Text className="font-bold">팀장이 직접 승인</Text>해야 매칭이 확정됩니다. 꼼꼼하게 작성해주세요!
+                                매치 신청이 들어오면 <Text className="font-bold">팀장이 직접 승인</Text>해야 매칭이 확정됩니다.
                             </Text>
                         </View>
-
                         <View>
                             <Text className="text-lg font-bold text-gray-900 mb-3">필수 공지 (비고)</Text>
                             <TextInput 
                                 className="bg-gray-50 p-4 rounded-xl border border-gray-200 text-base min-h-[150px]"
-                                placeholder={`참가비, 주차 정보, 준비물 등\n상대팀이 꼭 알아야 할 내용을 적어주세요.\n\n예시)\n- 참가비: 팀당 5만원\n- 주차: 체육관 지하주차장 이용 가능`}
+                                placeholder={`참가비, 주차 정보, 준비물 등\n상대팀이 꼭 알아야 할 내용을 적어주세요.`}
                                 multiline
                                 textAlignVertical="top"
                                 value={description}
@@ -343,94 +373,43 @@ export default function MatchWriteScreen() {
                         </View>
                     </View>
                 )}
-
             </ScrollView>
 
-            {/* Footer Button */}
             <View className="p-5 border-t border-gray-100 bg-white">
                 <TouchableOpacity 
                     onPress={step < 3 ? goNext : submitMatch}
                     disabled={submitting}
                     className={`w-full py-4 rounded-xl items-center shadow-sm active:scale-95 ${submitting ? 'bg-gray-400' : 'bg-gray-900'}`}
                 >
-                    {submitting ? (
-                        <ActivityIndicator color="white" />
-                    ) : (
-                        <Text className="text-white font-bold text-lg">
-                            {step < 3 ? '다음' : '매치 등록하기'}
-                        </Text>
-                    )}
+                    {submitting ? <ActivityIndicator color="white" /> : <Text className="text-white font-bold text-lg">{step < 3 ? '다음' : '매치 등록하기'}</Text>}
                 </TouchableOpacity>
             </View>
         </KeyboardAvoidingView>
 
-        {/* --- [Mobile Only] Modals for iOS/Android --- */}
-        {/* Android는 DateTimePicker가 자체적으로 Modal처럼 뜨지만, iOS는 인라인/휠 스타일이므로 Modal로 감싸줘야 '확인' 버튼을 만들 수 있음 */}
         {Platform.OS !== 'web' && (
             <>
-                {/* 1. Date Picker Modal (iOS Only Wrapper) */}
                 {Platform.OS === 'ios' && (
                     <Modal visible={showDatePicker} transparent animationType="fade">
                         <View className="flex-1 bg-black/40 justify-end">
                             <View className="bg-white p-4 rounded-t-2xl pb-8">
-                                <View className="flex-row justify-between items-center mb-4 border-b border-gray-100 pb-2">
-                                    <Text className="text-lg font-bold text-gray-900">날짜 선택</Text>
-                                    <TouchableOpacity onPress={() => setShowDatePicker(false)}>
-                                        <Text className="text-blue-600 font-bold text-lg">완료</Text>
-                                    </TouchableOpacity>
-                                </View>
-                                <DateTimePicker
-                                    value={selectedDate}
-                                    mode="date"
-                                    display="inline" 
-                                    onChange={onChangeDate}
-                                    locale="ko-KR"
-                                />
+                                <View className="flex-row justify-between items-center mb-4 border-b border-gray-100 pb-2"><Text className="text-lg font-bold text-gray-900">날짜 선택</Text><TouchableOpacity onPress={() => setShowDatePicker(false)}><Text className="text-blue-600 font-bold text-lg">완료</Text></TouchableOpacity></View>
+                                <DateTimePicker value={selectedDate} mode="date" display="inline" onChange={onChangeDateMobile} locale="ko-KR" />
                             </View>
                         </View>
                     </Modal>
                 )}
-                {/* Android Date Picker (Invisible trigger) */}
-                {Platform.OS === 'android' && showDatePicker && (
-                    <DateTimePicker
-                        value={selectedDate}
-                        mode="date"
-                        display="default"
-                        onChange={onChangeDate}
-                    />
-                )}
-
-                {/* 2. Time Picker Modal (iOS Only Wrapper) */}
+                {Platform.OS === 'android' && showDatePicker && <DateTimePicker value={selectedDate} mode="date" display="default" onChange={onChangeDateMobile} />}
                 {Platform.OS === 'ios' && (
                     <Modal visible={showTimePicker} transparent animationType="fade">
                         <View className="flex-1 bg-black/40 justify-end">
                             <View className="bg-white p-4 rounded-t-2xl pb-8">
-                                <View className="flex-row justify-between items-center mb-4 border-b border-gray-100 pb-2">
-                                    <Text className="text-lg font-bold text-gray-900">시간 선택</Text>
-                                    <TouchableOpacity onPress={() => setShowTimePicker(false)}>
-                                        <Text className="text-blue-600 font-bold text-lg">완료</Text>
-                                    </TouchableOpacity>
-                                </View>
-                                <DateTimePicker
-                                    value={selectedTime}
-                                    mode="time"
-                                    display="spinner"
-                                    onChange={onChangeTime}
-                                    locale="ko-KR"
-                                />
+                                <View className="flex-row justify-between items-center mb-4 border-b border-gray-100 pb-2"><Text className="text-lg font-bold text-gray-900">시간 선택</Text><TouchableOpacity onPress={() => setShowTimePicker(false)}><Text className="text-blue-600 font-bold text-lg">완료</Text></TouchableOpacity></View>
+                                <DateTimePicker value={selectedTime} mode="time" display="spinner" onChange={onChangeTimeMobile} locale="ko-KR" />
                             </View>
                         </View>
                     </Modal>
                 )}
-                {/* Android Time Picker */}
-                {Platform.OS === 'android' && showTimePicker && (
-                    <DateTimePicker
-                        value={selectedTime}
-                        mode="time"
-                        display="default"
-                        onChange={onChangeTime}
-                    />
-                )}
+                {Platform.OS === 'android' && showTimePicker && <DateTimePicker value={selectedTime} mode="time" display="default" onChange={onChangeTimeMobile} />}
             </>
         )}
     </SafeAreaView>

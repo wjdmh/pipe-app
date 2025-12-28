@@ -11,11 +11,11 @@ import {
   ActivityIndicator,
   Modal
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useNavigation } from 'expo-router'; // ✅ useNavigation 추가
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { collection, addDoc, serverTimestamp, doc, getDoc } from 'firebase/firestore';
-import DateTimePicker from '@react-native-community/datetimepicker'; // ✅ [New] 달력 모듈
+import DateTimePicker from '@react-native-community/datetimepicker'; 
 import { db } from '../../configs/firebaseConfig';
 import { useUser } from '../context/UserContext';
 
@@ -24,6 +24,7 @@ const POSITIONS = ['세터', '레프트', '라이트', '센터', '리베로', '�
 
 export default function GuestWriteScreen() {
   const router = useRouter();
+  const navigation = useNavigation(); // ✅ 네비게이션 객체 가져오기
   const { user, loading: userLoading } = useUser();
   
   const [step, setStep] = useState(1);
@@ -36,7 +37,7 @@ export default function GuestWriteScreen() {
   const [targetLevel, setTargetLevel] = useState('Mid');
   const [gender, setGender] = useState<'male' | 'female' | 'mixed'>('male');
   
-  // ✅ [New] 날짜/시간 State
+  // 날짜/시간 State
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [selectedTime, setSelectedTime] = useState(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -60,7 +61,7 @@ export default function GuestWriteScreen() {
               if (teamSnap.exists()) {
                   const data = teamSnap.data();
                   
-                  // [Optional] 주장이 아니어도 모집 가능하게 할지 결정 필요. 일단은 주장만 가능하도록 설정.
+                  // 주장 권한 체크
                   if (data.captainId !== user.uid) {
                       Alert.alert("권한 없음", "팀 대표만 게스트 모집글을 작성할 수 있습니다.");
                       return router.back();
@@ -79,15 +80,62 @@ export default function GuestWriteScreen() {
       init();
   }, [user, userLoading]);
 
-  // [Logic] Date/Time Handlers
-  const onChangeDate = (event: any, date?: Date) => {
+  // ✅ [NEW] 뒤로가기 방지 (이탈 방지) 로직
+  useEffect(() => {
+      const beforeRemoveListener = navigation.addListener('beforeRemove', (e) => {
+          // 작성 중인지 판단 (step이 1보다 크거나, 입력된 데이터가 있을 때)
+          const hasUnsavedChanges = step > 1 || selectedPositions.length > 0 || location.length > 0 || note.length > 0;
+          
+          // 변경사항이 없거나 제출 중이면 통과
+          if (!hasUnsavedChanges || submitting) {
+              return;
+          }
+
+          e.preventDefault();
+
+          Alert.alert(
+              '작성 중인 내용이 있습니다',
+              '정말 나가시겠습니까?\n작성하신 내용은 저장되지 않습니다.',
+              [
+                  { text: '계속 작성', style: 'cancel', onPress: () => {} },
+                  { 
+                      text: '나가기', 
+                      style: 'destructive', 
+                      onPress: () => navigation.dispatch(e.data.action) 
+                  },
+              ]
+          );
+      });
+
+      return beforeRemoveListener;
+  }, [navigation, step, selectedPositions, location, note, submitting]);
+
+  // [Logic] Date/Time Handlers (Mobile)
+  const onChangeDateMobile = (event: any, date?: Date) => {
       if (Platform.OS === 'android') setShowDatePicker(false);
       if (date) setSelectedDate(date);
   };
 
-  const onChangeTime = (event: any, time?: Date) => {
+  const onChangeTimeMobile = (event: any, time?: Date) => {
       if (Platform.OS === 'android') setShowTimePicker(false);
       if (time) setSelectedTime(time);
+  };
+
+  // [Logic] Date/Time Handlers (Web)
+  const onChangeDateWeb = (e: any) => {
+      const val = e.target.value; 
+      if (!val) return;
+      setSelectedDate(new Date(val));
+  };
+
+  const onChangeTimeWeb = (e: any) => {
+      const val = e.target.value; 
+      if (!val) return;
+      const [h, m] = val.split(':').map(Number);
+      const newTime = new Date();
+      newTime.setHours(h);
+      newTime.setMinutes(m);
+      setSelectedTime(newTime);
   };
 
   const getDateDisplay = () => {
@@ -99,6 +147,20 @@ export default function GuestWriteScreen() {
   };
 
   const getTimeDisplay = () => {
+      const h = selectedTime.getHours().toString().padStart(2, '0');
+      const m = selectedTime.getMinutes().toString().padStart(2, '0');
+      return `${h}:${m}`;
+  };
+
+  // [Helper] 웹용 Value getter
+  const getWebDateValue = () => {
+      const y = selectedDate.getFullYear();
+      const m = (selectedDate.getMonth() + 1).toString().padStart(2, '0');
+      const d = selectedDate.getDate().toString().padStart(2, '0');
+      return `${y}-${m}-${d}`;
+  };
+
+  const getWebTimeValue = () => {
       const h = selectedTime.getHours().toString().padStart(2, '0');
       const m = selectedTime.getMinutes().toString().padStart(2, '0');
       return `${h}:${m}`;
@@ -136,7 +198,7 @@ export default function GuestWriteScreen() {
               teamId: teamInfo.id,
               teamName: teamInfo.name,
               gender: gender,
-              positions: selectedPositions.join(', '), // 배열을 문자열로 저장
+              positions: selectedPositions.join(', '), 
               targetLevel: targetLevel,
               time: finalDate.toISOString(),
               loc: location,
@@ -148,7 +210,7 @@ export default function GuestWriteScreen() {
 
           const msg = "게스트 모집글이 등록되었습니다.";
           if (Platform.OS === 'web') {
-              alert(msg);
+              window.alert(msg);
               router.replace('/home');
           } else {
               Alert.alert("등록 완료", msg, [{ text: '확인', onPress: () => router.replace('/home' as any) }]);
@@ -156,8 +218,7 @@ export default function GuestWriteScreen() {
 
       } catch (e) {
           Alert.alert("오류", "등록 중 문제가 발생했습니다.");
-      } finally {
-          setSubmitting(false);
+          setSubmitting(false); // 실패 시 상태 복구
       }
   };
 
@@ -231,7 +292,7 @@ export default function GuestWriteScreen() {
                   </View>
               )}
 
-              {/* Step 2: 일시 및 장소 (개편됨) */}
+              {/* Step 2: 일시 및 장소 (웹 호환성 패치) */}
               {step === 2 && (
                   <View className="gap-6">
                       <View>
@@ -241,8 +302,17 @@ export default function GuestWriteScreen() {
                               <View className="flex-1">
                                   <Text className="text-xs text-gray-500 mb-1 ml-1">날짜</Text>
                                   {Platform.OS === 'web' ? (
-                                      <View className="bg-gray-50 rounded-xl border border-gray-200 overflow-hidden h-[56px] justify-center">
-                                          <DateTimePicker value={selectedDate} mode="date" onChange={onChangeDate} style={{ width: '100%', height: '100%', opacity: 1 }} />
+                                      <View className="bg-gray-50 rounded-xl border border-gray-200 h-[56px] justify-center px-2">
+                                          {/* @ts-ignore */}
+                                          <input 
+                                              type="date" 
+                                              value={getWebDateValue()} 
+                                              onChange={onChangeDateWeb} 
+                                              style={{ 
+                                                  border: 'none', background: 'transparent', width: '100%', height: '100%', 
+                                                  fontSize: '16px', fontFamily: 'inherit', fontWeight: 'bold' 
+                                              }} 
+                                          />
                                       </View>
                                   ) : (
                                       <TouchableOpacity onPress={() => setShowDatePicker(true)} className="bg-gray-50 p-4 rounded-xl border border-gray-200 items-center justify-center h-[56px]">
@@ -254,8 +324,17 @@ export default function GuestWriteScreen() {
                               <View className="flex-1">
                                   <Text className="text-xs text-gray-500 mb-1 ml-1">시간</Text>
                                   {Platform.OS === 'web' ? (
-                                      <View className="bg-gray-50 rounded-xl border border-gray-200 overflow-hidden h-[56px] justify-center">
-                                          <DateTimePicker value={selectedTime} mode="time" onChange={onChangeTime} style={{ width: '100%', height: '100%' }} />
+                                      <View className="bg-gray-50 rounded-xl border border-gray-200 h-[56px] justify-center px-2">
+                                          {/* @ts-ignore */}
+                                          <input 
+                                              type="time" 
+                                              value={getWebTimeValue()} 
+                                              onChange={onChangeTimeWeb} 
+                                              style={{ 
+                                                  border: 'none', background: 'transparent', width: '100%', height: '100%', 
+                                                  fontSize: '16px', fontFamily: 'inherit', fontWeight: 'bold' 
+                                              }} 
+                                          />
                                       </View>
                                   ) : (
                                       <TouchableOpacity onPress={() => setShowTimePicker(true)} className="bg-gray-50 p-4 rounded-xl border border-gray-200 items-center justify-center h-[56px]">
@@ -316,24 +395,24 @@ export default function GuestWriteScreen() {
                       <View className="flex-1 bg-black/40 justify-end">
                           <View className="bg-white p-4 rounded-t-2xl pb-8">
                               <View className="flex-row justify-between mb-4 border-b border-gray-100 pb-2"><Text className="text-lg font-bold">날짜 선택</Text><TouchableOpacity onPress={() => setShowDatePicker(false)}><Text className="text-blue-600 font-bold">완료</Text></TouchableOpacity></View>
-                              <DateTimePicker value={selectedDate} mode="date" display="inline" onChange={onChangeDate} locale="ko-KR" />
+                              <DateTimePicker value={selectedDate} mode="date" display="inline" onChange={onChangeDateMobile} locale="ko-KR" />
                           </View>
                       </View>
                   </Modal>
               )}
-              {Platform.OS === 'android' && showDatePicker && <DateTimePicker value={selectedDate} mode="date" display="default" onChange={onChangeDate} />}
+              {Platform.OS === 'android' && showDatePicker && <DateTimePicker value={selectedDate} mode="date" display="default" onChange={onChangeDateMobile} />}
               
               {Platform.OS === 'ios' && (
                   <Modal visible={showTimePicker} transparent animationType="fade">
                       <View className="flex-1 bg-black/40 justify-end">
                           <View className="bg-white p-4 rounded-t-2xl pb-8">
                               <View className="flex-row justify-between mb-4 border-b border-gray-100 pb-2"><Text className="text-lg font-bold">시간 선택</Text><TouchableOpacity onPress={() => setShowTimePicker(false)}><Text className="text-blue-600 font-bold">완료</Text></TouchableOpacity></View>
-                              <DateTimePicker value={selectedTime} mode="time" display="spinner" onChange={onChangeTime} locale="ko-KR" />
+                              <DateTimePicker value={selectedTime} mode="time" display="spinner" onChange={onChangeTimeMobile} locale="ko-KR" />
                           </View>
                       </View>
                   </Modal>
               )}
-              {Platform.OS === 'android' && showTimePicker && <DateTimePicker value={selectedTime} mode="time" display="default" onChange={onChangeTime} />}
+              {Platform.OS === 'android' && showTimePicker && <DateTimePicker value={selectedTime} mode="time" display="default" onChange={onChangeTimeMobile} />}
           </>
       )}
     </SafeAreaView>

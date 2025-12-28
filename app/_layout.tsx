@@ -1,105 +1,76 @@
-import "../global.css";
-import "../shim";
-import { Stack } from 'expo-router';
-import { View, Platform, LogBox } from 'react-native';
-import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
-import { useFonts } from 'expo-font';
+import { Slot, useRouter, useSegments } from 'expo-router';
+import { UserProvider, useUser } from './context/UserContext';
 import * as SplashScreen from 'expo-splash-screen';
-// 👇 [Fix] 새로 만든 UserContext 불러오기
-import { UserProvider } from './context/UserContext';
+import { useFonts } from 'expo-font';
+import { View, ActivityIndicator } from 'react-native';
 
-// 콘솔 경고 무시
-LogBox.ignoreLogs([
-  'Blocked aria-hidden on an element',
-  'props.pointerEvents is deprecated',
-  'shadow* style props are deprecated',
-  'TouchableWithoutFeedback is deprecated',
-]);
+// 1. 스플래시 스크린 자동 숨김 방지 (인증 체크가 끝날 때까지 유지)
+SplashScreen.preventAutoHideAsync();
 
-try {
-  SplashScreen.preventAutoHideAsync().catch(() => {});
-} catch (e) {}
+function InitialLayout() {
+  const { user, authInitialized } = useUser();
+  const segments = useSegments();
+  const router = useRouter();
+
+  useEffect(() => {
+    // 2. 인증 체크가 아직 안 끝났으면 아무것도 하지 않음 (스플래시 유지)
+    if (!authInitialized) return;
+
+    // 3. 인증 체크 완료 후 스플래시 숨김
+    SplashScreen.hideAsync();
+
+    // 현재 경로 그룹 확인
+    const inAuthGroup = segments[0] === 'auth';
+    const inHomeGroup = segments[0] === 'home';
+    
+    // [시나리오 A] 비로그인 유저
+    if (!user) {
+      // 로그인이 필요한 페이지(home)로 접근 시 로그인 페이지로 보냄
+      if (inHomeGroup) {
+        router.replace('/auth/login');
+      }
+    } 
+    // [시나리오 B] 로그인 유저
+    else if (user) {
+      // 이미 로그인했는데 로그인/회원가입 페이지에 있다면 홈으로 보냄
+      if (inAuthGroup) {
+        router.replace('/home');
+      }
+      // ⚠️ 중요: 공유 링크(예: /match/123)로 들어온 경우는 
+      // 여기서 간섭하지 않으므로(else), 자연스럽게 해당 페이지가 열립니다.
+    }
+  }, [user, authInitialized, segments]);
+
+  // 인증 초기화 중에는 빈 화면(스플래시가 덮고 있어서 실제로는 안 보임) 렌더링
+  if (!authInitialized) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#fff' }}>
+        <ActivityIndicator size="large" color="#2563EB" />
+      </View>
+    );
+  }
+
+  // 실제 페이지 렌더링 (Slot은 현재 라우트에 맞는 화면을 끼워넣음)
+  return <Slot />;
+}
 
 export default function RootLayout() {
-  const [loaded, error] = useFonts({
-    "FontAwesome": require("../assets/fonts/FontAwesome.ttf"),
-    "FontAwesome5Free-Solid": require("../assets/fonts/FontAwesome5_Solid.ttf"),
-    "FontAwesome5Free-Regular": require("../assets/fonts/FontAwesome5_Regular.ttf"),
-    "FontAwesome5Brands-Regular": require("../assets/fonts/FontAwesome5_Brands.ttf"),
+  // 4. 폰트 로드 (앱 전반에서 사용)
+  const [loaded] = useFonts({
+    'FontAwesome5_Regular': require('../assets/fonts/FontAwesome5_Regular.ttf'),
+    'FontAwesome5_Solid': require('../assets/fonts/FontAwesome5_Solid.ttf'),
+    'FontAwesome5_Brands': require('../assets/fonts/FontAwesome5_Brands.ttf'),
   });
 
-  useEffect(() => {
-    if (error) console.error("[Layout] Font loading error:", error);
-  }, [error]);
+  if (!loaded) {
+    return null;
+  }
 
-  useEffect(() => {
-    if (loaded || error) {
-      SplashScreen.hideAsync().catch((e) => {});
-    }
-  }, [loaded, error]);
-
-  if (!loaded && !error) return null;
-
-  const screenOptions = {
-    headerShown: false,
-    animation: Platform.OS === 'web' ? 'none' : 'default', 
-  } as const;
-
-  const isWeb = Platform.OS === 'web';
-
+  // UserProvider로 앱 전체를 감싸서 어디서든 로그인 정보를 쓸 수 있게 함
   return (
-    // [1. 바깥 배경]
-    <View 
-      style={isWeb ? {
-        flex: 1,
-        backgroundColor: '#f3f4f6', 
-        alignItems: 'center',       
-        justifyContent: 'center',   // 세로 중앙 정렬 추가
-      } : { flex: 1, backgroundColor: 'white' }}
-    >
-      <StatusBar style="auto" />
-      
-      {/* [2. 앱 컨테이너] */}
-      <View 
-        style={isWeb ? { 
-          width: '100%', 
-          maxWidth: 430,             // 430px로 유지
-          height: '100%',
-          backgroundColor: 'white',
-          shadowColor: "#000",
-          shadowOffset: { width: 0, height: 0 },
-          shadowOpacity: 0.1,
-          shadowRadius: 20,
-          // @ts-ignore
-          boxShadow: '0 0 20px rgba(0,0,0,0.1)', 
-          overflow: 'hidden',        
-        } : { flex: 1, width: '100%' }}
-      >
-        {/* 👇 [핵심 Fix] 여기서 UserProvider로 앱 전체를 감싸줍니다. */}
-        {/* 이제 모든 페이지에서 useUser()를 통해 팀 정보를 가져올 수 있습니다. */}
-        <UserProvider>
-          <View style={{ flex: 1, width: '100%', height: '100%' }}>
-            <Stack screenOptions={screenOptions}>
-              <Stack.Screen name="home" options={{ headerShown: false }} />
-              <Stack.Screen name="index" options={{ headerShown: false }} />
-              <Stack.Screen name="auth/login" options={{ headerShown: false }} />
-              <Stack.Screen name="auth/signup" options={{ title: '회원가입', headerBackTitle: '뒤로' }} />
-              <Stack.Screen name="match/write" options={{ title: '매치 개설', headerBackTitle: '취소' }} />
-              <Stack.Screen name="match/[id]" options={{ title: '매치 상세', headerBackTitle: '목록' }} />
-              <Stack.Screen name="match/applicants" options={{ title: '신청자 관리' }} />
-              <Stack.Screen name="match/edit" options={{ title: '매치 수정' }} />
-              <Stack.Screen name="guest/list" options={{ title: '게스트 모집' }} />
-              <Stack.Screen name="guest/write" options={{ title: '게스트 등록' }} />
-              <Stack.Screen name="guest/[id]" options={{ title: '게스트 상세' }} />
-              <Stack.Screen name="admin/manager" options={{ title: '관리자 페이지' }} />
-              {/* 추가적으로 필요한 라우트들... */}
-            </Stack>
-          </View>
-        </UserProvider>
-
-      </View>
-    </View>
+    <UserProvider>
+      <InitialLayout />
+    </UserProvider>
   );
 }
-// deploy trigger v1.22
