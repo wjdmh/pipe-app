@@ -11,7 +11,7 @@ import {
   ActivityIndicator,
   Modal
 } from 'react-native';
-import { useRouter, useNavigation } from 'expo-router'; // ✅ useNavigation 추가
+import { useRouter, useNavigation } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { collection, addDoc, serverTimestamp, doc, getDoc } from 'firebase/firestore';
@@ -24,7 +24,7 @@ const POSITIONS = ['세터', '레프트', '라이트', '센터', '리베로', '�
 
 export default function GuestWriteScreen() {
   const router = useRouter();
-  const navigation = useNavigation(); // ✅ 네비게이션 객체 가져오기
+  const navigation = useNavigation();
   const { user, loading: userLoading } = useUser();
   
   const [step, setStep] = useState(1);
@@ -36,6 +36,9 @@ export default function GuestWriteScreen() {
   const [selectedPositions, setSelectedPositions] = useState<string[]>([]);
   const [targetLevel, setTargetLevel] = useState('Mid');
   const [gender, setGender] = useState<'male' | 'female' | 'mixed'>('male');
+  
+  // ✅ [NEW] 모집 인원 State (기본 1명)
+  const [recruitmentCount, setRecruitmentCount] = useState(1);
   
   // 날짜/시간 State
   const [selectedDate, setSelectedDate] = useState(new Date());
@@ -80,13 +83,11 @@ export default function GuestWriteScreen() {
       init();
   }, [user, userLoading]);
 
-  // ✅ [NEW] 뒤로가기 방지 (이탈 방지) 로직
+  // 이탈 방지 로직
   useEffect(() => {
       const beforeRemoveListener = navigation.addListener('beforeRemove', (e) => {
-          // 작성 중인지 판단 (step이 1보다 크거나, 입력된 데이터가 있을 때)
           const hasUnsavedChanges = step > 1 || selectedPositions.length > 0 || location.length > 0 || note.length > 0;
           
-          // 변경사항이 없거나 제출 중이면 통과
           if (!hasUnsavedChanges || submitting) {
               return;
           }
@@ -152,7 +153,6 @@ export default function GuestWriteScreen() {
       return `${h}:${m}`;
   };
 
-  // [Helper] 웹용 Value getter
   const getWebDateValue = () => {
       const y = selectedDate.getFullYear();
       const m = (selectedDate.getMonth() + 1).toString().padStart(2, '0');
@@ -166,7 +166,6 @@ export default function GuestWriteScreen() {
       return `${h}:${m}`;
   };
 
-  // [Logic] 포지션 토글
   const togglePosition = (pos: string) => {
       if (selectedPositions.includes(pos)) {
           setSelectedPositions(prev => prev.filter(p => p !== pos));
@@ -188,7 +187,6 @@ export default function GuestWriteScreen() {
   const submitPost = async () => {
       setSubmitting(true);
       try {
-          // 날짜 병합
           const finalDate = new Date(selectedDate);
           finalDate.setHours(selectedTime.getHours());
           finalDate.setMinutes(selectedTime.getMinutes());
@@ -200,11 +198,14 @@ export default function GuestWriteScreen() {
               gender: gender,
               positions: selectedPositions.join(', '), 
               targetLevel: targetLevel,
+              // ✅ [NEW] 모집 인원 저장
+              recruitmentCount: recruitmentCount, 
               time: finalDate.toISOString(),
               loc: location,
               note: note,
               status: 'recruiting',
-              applicants: [],
+              applicants: [], // 상세 정보용 (객체 배열 예정)
+              applicantIds: [], // ✅ [NEW] 검색용 인덱스 (UID 문자열 배열)
               createdAt: serverTimestamp()
           });
 
@@ -218,7 +219,7 @@ export default function GuestWriteScreen() {
 
       } catch (e) {
           Alert.alert("오류", "등록 중 문제가 발생했습니다.");
-          setSubmitting(false); // 실패 시 상태 복구
+          setSubmitting(false);
       }
   };
 
@@ -258,6 +259,30 @@ export default function GuestWriteScreen() {
                           </View>
                       </View>
 
+                      {/* ✅ [NEW] 모집 인원 설정 UI */}
+                      <View>
+                          <Text className="text-lg font-bold text-gray-900 mb-3">몇 명을 모집하나요?</Text>
+                          <View className="flex-row items-center bg-gray-50 rounded-xl border border-gray-200 p-2 self-start">
+                              <TouchableOpacity 
+                                  onPress={() => setRecruitmentCount(prev => Math.max(1, prev - 1))}
+                                  className="w-10 h-10 bg-white rounded-lg items-center justify-center border border-gray-200 shadow-sm"
+                              >
+                                  <FontAwesome5 name="minus" size={12} color="#111827" />
+                              </TouchableOpacity>
+                              
+                              <View className="w-16 items-center">
+                                  <Text className="text-xl font-bold text-gray-900">{recruitmentCount}명</Text>
+                              </View>
+
+                              <TouchableOpacity 
+                                  onPress={() => setRecruitmentCount(prev => prev + 1)}
+                                  className="w-10 h-10 bg-white rounded-lg items-center justify-center border border-gray-200 shadow-sm"
+                              >
+                                  <FontAwesome5 name="plus" size={12} color="#111827" />
+                              </TouchableOpacity>
+                          </View>
+                      </View>
+
                       <View>
                           <Text className="text-lg font-bold text-gray-900 mb-3">희망 실력 (게스트)</Text>
                           <View className="flex-row gap-2">
@@ -292,7 +317,7 @@ export default function GuestWriteScreen() {
                   </View>
               )}
 
-              {/* Step 2: 일시 및 장소 (웹 호환성 패치) */}
+              {/* Step 2: 일시 및 장소 */}
               {step === 2 && (
                   <View className="gap-6">
                       <View>

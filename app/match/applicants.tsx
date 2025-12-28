@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity, FlatList, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, TouchableOpacity, FlatList, Alert, ActivityIndicator, Linking } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { doc, getDoc, addDoc, collection, runTransaction } from 'firebase/firestore';
+import { doc, getDoc, addDoc, collection, runTransaction, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../configs/firebaseConfig';
 import { FontAwesome } from '@expo/vector-icons';
 import { sendPushNotification } from '../../utils/notificationHelper';
+import { useUser } from '../context/UserContext'; // ✅ 내 정보(연락처) 가져오기
 
 type TeamInfo = {
   id: string;
@@ -12,22 +13,25 @@ type TeamInfo = {
   level: string;
   affiliation: string;
   stats: { wins: number; total: number };
-  captainId: string; // 알림 전송을 위해 captainId 포함
+  captainId: string;
 };
 
-export default function ApplicantManageScreen() {
+export default function MatchApplicantManageScreen() {
   const router = useRouter();
-  const { matchId } = useLocalSearchParams();
+  const { id } = useLocalSearchParams(); // matchId
+  const matchId = Array.isArray(id) ? id[0] : id; // 파라미터 안전 처리
+  
+  const { user } = useUser(); // ✅ 호스트(나) 정보
   const [loading, setLoading] = useState(true);
   const [applicants, setApplicants] = useState<TeamInfo[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
 
   useEffect(() => {
-    loadApplicants();
+    if (matchId) loadApplicants();
   }, [matchId]);
 
   const loadApplicants = async () => {
-    if (typeof matchId !== 'string') return;
+    if (!matchId) return;
     try {
       const matchSnap = await getDoc(doc(db, "matches", matchId));
       if (!matchSnap.exists()) {
@@ -37,7 +41,6 @@ export default function ApplicantManageScreen() {
       }
 
       const matchData = matchSnap.data();
-      // 이미 매칭된 게시글인 경우 알림 후 뒤로가기
       if (matchData.status !== 'recruiting') {
         Alert.alert('알림', '이미 마감된 모집입니다.');
         router.back();
@@ -47,7 +50,6 @@ export default function ApplicantManageScreen() {
       const applicantIds = matchData.applicants || [];
       const teams: TeamInfo[] = [];
       
-      // 신청 팀 정보 조회
       for (const teamId of applicantIds) {
         const teamSnap = await getDoc(doc(db, "teams", teamId));
         if (teamSnap.exists()) {
@@ -71,79 +73,79 @@ export default function ApplicantManageScreen() {
     }
   };
 
-  // [Upgraded] 링크 파라미터를 지원하도록 개선된 알림 전송 함수
-  // link의 기본값을 '매칭 탭'으로 설정하여, 별도 지정 없어도 올바른 곳으로 이동하게 함
-  const sendNotification = async (targetUid: string, type: string, title: string, msg: string, link: string = '/home/locker?initialTab=matches') => {
+  // 알림 전송 헬퍼
+  const sendNotification = async (targetUid: string, type: string, title: string, msg: string, link: string = '/home/locker') => {
       if (!targetUid) return;
       try {
-          // 1. Firestore 내 알림 센터 저장
           await addDoc(collection(db, "notifications"), {
               userId: targetUid,
               type, 
               title, 
               message: msg,
-              link, // 동적으로 받은 링크 저장
+              link, 
               createdAt: new Date().toISOString(),
               isRead: false
           });
 
-          // 2. 실제 푸시 알림 발송
           const userSnap = await getDoc(doc(db, "users", targetUid));
           if (userSnap.exists()) {
               const token = userSnap.data().pushToken;
               if (token) {
-                  await sendPushNotification(token, title, msg, { link }); // 푸시 데이터에도 링크 포함
+                  await sendPushNotification(token, title, msg, { link });
               }
           }
-      } catch (e) { console.warn("알림 전송 실패 (Non-blocking):", e); }
+      } catch (e) { console.warn("알림 전송 실패:", e); }
   };
 
-  // [Critical Fix] 매칭 수락 트랜잭션 적용
   const handleAccept = async (team: TeamInfo) => {
     if (isProcessing) return;
-    
-    Alert.alert('매칭 수락', `'${team.name}' 팀과 매칭을 확정하시겠습니까?\n확정 시 다른 신청자들은 자동 탈락 처리됩니다.`, [
+    if (!user) return Alert.alert("오류", "사용자 정보를 불러올 수 없습니다.");
+
+    Alert.alert('매칭 수락', `'${team.name}' 팀과 매칭을 확정하시겠습니까?\n상대 팀에게 내 연락처가 공개됩니다.`, [
       { text: '취소', style: 'cancel' },
       {
         text: '확정하기',
         onPress: async () => {
-          if (typeof matchId !== 'string') return;
+          if (!matchId) return;
           setIsProcessing(true);
 
           try {
+            // 1. 상대방(게스트) 주장 연락처 조회
+            const guestCaptainSnap = await getDoc(doc(db, "users", team.captainId));
+            const guestPhone = guestCaptainSnap.data()?.phoneNumber || "연락처 미등록";
+            const myPhone = user.phoneNumber || "연락처 미등록";
+
+            // 2. 트랜잭션 실행 (상태 변경 + 연락처 박제)
             await runTransaction(db, async (transaction) => {
               const matchRef = doc(db, "matches", matchId);
               const matchDoc = await transaction.get(matchRef);
 
-              if (!matchDoc.exists()) {
-                throw "존재하지 않는 게시글입니다.";
-              }
-
+              if (!matchDoc.exists()) throw "존재하지 않는 게시글입니다.";
               const data = matchDoc.data();
-              // [Check] 동시성 방어: 이미 다른 사람이 수락했는지 확인
-              if (data.status !== 'recruiting') {
-                throw "이미 마감된 경기입니다.";
-              }
+              if (data.status !== 'recruiting') throw "이미 마감된 경기입니다.";
 
-              // 상태 업데이트: matched로 변경 및 guestId 지정, 신청자 목록 초기화
               transaction.update(matchRef, {
                 status: 'matched',
                 guestId: team.id,
-                applicants: [] // DB상 신청자 목록 비우기 (클린업)
+                applicants: [], // 신청자 목록 초기화
+                
+                // ✅ 연락처 스냅샷 저장 (핵심)
+                hostContact: myPhone,
+                guestContact: guestPhone,
+                matchedAt: serverTimestamp()
               });
             });
 
-            // --- 트랜잭션 성공 후 알림 발송 ---
-            
-            // 1. 수락된 팀에게 알림 (성공) -> 기본 링크(매칭 탭) 사용
+            // 3. 알림 발송
+            // 승리팀(게스트)에게: 내 번호 전송
             await sendNotification(
                 team.captainId,
-                'match_upcoming', // 아이콘 타입
+                'match_confirmed', // 라커룸 이동용 타입
                 '매칭 성사! 🎉',
-                `신청하신 경기가 매칭되었습니다! 상대 팀 연락처를 확인하세요.`
+                `경기 매칭이 확정되었습니다.\n상대 주장 연락처: ${myPhone}\n라커룸에서 확인하세요.`
             );
 
-            // 2. 탈락한 팀들에게 알림 (실패) -> 마찬가지로 확인을 위해 매칭 탭으로 이동
+            // 탈락팀들에게: 위로 문자
             const rejectedTeams = applicants.filter(t => t.id !== team.id);
             const notifyPromises = rejectedTeams.map(rejected => 
                 sendNotification(
@@ -155,15 +157,13 @@ export default function ApplicantManageScreen() {
             );
             await Promise.all(notifyPromises);
 
-            Alert.alert('매칭 확정', '매칭이 성공적으로 성사되었습니다!');
-            router.back(); // 라커룸으로 복귀
+            Alert.alert('매칭 확정', `매칭이 성공적으로 성사되었습니다!\n상대 주장 연락처: ${guestPhone}`);
+            router.back(); 
 
           } catch (e: any) {
             console.error("Match Accept Error:", e);
-            const errorMsg = typeof e === 'string' ? e : '수락 처리 중 오류가 발생했습니다.';
-            Alert.alert('오류', errorMsg);
-            // 상태가 변경되었을 수 있으므로 목록 새로고침
-            loadApplicants();
+            Alert.alert('오류', typeof e === 'string' ? e : '수락 처리 중 오류가 발생했습니다.');
+            loadApplicants(); // 상태 동기화
           } finally {
             setIsProcessing(false);
           }
@@ -176,11 +176,10 @@ export default function ApplicantManageScreen() {
 
   return (
     <View className="flex-1 bg-white">
-      {/* 로딩 오버레이 */}
       {isProcessing && (
         <View className="absolute inset-0 bg-black/30 z-50 justify-center items-center">
             <ActivityIndicator size="large" color="#ffffff" />
-            <Text className="text-white font-bold mt-4">매칭 확정 중...</Text>
+            <Text className="text-white font-bold mt-4">매칭 확정 및 연락처 교환 중...</Text>
         </View>
       )}
 
@@ -203,7 +202,7 @@ export default function ApplicantManageScreen() {
         }
         renderItem={({ item }) => (
           <View className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm mb-4 flex-row justify-between items-center">
-            <View>
+            <View className="flex-1 mr-4">
               <View className="flex-row items-center mb-1.5">
                 <Text className="font-bold text-lg text-slate-800 mr-2">{item.name}</Text>
                 <View className="bg-slate-100 px-2 py-0.5 rounded text-xs">
@@ -224,7 +223,7 @@ export default function ApplicantManageScreen() {
             <TouchableOpacity
               onPress={() => handleAccept(item)}
               disabled={isProcessing}
-              className="bg-indigo-600 px-5 py-2.5 rounded-xl shadow-sm active:scale-95"
+              className="bg-indigo-600 px-5 py-3 rounded-xl shadow-sm active:scale-95"
             >
               <Text className="text-white font-bold text-sm">수락</Text>
             </TouchableOpacity>
