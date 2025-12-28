@@ -9,24 +9,24 @@ import {
   LogBox, 
   Modal, 
   TextInput, 
-  Alert, 
-  Platform 
+  Alert 
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { useGuest, GuestPost } from '../../hooks/useGuest';
 import { auth } from '../../configs/firebaseConfig';
-import { useUser } from '../context/UserContext'; // ✅ 유저 정보 가져오기 (연락처 자동완성용)
+import { useUser } from '../context/UserContext';
+import GuestCard from '../../components/GuestCard'; // ✅ 공통 컴포넌트 도입
 
 // ⚠️ VirtualizedLists 경고 무시
 LogBox.ignoreLogs(['VirtualizedLists should never be nested']);
 
-const POSITIONS = { 'OH': '레프트', 'OP': '라이트', 'MB': '미들 블로커', 'S': '세터', 'L': '리베로' };
+const POSITIONS = { 'OH': '레프트', 'OP': '라이트', 'MB': '센터', 'S': '세터', 'L': '리베로' };
 
 export default function GuestListScreen() {
   const router = useRouter();
-  const { user } = useUser(); // ✅ 내 정보 가져오기
+  const { user } = useUser();
   const { posts, loading, applyForGuest, cancelApplication } = useGuest();
   const [filterPos, setFilterPos] = useState<string>('all');
 
@@ -46,8 +46,8 @@ export default function GuestListScreen() {
     }
     
     setSelectedPost(post);
-    setApplyMessage('열심히 하겠습니다!'); // 기본 메시지
-    setApplyContact(user?.phoneNumber || ''); // ✅ 내 연락처 자동 입력
+    setApplyMessage('열심히 하겠습니다!'); 
+    setApplyContact(user?.phoneNumber || ''); 
     setModalVisible(true);
   };
 
@@ -59,8 +59,6 @@ export default function GuestListScreen() {
         return;
     }
 
-    // useGuest의 applyForGuest 호출 (인자: post, message, contact)
-    // ⚠️ 다음 단계에서 useGuest.ts를 수정해야 이 부분이 정상 동작합니다.
     await applyForGuest(selectedPost, applyMessage, applyContact);
     
     setModalVisible(false);
@@ -71,89 +69,64 @@ export default function GuestListScreen() {
 
   const renderItem = ({ item }: { item: GuestPost }) => {
     // applicants가 객체 배열인지 문자열 배열인지 체크 (하위 호환성)
+    const myUid = auth.currentUser?.uid;
     const isApplied = item.applicants?.some((a: any) => 
-        typeof a === 'string' ? a === auth.currentUser?.uid : a.uid === auth.currentUser?.uid
+        typeof a === 'string' ? a === myUid : a.uid === myUid
     );
-    const isMyPost = item.hostCaptainId === auth.currentUser?.uid;
+    const isMyPost = item.hostCaptainId === myUid;
     
-    // 날짜 포맷팅
-    let dateStr = item.matchDate;
-    let timeStr = '';
-    if(item.matchDate.includes('T')) {
-        const d = new Date(item.matchDate);
-        dateStr = `${d.getMonth() + 1}/${d.getDate()}`;
-        timeStr = `${d.getHours()}시 ${d.getMinutes()}분`;
-    }
-
-    // 모집 인원 표시 (기본값 1명)
-    // @ts-ignore (Phase 1-1에서 추가된 필드)
+    // 모집 인원 체크
     const totalRecruit = item.recruitmentCount || 1;
     const currentAccepted = item.applicants?.filter((a: any) => typeof a !== 'string' && a.status === 'accepted').length || 0;
     const isFull = currentAccepted >= totalRecruit;
 
     return (
-      <TouchableOpacity 
-        activeOpacity={0.9}
-        onPress={() => router.push(`/guest/${item.id}` as any)}
-        className="bg-white p-5 rounded-2xl mb-4 border border-gray-100 shadow-sm"
-      >
-        <View className="flex-row justify-between items-start mb-3">
-          <View>
-            <View className="flex-row items-center mb-1">
-              <View className="bg-indigo-50 px-2 py-1 rounded-lg mr-2">
-                <Text className="text-indigo-600 text-xs font-bold">{item.gender === 'male' ? '남성' : item.gender === 'female' ? '여성' : '무관'}</Text>
-              </View>
-              {item.positions && item.positions.map(pos => (
-                <View key={pos} className="bg-orange-50 px-2 py-1 rounded-lg mr-1">
-                  <Text className="text-orange-600 text-xs font-bold">{POSITIONS[pos as keyof typeof POSITIONS] || pos}</Text>
-                </View>
-              ))}
+      <View className="mb-4">
+        {/* ✅ 1. 공통 디자인 카드 (클릭 시 상세 이동) */}
+        <GuestCard 
+            item={item} 
+            onPress={() => router.push(`/guest/${item.id}` as any)} 
+            variant="detailed"
+        />
+
+        {/* ✅ 2. 액션 버튼 영역 (카드 하단에 부착) */}
+        {/* 기존 기능 누락 방지를 위해 '간편 지원/취소' 버튼을 유지합니다 */}
+        {!isMyPost && (
+            <View className="absolute bottom-3 right-5 flex-row">
+                 {isApplied ? (
+                    <TouchableOpacity 
+                        onPress={() => cancelApplication(item.id)}
+                        className="bg-gray-200 px-4 py-2 rounded-xl"
+                    >
+                        <Text className="text-gray-600 font-bold text-xs">신청 취소</Text>
+                    </TouchableOpacity>
+                 ) : (
+                    <TouchableOpacity 
+                        onPress={() => isFull ? null : openApplyModal(item)}
+                        disabled={isFull}
+                        className={`px-4 py-2 rounded-xl shadow-sm ${isFull ? 'bg-gray-300' : 'bg-indigo-600'}`}
+                    >
+                        <Text className="text-white font-bold text-xs">
+                            {isFull ? '모집 마감' : '간편 지원'}
+                        </Text>
+                    </TouchableOpacity>
+                 )}
             </View>
-            <Text className="text-lg font-bold text-gray-900">{item.hostTeamName}</Text>
-          </View>
-          {isMyPost && <View className="bg-gray-100 px-2 py-1 rounded"><Text className="text-xs text-gray-500">내 모집글</Text></View>}
-        </View>
-
-        <View className="flex-row items-center mb-1">
-          <FontAwesome5 name="clock" size={12} color="#64748b" style={{ marginRight: 8 }} />
-          <Text className="text-gray-600 text-sm">{dateStr} {timeStr}</Text>
-        </View>
-        <View className="flex-row items-center mb-4">
-          <FontAwesome5 name="map-marker-alt" size={12} color="#64748b" style={{ marginRight: 8 }} />
-          <Text className="text-gray-600 text-sm">{item.location}</Text>
-        </View>
-
-        <View className="border-t border-gray-100 pt-3 flex-row justify-between items-center">
-          <View>
-             <Text className="text-sm font-bold text-gray-500">
-                회비: <Text className="text-indigo-600">{item.fee === '0' || item.fee === '무료' || !item.fee ? '무료' : `${item.fee}원`}</Text>
-             </Text>
-             <Text className="text-xs text-gray-400 mt-1">
-                모집 현황: <Text className="font-bold text-gray-600">{currentAccepted} / {totalRecruit}명</Text>
-             </Text>
-          </View>
-          
-          {isMyPost ? (
-            <TouchableOpacity 
-              onPress={() => router.push({ pathname: '/guest/applicants', params: { id: item.id } })}
-              className="px-4 py-2 rounded-xl bg-slate-800 flex-row items-center"
-            >
-              <FontAwesome5 name="users" size={12} color="white" style={{ marginRight: 8 }} />
-              <Text className="font-bold text-white text-xs">신청자 확인 ({item.applicants?.length || 0})</Text>
-            </TouchableOpacity>
-          ) : (
-            <TouchableOpacity 
-              onPress={() => isApplied ? cancelApplication(item.id) : openApplyModal(item)}
-              disabled={isFull && !isApplied}
-              className={`px-4 py-2 rounded-xl ${isApplied ? 'bg-gray-200' : isFull ? 'bg-gray-300' : 'bg-indigo-600'}`}
-            >
-              <Text className={`font-bold ${isApplied ? 'text-gray-500' : 'text-white'}`}>
-                {isApplied ? '신청 취소' : isFull ? '모집 마감' : '게스트 지원'}
-              </Text>
-            </TouchableOpacity>
-          )}
-        </View>
-      </TouchableOpacity>
+        )}
+        
+        {/* 내 게시글일 경우 관리 버튼 표시 */}
+        {isMyPost && (
+            <View className="absolute bottom-3 right-5">
+                <TouchableOpacity 
+                    onPress={() => router.push({ pathname: '/guest/applicants', params: { id: item.id } })}
+                    className="bg-slate-800 px-4 py-2 rounded-xl flex-row items-center shadow-sm"
+                >
+                    <FontAwesome5 name="users" size={10} color="white" style={{marginRight:6}} />
+                    <Text className="text-white font-bold text-xs">관리</Text>
+                </TouchableOpacity>
+            </View>
+        )}
+      </View>
     );
   };
 
@@ -197,7 +170,7 @@ export default function GuestListScreen() {
         />
       )}
 
-      {/* ✅ 신청 모달 (Apply Modal) */}
+      {/* ✅ 신청 모달 (Phase 1 기능 유지) */}
       <Modal visible={modalVisible} transparent animationType="fade">
           <View className="flex-1 bg-black/60 justify-center items-center p-6">
               <View className="bg-white w-full rounded-2xl p-6">

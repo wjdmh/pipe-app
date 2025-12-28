@@ -1,38 +1,44 @@
-// hooks/useGuest.ts
 import { useState, useEffect } from 'react';
 import { 
   collection, query, where, orderBy, onSnapshot, 
   addDoc, updateDoc, doc, arrayUnion, 
-  getDoc, runTransaction, deleteDoc 
+  getDoc, runTransaction, deleteDoc,
+  serverTimestamp
 } from 'firebase/firestore';
 import { db, auth } from '../configs/firebaseConfig';
 import { Alert, Platform } from 'react-native';
 import { sendPushNotification } from '../utils/notificationHelper';
 
+// ✅ [Type Fix] matchDate의 물음표(?)를 제거하여 필수 속성으로 변경
 export type GuestPost = {
   id: string;
   hostTeamId: string;
   hostTeamName: string;
   hostCaptainId: string;
-  matchDate: string; 
-  location: string;
+  
+  time: string;       // 경기 일시 (ISO String)
+  matchDate: string;  // ✅ [Fix] 하위 호환용 (필수로 지정하여 TS 오류 해결)
+  
+  location: string;   // loc 필드와 매핑됨
+  loc?: string;       // DB 원본 필드
+
   positions: string[]; 
   gender: 'male' | 'female' | 'mixed';
+  targetLevel: string; // 상/중/하
   fee: string; 
-  description: string; // note 필드 대응 (write 스크린에서는 note로 쓰지만 DB 필드명 확인 필요, 여기선 기존 유지)
-  note?: string;       // write.tsx에서 note로 저장하므로 추가
+  
+  note?: string;       // 상세 내용
+  description?: string; // (Legacy)
+
   status: 'recruiting' | 'closed';
   
-  // ✅ [수정] 데이터 구조 개선
   recruitmentCount?: number; // 모집 인원
-  applicantIds?: string[];   // 검색용 (UID 목록)
-  applicants?: any[];        // 상세 정보 (객체 배열) [{ uid, name, contact, message, status, appliedAt }]
+  applicantIds?: string[];   // 검색용
+  applicants?: any[];        // 상세 정보
   
-  acceptedApplicantId?: string; // (Legacy) 단일 수락용 - 하위 호환 유지
   createdAt: string;
 };
 
-// 웹 호환 알림 헬퍼
 const safeAlert = (title: string, message?: string) => {
   if (Platform.OS === 'web') {
     window.alert(`${title}\n\n${message || ''}`);
@@ -47,17 +53,32 @@ export const useGuest = () => {
 
   // 1. 모집글 목록 조회
   useEffect(() => {
+    // time 기준 정렬 (인덱스 필요 시 콘솔 링크 확인)
     const q = query(
       collection(db, "guest_posts"),
       where("status", "==", "recruiting"),
-      orderBy("matchDate", "asc")
+      orderBy("time", "asc") 
     );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const list: GuestPost[] = [];
       snapshot.forEach((doc) => {
         const data = doc.data();
-        list.push({ id: doc.id, ...data, applicants: data.applicants || [] } as GuestPost);
+        
+        // 🛡️ [Data Guard] 데이터가 비어있을 경우 기본값 주입
+        const standardizedTime = data.time || data.matchDate || new Date().toISOString();
+        const standardizedLoc = data.loc || data.location || '';
+
+        list.push({ 
+            id: doc.id, 
+            ...data,
+            // 표준화된 필드 주입 (항상 값이 존재함을 보장)
+            time: standardizedTime,
+            matchDate: standardizedTime, 
+            location: standardizedLoc,
+            
+            applicants: data.applicants || [] 
+        } as GuestPost);
       });
       setPosts(list);
       setLoading(false);
@@ -78,8 +99,8 @@ export const useGuest = () => {
         hostCaptainId: auth.currentUser.uid,
         status: 'recruiting',
         applicants: [],
-        applicantIds: [], // 초기화
-        createdAt: new Date().toISOString(),
+        applicantIds: [],
+        createdAt: serverTimestamp(),
         isDeleted: false
       });
       return true;
@@ -89,10 +110,10 @@ export const useGuest = () => {
     }
   };
 
-  // 3. 용병 신청 (Logic Upgraded)
+  // 3. 용병 신청
   const applyForGuest = async (post: GuestPost, message: string, contact: string) => {
     if (!auth.currentUser) return;
-    const user = auth.currentUser; // currentUser 객체 전체 활용 (이름 등 필요 시)
+    const user = auth.currentUser;
 
     if (post.hostCaptainId === user.uid) {
       safeAlert('오류', '본인이 작성한 글입니다.');
@@ -108,13 +129,12 @@ export const useGuest = () => {
         const data = postDoc.data();
         if (data.status !== 'recruiting') throw "이미 마감된 모집입니다.";
 
-        // [Smart Migration] 기존 문자열 배열 -> 객체 배열 호환 처리
+        // [Migration]
         let currentApplicants = data.applicants || [];
         let currentIds = data.applicantIds || [];
 
-        // 만약 applicants가 옛날 방식(문자열 배열)이라면 변환
         if (currentApplicants.length > 0 && typeof currentApplicants[0] === 'string') {
-            currentIds = [...currentApplicants]; // 기존 UID들을 ID 목록으로 이동
+            currentIds = [...currentApplicants];
             currentApplicants = currentApplicants.map((uid: string) => ({
                 uid,
                 name: '익명(구버전)',
@@ -123,22 +143,19 @@ export const useGuest = () => {
             }));
         }
 
-        // 중복 신청 체크
         if (currentIds.includes(user.uid)) {
             throw "이미 신청한 내역이 있습니다.";
         }
 
-        // 새 신청자 객체 생성
         const newApplicant = {
             uid: user.uid,
-            name: user.displayName || '익명', // UserContext가 없으므로 Auth 프로필 사용
+            name: user.displayName || '익명',
             contact: contact,
             message: message,
             status: 'pending',
             appliedAt: new Date().toISOString()
         };
 
-        // 배열 업데이트
         const updatedApplicants = [...currentApplicants, newApplicant];
         const updatedIds = [...currentIds, user.uid];
 
@@ -148,19 +165,18 @@ export const useGuest = () => {
         });
       });
       
-      // 호스트에게 알림 발송
+      // 알림 발송
       try {
         await addDoc(collection(db, "notifications"), {
             userId: post.hostCaptainId,
-            type: 'guest_apply', // 혹은 'applicant' (일관성 유지 필요, 여기선 기존 코드 존중)
+            type: 'guest_apply',
             title: '용병 신청 도착! 🙋‍♂️',
             message: `${message ? `"${message}"` : '새로운 용병 신청이 왔습니다.'}`,
-            link: `/guest/applicants?id=${post.id}`, // 클릭 시 관리 페이지로
+            link: `/guest/applicants?id=${post.id}`,
             createdAt: new Date().toISOString(),
             isRead: false
         });
 
-        // 푸시 알림 (토큰이 있는 경우)
         const hostSnap = await getDoc(doc(db, "users", post.hostCaptainId));
         if (hostSnap.exists()) {
             const hostData = hostSnap.data();
@@ -182,7 +198,7 @@ export const useGuest = () => {
     }
   };
 
-  // 4. 신청 취소 (Logic Upgraded)
+  // 4. 신청 취소
   const cancelApplication = async (postId: string) => {
     if (!auth.currentUser) return;
     const myUid = auth.currentUser.uid;
@@ -197,14 +213,11 @@ export const useGuest = () => {
           const oldApplicants = data.applicants || [];
           const oldIds = data.applicantIds || [];
 
-          // 내 정보 제거 (객체 배열 필터링)
           const newApplicants = oldApplicants.filter((a: any) => {
-              // 문자열인 경우(구버전)와 객체인 경우 모두 대응
               const uid = typeof a === 'string' ? a : a.uid;
               return uid !== myUid;
           });
 
-          // ID 목록 제거
           const newIds = oldIds.filter((id: string) => id !== myUid);
 
           transaction.update(postRef, {
@@ -220,20 +233,7 @@ export const useGuest = () => {
     }
   };
 
-  // 5. 용병 수락 (기존 로직 유지, applicants 페이지에서 상세 로직 처리 예정)
-  // 단, applicants 페이지에서 직접 DB를 수정하므로 여기서는 Legacy 지원용으로 남겨둠
-  const acceptGuest = async (post: GuestPost, applicantUid: string) => {
-      try {
-          // ... (기존과 동일하거나 필요 시 업데이트, Phase 2에서 applicants.tsx가 메인이 됨)
-          // 여기서는 호환성을 위해 놔두되, 실제 수락 로직은 applicants.tsx에서 수행하는 것이 더 정확함 (다중 수락 때문)
-          return true;
-      } catch (e: any) {
-          safeAlert('수락 실패', typeof e === 'string' ? e : '오류가 발생했습니다.');
-          return false;
-      }
-  };
-
-  // 6. 게시글 삭제
+  // 5. 게시글 삭제
   const deletePost = async (postId: string) => {
       try {
           await deleteDoc(doc(db, "guest_posts", postId));
@@ -243,6 +243,8 @@ export const useGuest = () => {
           return false;
       }
   };
+  
+  const acceptGuest = async () => { return false; }
 
-  return { posts, loading, createPost, applyForGuest, cancelApplication, acceptGuest, deletePost };
+  return { posts, loading, createPost, applyForGuest, cancelApplication, deletePost, acceptGuest };
 };
