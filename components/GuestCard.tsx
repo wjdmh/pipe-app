@@ -1,9 +1,8 @@
 import React from 'react';
 import { View, Text, TouchableOpacity } from 'react-native';
 import { FontAwesome5 } from '@expo/vector-icons';
-import { GuestPost } from '../hooks/useGuest'; // Step 1에서 수정한 타입 가져오기
+import { GuestPost } from '../hooks/useGuest'; 
 
-// 포지션 한글 매핑 (데이터가 영어 코드일 경우 대비)
 const POSITION_MAP: Record<string, string> = { 
   'OH': '레프트', 'OP': '라이트', 'MB': '센터', 'S': '세터', 'L': '리베로', 
   '세터': '세터', '레프트': '레프트', '라이트': '라이트', '센터': '센터', '리베로': '리베로', '올라운더': '올라운더'
@@ -12,12 +11,11 @@ const POSITION_MAP: Record<string, string> = {
 interface GuestCardProps {
   item: GuestPost;
   onPress: () => void;
-  variant?: 'simple' | 'detailed'; // 추후 확장을 위한 prop (기본값: detailed)
+  variant?: 'simple' | 'detailed'; 
 }
 
 export default function GuestCard({ item, onPress, variant = 'detailed' }: GuestCardProps) {
   
-  // 1. 날짜 및 D-Day 계산 로직
   const getDDay = (dateStr: string) => {
     try {
       const target = new Date(dateStr);
@@ -25,7 +23,6 @@ export default function GuestCard({ item, onPress, variant = 'detailed' }: Guest
       target.setHours(0,0,0,0);
       today.setHours(0,0,0,0);
       const diff = (target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24);
-      
       if (diff < 0) return '종료';
       if (diff === 0) return 'D-Day';
       return `D-${Math.ceil(diff)}`;
@@ -45,21 +42,30 @@ export default function GuestCard({ item, onPress, variant = 'detailed' }: Guest
     } catch { return '-'; }
   };
 
-  // 2. 모집 현황 계산 (객체 배열 호환성 유지)
   const total = item.recruitmentCount || 1;
-  const current = item.applicants?.filter((a: any) => 
+  // applicants 배열 안전 처리
+  const safeApplicants = Array.isArray(item.applicants) ? item.applicants : [];
+  const current = safeApplicants.filter((a: any) => 
       typeof a === 'string' ? false : a.status === 'accepted'
-  ).length || 0;
+  ).length;
   const isFull = current >= total;
 
-  // 3. 상태 뱃지 스타일링
   const isRecruiting = item.status === 'recruiting' && !isFull;
   const statusColor = isRecruiting ? 'bg-indigo-50 text-indigo-600' : 'bg-gray-100 text-gray-500';
   const statusText = isRecruiting ? '모집중' : '마감';
 
-  // 4. 성별 태그 스타일링
   const genderLabel = item.gender === 'male' ? '남성' : item.gender === 'female' ? '여성' : '혼성';
   const genderColor = item.gender === 'male' ? 'bg-blue-50 text-blue-600' : item.gender === 'female' ? 'bg-pink-50 text-pink-600' : 'bg-purple-50 text-purple-600';
+
+  // 🚨 [Fix] positions 데이터 안전 변환 (String -> Array)
+  // 데이터가 문자열로 오더라도 여기서 배열로 변환해버리므로 .map 오류가 절대 나지 않습니다.
+  let safePositions: string[] = [];
+  if (Array.isArray(item.positions)) {
+      safePositions = item.positions;
+  } else if (typeof item.positions === 'string') {
+      // @ts-ignore
+      safePositions = item.positions.split(',').map(s => s.trim()).filter(s => s.length > 0);
+  }
 
   return (
     <TouchableOpacity 
@@ -67,7 +73,6 @@ export default function GuestCard({ item, onPress, variant = 'detailed' }: Guest
       onPress={onPress}
       className="bg-white rounded-2xl p-5 mb-3 border border-gray-100 shadow-sm"
     >
-      {/* [Header] D-Day | 날짜 | 상태 */}
       <View className="flex-row justify-between items-center mb-3">
         <View className="flex-row items-center gap-2">
             <View className="bg-gray-900 px-2 py-1 rounded-md">
@@ -82,20 +87,18 @@ export default function GuestCard({ item, onPress, variant = 'detailed' }: Guest
         </View>
       </View>
 
-      {/* [Body] 팀명 | 태그 영역 */}
       <View className="mb-4">
         <Text className="text-lg font-bold text-gray-900 mb-2 truncate" numberOfLines={1}>
             {item.hostTeamName || '팀명 미정'}
         </Text>
         
         <View className="flex-row flex-wrap gap-1.5">
-            {/* 성별 태그 */}
             <View className={`px-2 py-1 rounded-lg ${genderColor.split(' ')[0]}`}>
                 <Text className={`text-[11px] font-bold ${genderColor.split(' ')[1]}`}>{genderLabel}</Text>
             </View>
             
-            {/* 포지션 태그 */}
-            {item.positions?.map((pos, idx) => (
+            {/* ✅ 안전한 배열(safePositions) 사용 */}
+            {safePositions.map((pos, idx) => (
                 <View key={idx} className="bg-orange-50 px-2 py-1 rounded-lg border border-orange-100">
                     <Text className="text-orange-600 text-[11px] font-bold">
                         {POSITION_MAP[pos] || pos}
@@ -105,7 +108,6 @@ export default function GuestCard({ item, onPress, variant = 'detailed' }: Guest
         </View>
       </View>
 
-      {/* [Footer] 장소 | 회비 | 인원 현황 */}
       <View className="flex-row justify-between items-end pt-3 border-t border-gray-50">
           <View>
               <View className="flex-row items-center mb-1">
@@ -122,7 +124,6 @@ export default function GuestCard({ item, onPress, variant = 'detailed' }: Guest
               </View>
           </View>
 
-          {/* 모집 인원 표시 */}
           <View className="items-end">
               <Text className="text-xs text-gray-400 font-medium mb-1">
                   신청 <Text className="text-indigo-600 font-bold">{current}</Text>
