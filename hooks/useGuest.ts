@@ -8,19 +8,21 @@ import { db, auth } from '../configs/firebaseConfig';
 import { Alert, Platform } from 'react-native';
 import { sendPushNotification } from '../utils/notificationHelper';
 
+// ✅ [Type Definition] 모든 케이스를 커버하는 타입 정의
 export type GuestPost = {
   id: string;
   hostTeamId: string;
-  hostTeamName: string;
+  hostTeamName: string; // UI 표준
   hostCaptainId: string;
   
+  // 날짜 관련 필드 (호환성 유지)
   time: string;       
   matchDate: string;  
   
   location: string;   
   loc?: string;       
 
-  positions: string[]; // ✅ 무조건 문자열 배열임을 보장
+  positions: string[]; // 무조건 배열로 변환됨
   gender: 'male' | 'female' | 'mixed';
   targetLevel: string; 
   fee: string; 
@@ -37,6 +39,7 @@ export type GuestPost = {
   createdAt: string;
 };
 
+// 웹/앱 호환 알림 함수
 const safeAlert = (title: string, message?: string) => {
   if (Platform.OS === 'web') {
     window.alert(`${title}\n\n${message || ''}`);
@@ -51,10 +54,12 @@ export const useGuest = () => {
 
   // 1. 모집글 목록 조회
   useEffect(() => {
+    // 🚨 [Fix 1] 쿼리 기준을 'matchDate'로 복구 (예전 글들이 보이도록)
+    // 주의: 만약 콘솔에 'index required' 에러가 뜨면 matchDate 기준 인덱스를 생성해주세요.
     const q = query(
       collection(db, "guest_posts"),
       where("status", "==", "recruiting"),
-      orderBy("time", "asc") 
+      orderBy("matchDate", "asc") 
     );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -62,26 +67,29 @@ export const useGuest = () => {
       snapshot.forEach((doc) => {
         const data = doc.data();
         
-        // [Data Guard] 시간/장소 데이터 표준화
-        const standardizedTime = data.time || data.matchDate || new Date().toISOString();
-        const standardizedLoc = data.loc || data.location || '';
+        // 🚨 [Fix 2] 데이터 표준화 (Normalization)
+        // 예전 데이터와 새 데이터의 필드명 차이를 여기서 통합합니다.
+        const standardizedTime = data.matchDate || data.time || new Date().toISOString();
+        const standardizedLoc = data.location || data.loc || '';
+        const standardizedTeamName = data.hostTeamName || data.teamName || '팀명 미정';
 
-        // 🚨 [Fix] 포지션 데이터 타입 안전 변환 (String -> Array)
+        // 🚨 [Fix 3] 포지션 데이터 타입 안전 변환 (String -> Array)
         let safePositions: string[] = [];
         if (Array.isArray(data.positions)) {
             safePositions = data.positions;
         } else if (typeof data.positions === 'string') {
-            // "레프트, 세터" 문자열을 ["레프트", "세터"] 배열로 변환
             safePositions = data.positions.split(',').map((s: string) => s.trim()).filter((s: string) => s.length > 0);
         }
 
         list.push({ 
             id: doc.id, 
             ...data,
+            // UI 컴포넌트가 사용할 표준 필드에 값 주입
             time: standardizedTime,
             matchDate: standardizedTime, 
             location: standardizedLoc,
-            positions: safePositions, // ✅ 변환된 배열 주입
+            hostTeamName: standardizedTeamName, // 팀명 복구
+            positions: safePositions, 
             applicants: data.applicants || [] 
         } as GuestPost);
       });
@@ -134,7 +142,7 @@ export const useGuest = () => {
         const data = postDoc.data();
         if (data.status !== 'recruiting') throw "이미 마감된 모집입니다.";
 
-        // [Migration]
+        // 신청자 목록 마이그레이션 (String[] -> Object[])
         let currentApplicants = data.applicants || [];
         let currentIds = data.applicantIds || [];
 
@@ -170,6 +178,7 @@ export const useGuest = () => {
         });
       });
       
+      // 알림 발송
       try {
         await addDoc(collection(db, "notifications"), {
             userId: post.hostCaptainId,

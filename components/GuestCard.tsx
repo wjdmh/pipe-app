@@ -3,6 +3,7 @@ import { View, Text, TouchableOpacity } from 'react-native';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { GuestPost } from '../hooks/useGuest'; 
 
+// 포지션 한글 매핑
 const POSITION_MAP: Record<string, string> = { 
   'OH': '레프트', 'OP': '라이트', 'MB': '센터', 'S': '세터', 'L': '리베로', 
   '세터': '세터', '레프트': '레프트', '라이트': '라이트', '센터': '센터', '리베로': '리베로', '올라운더': '올라운더'
@@ -11,11 +12,13 @@ const POSITION_MAP: Record<string, string> = {
 interface GuestCardProps {
   item: GuestPost;
   onPress: () => void;
-  variant?: 'simple' | 'detailed'; 
+  variant?: 'simple' | 'detailed';
+  actionButton?: React.ReactNode; // ✅ [New] 버튼을 카드 안으로 넣기 위한 슬롯
 }
 
-export default function GuestCard({ item, onPress, variant = 'detailed' }: GuestCardProps) {
+export default function GuestCard({ item, onPress, variant = 'detailed', actionButton }: GuestCardProps) {
   
+  // 1. D-Day 및 날짜 포맷팅
   const getDDay = (dateStr: string) => {
     try {
       const target = new Date(dateStr);
@@ -23,6 +26,7 @@ export default function GuestCard({ item, onPress, variant = 'detailed' }: Guest
       target.setHours(0,0,0,0);
       today.setHours(0,0,0,0);
       const diff = (target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24);
+      
       if (diff < 0) return '종료';
       if (diff === 0) return 'D-Day';
       return `D-${Math.ceil(diff)}`;
@@ -42,23 +46,29 @@ export default function GuestCard({ item, onPress, variant = 'detailed' }: Guest
     } catch { return '-'; }
   };
 
+  // 2. 모집 현황 계산
   const total = item.recruitmentCount || 1;
-  // applicants 배열 안전 처리
   const safeApplicants = Array.isArray(item.applicants) ? item.applicants : [];
   const current = safeApplicants.filter((a: any) => 
       typeof a === 'string' ? false : a.status === 'accepted'
   ).length;
   const isFull = current >= total;
 
+  // 3. 상태 뱃지
   const isRecruiting = item.status === 'recruiting' && !isFull;
   const statusColor = isRecruiting ? 'bg-indigo-50 text-indigo-600' : 'bg-gray-100 text-gray-500';
   const statusText = isRecruiting ? '모집중' : '마감';
 
+  // 4. 성별 태그
   const genderLabel = item.gender === 'male' ? '남성' : item.gender === 'female' ? '여성' : '혼성';
   const genderColor = item.gender === 'male' ? 'bg-blue-50 text-blue-600' : item.gender === 'female' ? 'bg-pink-50 text-pink-600' : 'bg-purple-50 text-purple-600';
 
-  // 🚨 [Fix] positions 데이터 안전 변환 (String -> Array)
-  // 데이터가 문자열로 오더라도 여기서 배열로 변환해버리므로 .map 오류가 절대 나지 않습니다.
+  // 5. [Fix] 팀명 데이터 안전 처리 (2번 문제 해결)
+  // hostTeamName이 없으면 teamName을, 그것도 없으면 기본값 표시
+  // @ts-ignore (타입 필드 확장 대응)
+  const displayTeamName = item.hostTeamName || item.teamName || '팀명 미정';
+
+  // 6. [Fix] 포지션 데이터 안전 변환 (String -> Array)
   let safePositions: string[] = [];
   if (Array.isArray(item.positions)) {
       safePositions = item.positions;
@@ -73,6 +83,7 @@ export default function GuestCard({ item, onPress, variant = 'detailed' }: Guest
       onPress={onPress}
       className="bg-white rounded-2xl p-5 mb-3 border border-gray-100 shadow-sm"
     >
+      {/* [Header] D-Day | 날짜 | 상태 */}
       <View className="flex-row justify-between items-center mb-3">
         <View className="flex-row items-center gap-2">
             <View className="bg-gray-900 px-2 py-1 rounded-md">
@@ -87,9 +98,11 @@ export default function GuestCard({ item, onPress, variant = 'detailed' }: Guest
         </View>
       </View>
 
+      {/* [Body] 팀명 | 태그 영역 */}
       <View className="mb-4">
+        {/* ✅ 팀명이 없으면 '팀명 미정'으로 표시하여 비어 보이지 않게 함 */}
         <Text className="text-lg font-bold text-gray-900 mb-2 truncate" numberOfLines={1}>
-            {item.hostTeamName || '팀명 미정'}
+            {displayTeamName}
         </Text>
         
         <View className="flex-row flex-wrap gap-1.5">
@@ -97,7 +110,6 @@ export default function GuestCard({ item, onPress, variant = 'detailed' }: Guest
                 <Text className={`text-[11px] font-bold ${genderColor.split(' ')[1]}`}>{genderLabel}</Text>
             </View>
             
-            {/* ✅ 안전한 배열(safePositions) 사용 */}
             {safePositions.map((pos, idx) => (
                 <View key={idx} className="bg-orange-50 px-2 py-1 rounded-lg border border-orange-100">
                     <Text className="text-orange-600 text-[11px] font-bold">
@@ -108,6 +120,7 @@ export default function GuestCard({ item, onPress, variant = 'detailed' }: Guest
         </View>
       </View>
 
+      {/* [Footer] 장소 | 회비 | 인원 현황 */}
       <View className="flex-row justify-between items-end pt-3 border-t border-gray-50">
           <View>
               <View className="flex-row items-center mb-1">
@@ -132,6 +145,14 @@ export default function GuestCard({ item, onPress, variant = 'detailed' }: Guest
               </Text>
           </View>
       </View>
+
+      {/* ✅ [New] 액션 버튼 영역 (props로 전달받음) */}
+      {/* 이제 버튼이 카드 안으로 들어와 레이아웃이 깨지지 않습니다 */}
+      {actionButton && (
+          <View className="mt-4 pt-3 border-t border-gray-100 flex-row justify-end">
+              {actionButton}
+          </View>
+      )}
     </TouchableOpacity>
   );
 }

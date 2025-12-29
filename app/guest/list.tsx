@@ -9,7 +9,8 @@ import {
   LogBox, 
   Modal, 
   TextInput, 
-  Alert 
+  Alert,
+  Platform
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -17,7 +18,7 @@ import { FontAwesome5 } from '@expo/vector-icons';
 import { useGuest, GuestPost } from '../../hooks/useGuest';
 import { auth } from '../../configs/firebaseConfig';
 import { useUser } from '../context/UserContext';
-import GuestCard from '../../components/GuestCard'; // ✅ 공통 컴포넌트 도입
+import GuestCard from '../../components/GuestCard'; 
 
 // ⚠️ VirtualizedLists 경고 무시
 LogBox.ignoreLogs(['VirtualizedLists should never be nested']);
@@ -68,64 +69,67 @@ export default function GuestListScreen() {
   };
 
   const renderItem = ({ item }: { item: GuestPost }) => {
-    // applicants가 객체 배열인지 문자열 배열인지 체크 (하위 호환성)
     const myUid = auth.currentUser?.uid;
     const isApplied = item.applicants?.some((a: any) => 
         typeof a === 'string' ? a === myUid : a.uid === myUid
     );
     const isMyPost = item.hostCaptainId === myUid;
     
-    // 모집 인원 체크
     const totalRecruit = item.recruitmentCount || 1;
-    const currentAccepted = item.applicants?.filter((a: any) => typeof a !== 'string' && a.status === 'accepted').length || 0;
+    // applicants 배열 안전 처리
+    const safeApplicants = Array.isArray(item.applicants) ? item.applicants : [];
+    const currentAccepted = safeApplicants.filter((a: any) => typeof a !== 'string' && a.status === 'accepted').length;
     const isFull = currentAccepted >= totalRecruit;
 
+    // ✅ [Fix] 액션 버튼 정의 (카드 내부 슬롯으로 전달)
+    let ActionButton = null;
+
+    if (isMyPost) {
+        // 내 글일 때: 관리 버튼
+        ActionButton = (
+            <TouchableOpacity 
+                onPress={() => router.push({ pathname: '/guest/applicants', params: { id: item.id } })}
+                className="bg-slate-800 px-4 py-2 rounded-xl flex-row items-center shadow-sm"
+            >
+                <FontAwesome5 name="users" size={10} color="white" style={{marginRight:6}} />
+                <Text className="text-white font-bold text-xs">관리</Text>
+            </TouchableOpacity>
+        );
+    } else {
+        // 남의 글일 때: 신청/취소 버튼
+        if (isApplied) {
+            ActionButton = (
+                <TouchableOpacity 
+                    onPress={() => cancelApplication(item.id)}
+                    className="bg-gray-200 px-4 py-2 rounded-xl"
+                >
+                    <Text className="text-gray-600 font-bold text-xs">신청 취소</Text>
+                </TouchableOpacity>
+            );
+        } else {
+            ActionButton = (
+                <TouchableOpacity 
+                    onPress={() => isFull ? null : openApplyModal(item)}
+                    disabled={isFull}
+                    className={`px-4 py-2 rounded-xl shadow-sm ${isFull ? 'bg-gray-300' : 'bg-indigo-600'}`}
+                >
+                    <Text className="text-white font-bold text-xs">
+                        {isFull ? '모집 마감' : '간편 지원'}
+                    </Text>
+                </TouchableOpacity>
+            );
+        }
+    }
+
     return (
-      <View className="mb-4">
-        {/* ✅ 1. 공통 디자인 카드 (클릭 시 상세 이동) */}
+      <View className="mb-1">
+        {/* ✅ GuestCard에 액션 버튼 슬롯 전달 (더 이상 absolute 포지션 아님) */}
         <GuestCard 
             item={item} 
             onPress={() => router.push(`/guest/${item.id}` as any)} 
             variant="detailed"
+            actionButton={ActionButton}
         />
-
-        {/* ✅ 2. 액션 버튼 영역 (카드 하단에 부착) */}
-        {/* 기존 기능 누락 방지를 위해 '간편 지원/취소' 버튼을 유지합니다 */}
-        {!isMyPost && (
-            <View className="absolute bottom-3 right-5 flex-row">
-                 {isApplied ? (
-                    <TouchableOpacity 
-                        onPress={() => cancelApplication(item.id)}
-                        className="bg-gray-200 px-4 py-2 rounded-xl"
-                    >
-                        <Text className="text-gray-600 font-bold text-xs">신청 취소</Text>
-                    </TouchableOpacity>
-                 ) : (
-                    <TouchableOpacity 
-                        onPress={() => isFull ? null : openApplyModal(item)}
-                        disabled={isFull}
-                        className={`px-4 py-2 rounded-xl shadow-sm ${isFull ? 'bg-gray-300' : 'bg-indigo-600'}`}
-                    >
-                        <Text className="text-white font-bold text-xs">
-                            {isFull ? '모집 마감' : '간편 지원'}
-                        </Text>
-                    </TouchableOpacity>
-                 )}
-            </View>
-        )}
-        
-        {/* 내 게시글일 경우 관리 버튼 표시 */}
-        {isMyPost && (
-            <View className="absolute bottom-3 right-5">
-                <TouchableOpacity 
-                    onPress={() => router.push({ pathname: '/guest/applicants', params: { id: item.id } })}
-                    className="bg-slate-800 px-4 py-2 rounded-xl flex-row items-center shadow-sm"
-                >
-                    <FontAwesome5 name="users" size={10} color="white" style={{marginRight:6}} />
-                    <Text className="text-white font-bold text-xs">관리</Text>
-                </TouchableOpacity>
-            </View>
-        )}
       </View>
     );
   };
@@ -170,10 +174,11 @@ export default function GuestListScreen() {
         />
       )}
 
-      {/* ✅ 신청 모달 (Phase 1 기능 유지) */}
+      {/* ✅ 신청 모달 */}
       <Modal visible={modalVisible} transparent animationType="fade">
+          {/* 웹 접근성 경고 최소화를 위한 오버레이 */}
           <View className="flex-1 bg-black/60 justify-center items-center p-6">
-              <View className="bg-white w-full rounded-2xl p-6">
+              <View className="bg-white w-full rounded-2xl p-6 shadow-xl">
                   <Text className="text-xl font-bold text-gray-900 mb-1">게스트 신청</Text>
                   <Text className="text-sm text-gray-500 mb-6">호스트에게 전달할 정보를 입력해주세요.</Text>
 
