@@ -6,7 +6,8 @@ import {
   ScrollView, 
   ActivityIndicator, 
   Alert, 
-  Modal
+  Modal,
+  Platform // ✅ 플랫폼 감지를 위해 필수
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -23,12 +24,12 @@ import { db } from '../../configs/firebaseConfig';
 import { useUser } from '../context/UserContext';
 import { shareLink } from '../../utils/share';
 
-// ✅ [Updated] MatchData 타입 확장 (신청자, 게스트ID, 연락처 포함)
+// MatchData 타입 정의
 type MatchData = {
   id: string;
   teamId: string;
   teamName?: string;
-  team?: string; // 하위 호환
+  team?: string; 
   writerId: string;
   type: '6man' | '9man';
   gender: 'male' | 'female' | 'mixed';
@@ -37,13 +38,13 @@ type MatchData = {
   time: string;
   loc: string;
   description: string;
-  status: 'recruiting' | 'scheduled' | 'finished' | 'matched'; // matched 상태 추가
+  status: 'recruiting' | 'scheduled' | 'finished' | 'matched';
   
   // 매칭 관련 필드
-  applicants?: string[]; // 신청한 팀 ID 목록
-  opponentId?: string;   // 확정된 상대 팀 ID (DB 필드명 확인 필요, 보통 guestId 사용)
-  guestId?: string;      // 확정된 상대 팀 ID
-  opponentName?: string; // 확정된 상대 팀 이름
+  applicants?: string[]; 
+  opponentId?: string;   
+  guestId?: string;      
+  opponentName?: string; 
   
   // 연락처 (보안 필드)
   hostContact?: string;
@@ -60,7 +61,7 @@ export default function MatchDetailScreen() {
 
   const [match, setMatch] = useState<MatchData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [applying, setApplying] = useState(false); // 신청 처리 상태
+  const [applying, setApplying] = useState(false); 
   
   // 결과 입력 모달 상태
   const [showResultModal, setShowResultModal] = useState(false);
@@ -118,13 +119,12 @@ export default function MatchDetailScreen() {
       });
   };
 
-  // ✅ [Updated] 실제 매치 신청 로직 구현
+  // ✅ [Updated] 웹 호환성 적용된 매치 신청 로직
   const applyMatch = async () => {
     if (!user) return Alert.alert("알림", "로그인이 필요합니다.");
     if (!user.teamId) return Alert.alert("알림", "팀에 소속되어야 신청할 수 있습니다.");
     if (!match) return;
 
-    // 예외 처리
     if (user.teamId === match.teamId) {
         return Alert.alert("알림", "자신의 팀 매치에는 신청할 수 없습니다.");
     }
@@ -132,37 +132,47 @@ export default function MatchDetailScreen() {
         return Alert.alert("알림", "이미 신청한 매치입니다.");
     }
 
-    Alert.alert("매치 신청", `'${getTeamName()}' 팀과의 경기를 신청하시겠습니까?`, [
-        { text: "취소", style: "cancel" },
-        { 
-            text: "신청하기", 
-            onPress: async () => {
-                setApplying(true);
-                try {
-                    const matchRef = doc(db, "matches", match.id);
-                    // Firestore 배열에 내 팀 ID 추가
-                    await updateDoc(matchRef, {
-                        applicants: arrayUnion(user.teamId)
-                    });
-                    
-                    Alert.alert("완료", "신청이 완료되었습니다. 호스트가 수락하면 매칭이 확정됩니다.");
-                    fetchMatchInfo(); // 데이터 갱신
-                } catch (e) {
-                    console.error("Match Apply Error:", e);
-                    Alert.alert("오류", "신청 중 문제가 발생했습니다.");
-                } finally {
-                    setApplying(false);
-                }
-            } 
+    // 실제 신청 처리 함수 (재사용을 위해 분리)
+    const processApplication = async () => {
+        setApplying(true);
+        try {
+            const matchRef = doc(db, "matches", match.id);
+            await updateDoc(matchRef, {
+                applicants: arrayUnion(user.teamId)
+            });
+            
+            const msg = "신청이 완료되었습니다. 호스트가 수락하면 매칭이 확정됩니다.";
+            if (Platform.OS === 'web') {
+                window.alert(msg);
+            } else {
+                Alert.alert("완료", msg);
+            }
+            fetchMatchInfo(); 
+        } catch (e) {
+            console.error("Match Apply Error:", e);
+            Alert.alert("오류", "신청 중 문제가 발생했습니다.");
+        } finally {
+            setApplying(false);
         }
-    ]);
+    };
+
+    // 플랫폼별 분기 처리
+    if (Platform.OS === 'web') {
+        const confirmed = window.confirm(`'${getTeamName()}' 팀과의 경기를 신청하시겠습니까?`);
+        if (confirmed) {
+            await processApplication();
+        }
+    } else {
+        Alert.alert("매치 신청", `'${getTeamName()}' 팀과의 경기를 신청하시겠습니까?`, [
+            { text: "취소", style: "cancel" },
+            { text: "신청하기", onPress: processApplication }
+        ]);
+    }
   };
 
-  // 경기 결과 입력 로직
+  // ✅ [Updated] 웹 호환성 적용된 결과 입력 로직
   const submitResult = async () => {
-    // 상대팀 ID 식별 (opponentId 혹은 guestId)
     const opponentTeamId = match?.opponentId || match?.guestId;
-
     if (!selectedWinner || !match || !opponentTeamId) return;
     
     setProcessing(true);
@@ -207,12 +217,19 @@ export default function MatchDetailScreen() {
             transaction.update(awayRef, { stats: awayStats });
         });
 
-        Alert.alert("처리 완료", "경기 결과가 랭킹에 반영되었습니다.", [
-            { text: "확인", onPress: () => {
-                setShowResultModal(false);
-                fetchMatchInfo();
-            }}
-        ]);
+        const successMsg = "경기 결과가 랭킹에 반영되었습니다.";
+        if (Platform.OS === 'web') {
+            window.alert(successMsg);
+            setShowResultModal(false);
+            fetchMatchInfo();
+        } else {
+            Alert.alert("처리 완료", successMsg, [
+                { text: "확인", onPress: () => {
+                    setShowResultModal(false);
+                    fetchMatchInfo();
+                }}
+            ]);
+        }
 
     } catch (e) {
         console.error("Result Transaction Error:", e);
@@ -230,21 +247,16 @@ export default function MatchDetailScreen() {
   const isWriter = user?.uid === match.writerId;
   const isHostTeam = user?.teamId === match.teamId;
   
-  // 상대팀 ID (guestId가 우선, 없으면 opponentId)
   const confirmedOpponentId = match.guestId || match.opponentId;
   const isGuestTeam = user?.teamId === confirmedOpponentId;
   
   const canManage = isWriter || user?.role === 'admin';
-
-  // 매칭 확정 상태 여부 (scheduled 혹은 matched)
   const isMatched = match.status === 'scheduled' || match.status === 'matched';
-
-  // 내가 이미 신청했는지 여부
   const iHaveApplied = user?.teamId ? match.applicants?.includes(user.teamId) : false;
 
   const statusBadge = {
       recruiting: { text: '모집중', color: 'text-blue-600', bg: 'bg-blue-50', icon: 'bullhorn' },
-      matched: { text: '매칭 확정', color: 'text-indigo-600', bg: 'bg-indigo-50', icon: 'handshake' }, // matched 추가
+      matched: { text: '매칭 확정', color: 'text-indigo-600', bg: 'bg-indigo-50', icon: 'handshake' }, 
       scheduled: { text: '경기 예정', color: 'text-green-600', bg: 'bg-green-50', icon: 'calendar-check' },
       finished: { text: '종료됨', color: 'text-gray-500', bg: 'bg-gray-100', icon: 'flag-checkered' }
   }[match.status] || { text: '상태 미정', color: 'text-gray-500', bg: 'bg-gray-100', icon: 'question' };
@@ -302,7 +314,7 @@ export default function MatchDetailScreen() {
             </View>
         </View>
 
-        {/* ✅ [New] 연락처 정보 (매칭 확정 시 당사자에게만 노출) */}
+        {/* 연락처 정보 (매칭 확정 시 당사자에게만 노출) */}
         {isMatched && (isHostTeam || isGuestTeam) && (
             <View className="px-6 py-4 bg-indigo-50 border-b border-indigo-100">
                 <Text className="text-indigo-900 font-bold text-sm mb-3 flex-row items-center">
