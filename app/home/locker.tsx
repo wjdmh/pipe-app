@@ -49,6 +49,8 @@ type MatchData = {
   isDeleted?: boolean;
   hostContact?: string;
   guestContact?: string;
+  // ✅ 안전한 데이터 처리를 위한 추가 필드
+  teamName?: string;
 };
 
 type MyGuestActivity = {
@@ -220,7 +222,16 @@ export default function LockerScreen() {
             if (data.isDeleted) return;
             if (data.hostId === myTeamId || data.guestId === myTeamId || data.applicants?.includes(myTeamId) || data.teamId === myTeamId) {
                 const mappedStatus = data.status === 'matched' ? 'scheduled' : data.status;
-                list.push({ id: d.id, ...data, status: mappedStatus } as MatchData);
+                
+                // ✅ [Fix] teamName이 있으면 team으로 사용 (필드명 호환성 문제 해결)
+                const safeTeamName = data.teamName || data.team || '팀명 미정';
+
+                list.push({ 
+                    id: d.id, 
+                    ...data, 
+                    team: safeTeamName, // 강제 매핑
+                    status: mappedStatus 
+                } as MatchData);
             }
         });
         setMatches(list);
@@ -468,7 +479,7 @@ export default function LockerScreen() {
                     <View className="px-5">
                         {activeTab === 'schedule' && (
                             <>
-                                {/* ✅ [수정됨] Hero Card (Upcoming Match) */}
+                                {/* ✅ [Fix] Hero Card (팀명 누락 및 표시 오류 해결) */}
                                 {upcomingMatch ? (
                                     <View className="mb-8">
                                         <View className="flex-row justify-between items-end mb-3 px-1">
@@ -491,7 +502,9 @@ export default function LockerScreen() {
                                                 <View className="flex-row items-center justify-center w-full mb-4">
                                                     {/* HOME: 항상 모집글 올린 팀 */}
                                                     <View className="flex-1 items-center">
-                                                        <Text className="text-gray-900 font-extrabold text-lg text-center" numberOfLines={1}>{upcomingMatch.team}</Text>
+                                                        <Text className="text-gray-900 font-extrabold text-lg text-center" numberOfLines={1}>
+                                                            {upcomingMatch.teamName || upcomingMatch.team || '팀명 미정'}
+                                                        </Text>
                                                         <Text className="text-gray-400 text-[10px] font-bold mt-1">HOME</Text>
                                                     </View>
                                                     
@@ -558,11 +571,20 @@ export default function LockerScreen() {
                                             const isHost = m.hostId === myTeamId;
                                             const isRecruiting = m.status === 'recruiting';
                                             
-                                            // 목록에서도 팀 이름 로직 통일 (HOME: 모집팀 / AWAY: 상대팀)
-                                            // 모집 중일 땐 상대팀 이름이 없으므로 '상대 모집중' 처리
-                                            let statusText = isRecruiting 
-                                                ? (isHost ? "상대 모집중" : "수락 대기중") 
-                                                : `vs ${isHost ? (m.opponentName || '상대팀') : m.team}`;
+                                            // ✅ [Fix] 목록 표시 로직: "vs undefined" 해결
+                                            // 모집자 이름 (HOME)
+                                            const hostName = m.teamName || m.team || '팀명 미정';
+                                            
+                                            // 표시할 텍스트 결정
+                                            let statusText = '';
+                                            if (isRecruiting) {
+                                                statusText = isHost ? "상대 모집중" : "수락 대기중";
+                                            } else {
+                                                // 내가 호스트면 -> "vs 상대팀"
+                                                // 내가 게스트면 -> "vs 모집팀"
+                                                const opponentName = isHost ? (m.opponentName || '상대팀') : hostName;
+                                                statusText = `vs ${opponentName}`;
+                                            }
                                             
                                             // 연락처 정보: 내가 호스트면 게스트 연락처, 반대면 호스트 연락처
                                             const contact = isHost ? m.guestContact : m.hostContact;
@@ -609,7 +631,7 @@ export default function LockerScreen() {
                                                 <View>
                                                     <Text className="text-gray-400 text-xs mb-0.5">{m.time.slice(0,10)}</Text>
                                                     <Text className="text-gray-600 font-bold text-sm">
-                                                        vs {m.hostId === myTeamId ? (m.opponentName || '상대팀') : m.team}
+                                                        vs {m.hostId === myTeamId ? (m.opponentName || '상대팀') : (m.teamName || m.team)}
                                                     </Text>
                                                 </View>
                                                 <Text className="text-xs text-gray-300">{m.status === 'finished' ? '종료' : '결과 미입력'}</Text>
@@ -729,6 +751,7 @@ export default function LockerScreen() {
       </ScrollView>
 
       {/* --- Modals --- */}
+      {/* 기존 모달들은 그대로 유지 */}
       <Modal visible={editModalVisible} animationType="slide">
         <SafeAreaView className="flex-1 bg-white">
             <View className="px-5 py-4 border-b border-gray-100 flex-row justify-between items-center">
@@ -747,7 +770,6 @@ export default function LockerScreen() {
         </SafeAreaView>
       </Modal>
 
-      {/* 2. Match Manage Modal */}
       <Modal visible={matchModalVisible} animationType="slide">
         <SafeAreaView className="flex-1 bg-white">
             <View className="px-5 py-4 border-b border-gray-100 flex-row justify-between items-center">
@@ -794,7 +816,6 @@ export default function LockerScreen() {
         </SafeAreaView>
       </Modal>
 
-      {/* 3. Result Input Modal */}
       <Modal visible={resultModalVisible} transparent animationType="fade">
           <View className="flex-1 bg-black/60 justify-center items-center p-6">
               <View className="bg-white w-full rounded-2xl p-6">
@@ -822,7 +843,6 @@ export default function LockerScreen() {
           </View>
       </Modal>
 
-      {/* 4. Member Action Modal */}
       <Modal visible={showMemberAction} transparent animationType="fade">
           <TouchableOpacity activeOpacity={1} onPress={() => setShowMemberAction(false)} className="flex-1 bg-black/40 justify-end">
               <View className="bg-white rounded-t-[30px] p-6 pb-10">
@@ -847,7 +867,6 @@ export default function LockerScreen() {
           </TouchableOpacity>
       </Modal>
 
-      {/* 5. Join Request Modal */}
       <Modal visible={showRequestModal} animationType="slide" presentationStyle="pageSheet">
          <View className="flex-1 bg-white p-6">
             <View className="flex-row justify-between items-center mb-6 mt-4">
