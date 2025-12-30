@@ -4,7 +4,7 @@ import {
   Modal, FlatList, Linking, TextInput, Platform 
 } from 'react-native';
 import { 
-  doc, updateDoc, arrayRemove, arrayUnion, runTransaction, 
+  doc, updateDoc, arrayRemove, runTransaction, 
   collection, query, onSnapshot, serverTimestamp, getDoc, where 
 } from 'firebase/firestore';
 import { auth, db } from '../../configs/firebaseConfig';
@@ -40,11 +40,10 @@ type TeamData = {
     kusfId?: string; 
 };
 
-// ✅ [Updated] MatchData 구조 (검증 로직 포함)
 type MatchData = {
   id: string; 
-  teamId: string; // 호스트(모집) 팀 ID
-  guestId?: string; 
+  teamId: string; // 호스트(모집) 팀 ID (HOME)
+  guestId?: string; // 게스트 팀 ID (AWAY)
   team: string;   // 호스트 팀 이름
   time: string; 
   loc: string; 
@@ -154,15 +153,12 @@ export default function LockerScreen() {
                 const appliedTid = userData?.appliedTeamId;
 
                 if (tid) {
-                  // ✅ [Fix] undefined 할당 방지
                   setMyTeamId(tid || null);
                   unsubTeam = onSnapshot(doc(db, "teams", tid), (d) => {
                       if (d.exists()) {
                           const data = d.data();
                           setTeamData({ id: d.id, ...data } as TeamData);
                           setIsCaptain(data.captainId === user.uid);
-                          
-                          // ✅ [Fix] undefined 할당 방지
                           setEditName(data.name || '');
                           setEditIntro(data.description || '');
                           setStatus('hasTeam');
@@ -241,7 +237,6 @@ export default function LockerScreen() {
             const data = d.data();
             if (data.isDeleted) return;
             
-            // 내 팀과 관련된 매치만 필터링
             if (data.teamId === myTeamId || data.guestId === myTeamId || data.applicants?.includes(myTeamId)) {
                 const mappedStatus = data.status === 'matched' ? 'scheduled' : data.status;
                 const safeTeamName = data.teamName || data.team || '팀명 미정';
@@ -269,7 +264,7 @@ export default function LockerScreen() {
       const future = confirmed.filter(m => m.status !== 'finished' && m.time > now).sort((a, b) => a.time.localeCompare(b.time));
       const past = confirmed.filter(m => m.status === 'finished' || (m.time <= now && m.status !== 'waiting_verify')).sort((a, b) => b.time.localeCompare(a.time));
       
-      // 결과 처리가 필요한 매치: (시간 지난 scheduled) OR (검증 대기중인 waiting_verify)
+      // ✅ [기준] 결과 처리가 필요한 매치 (시간 지남 or 검증 대기중)
       const pending = confirmed.filter(m => 
           (m.status === 'scheduled' && m.time < now) || 
           (m.status === 'waiting_verify')
@@ -294,7 +289,6 @@ export default function LockerScreen() {
         const existingContact = isHost ? upcomingMatch.guestContact : upcomingMatch.hostContact;
         
         if (existingContact) {
-            // ✅ [Fix] undefined 할당 방지
             setDynamicContact(existingContact || null);
             return;
         }
@@ -359,6 +353,7 @@ export default function LockerScreen() {
   };
 
   // ✅ [Updated] 1단계: 결과 제안 (Propose) - 검증 대기 상태로 변경
+  // 홈팀(모집자)만 호출 가능
   const handleProposeResult = async () => {
       if (!targetMatch || !selectedWinner || !myTeamId) return;
       
@@ -385,10 +380,17 @@ export default function LockerScreen() {
   };
 
   // ✅ [Updated] 2단계: 결과 승인 (Approve & Apply Stats) - 실제 점수 반영
+  // 어웨이팀(지원자)만 호출 가능
   const handleApproveResult = async (match: MatchData) => {
       if (!myTeamId || !match.pendingResult) return;
 
-      const confirmMsg = "경기 결과를 승인하시겠습니까?\n승인 즉시 승점이 반영되며 되돌릴 수 없습니다.";
+      // 승리한 팀 이름 찾기 (팝업 표시용)
+      const winningTeamId = match.pendingResult.winnerId;
+      let winningTeamName = "알 수 없음";
+      if (winningTeamId === match.teamId) winningTeamName = match.teamName || match.team;
+      else if (winningTeamId === match.guestId) winningTeamName = match.opponentName || "상대팀";
+
+      const confirmMsg = `홈팀이 [${winningTeamName} 승리]로 결과를 입력했습니다.\n\n이 결과가 맞다면 승인해주세요.\n승인 즉시 랭킹에 반영됩니다.`;
       
       const processApproval = async () => {
           try {
@@ -402,7 +404,6 @@ export default function LockerScreen() {
               const oppRef = doc(db, "teams", oppId);
               
               await runTransaction(db, async (transaction) => {
-                  // 최신 상태 확인
                   const mDoc = await transaction.get(matchRef);
                   const mData = mDoc.data() as MatchData;
                   if (mData.status === 'finished') throw "이미 종료된 경기입니다.";
@@ -410,7 +411,7 @@ export default function LockerScreen() {
 
                   const winnerId = mData.pendingResult.winnerId;
 
-                  // 팀 스탯 가져오기
+                  // 팀 스탯 가져오기 (없으면 초기값)
                   const homeDoc = await transaction.get(teamRef);
                   const oppDoc = await transaction.get(oppRef);
                   const hStats = (homeDoc.data() as any)?.stats || { wins:0, losses:0, points:0, total:0 };
@@ -426,7 +427,7 @@ export default function LockerScreen() {
                   }
                   hStats.total++; oStats.total++;
 
-                  // 업데이트
+                  // DB 업데이트
                   transaction.update(matchRef, { 
                       status: 'finished', 
                       winnerId: winnerId, 
@@ -800,13 +801,20 @@ export default function LockerScreen() {
                         <Text className="font-bold text-red-500 mb-2">🚨 결과 처리가 필요합니다!</Text>
                         {pendingMatches.map(m => {
                             const isMySubmission = m.pendingResult?.submitterId === myTeamId;
+                            // 내가 호스트(모집자)인가?
+                            const isHost = m.teamId === myTeamId;
+                            // 버튼 표시 조건:
+                            // 1. 입력 전이고, 내가 호스트일 때 -> 결과 입력
+                            // 2. 검증 대기중이고, 내가 제출자가 아닐 때 -> 결과 승인
                             
                             return (
                                 <View key={m.id} className="bg-red-50 border border-red-100 p-4 rounded-xl mb-2 flex-row justify-between items-center">
                                     <View className="flex-1 mr-2">
                                         <Text className="font-bold text-gray-900 truncate" numberOfLines={1}>{m.team ? `vs ${m.team}` : '상대 미정'}</Text>
                                         <Text className="text-xs text-red-400 font-bold">
-                                            {m.status === 'waiting_verify' ? (isMySubmission ? '상대 승인 대기중...' : '승인 요청 도착!') : formatTime(m.time)}
+                                            {m.status === 'waiting_verify' 
+                                                ? (isMySubmission ? '상대 승인 대기중...' : '승인 요청 도착!') 
+                                                : (isHost ? formatTime(m.time) : '결과 대기중')}
                                         </Text>
                                     </View>
                                     
@@ -821,9 +829,16 @@ export default function LockerScreen() {
                                             </View>
                                         )
                                     ) : (
-                                        <TouchableOpacity onPress={() => { setTargetMatch(m); setResultModalVisible(true); }} className="bg-red-500 px-4 py-2 rounded-lg">
-                                            <Text className="text-white font-bold text-xs">결과 입력</Text>
-                                        </TouchableOpacity>
+                                        // 호스트만 결과 입력 가능
+                                        isHost ? (
+                                            <TouchableOpacity onPress={() => { setTargetMatch(m); setResultModalVisible(true); }} className="bg-red-500 px-4 py-2 rounded-lg">
+                                                <Text className="text-white font-bold text-xs">결과 입력</Text>
+                                            </TouchableOpacity>
+                                        ) : (
+                                            <View className="bg-gray-200 px-4 py-2 rounded-lg">
+                                                <Text className="text-gray-400 font-bold text-xs">입력 권한 없음</Text>
+                                            </View>
+                                        )
                                     )}
                                 </View>
                             );
@@ -865,14 +880,9 @@ export default function LockerScreen() {
                           <TouchableOpacity onPress={() => setSelectedWinner(myTeamId)} className={`flex-1 p-4 rounded-xl border-2 items-center ${selectedWinner === myTeamId ? 'border-indigo-600 bg-indigo-50' : 'border-gray-100'}`}>
                               <Text className={`font-bold ${selectedWinner === myTeamId ? 'text-indigo-600' : 'text-gray-500'}`}>{teamData?.name} (우리팀)</Text>
                           </TouchableOpacity>
-                         <TouchableOpacity 
-                             onPress={() => setSelectedWinner(targetMatch.teamId === myTeamId ? (targetMatch.guestId || null) : targetMatch.teamId)} 
-                             className={`flex-1 p-4 rounded-xl border-2 items-center ${selectedWinner !== null && selectedWinner !== myTeamId ? 'border-indigo-600 bg-indigo-50' : 'border-gray-100'}`}
-   >
-                             <Text className={`font-bold ${selectedWinner !== null && selectedWinner !== myTeamId ? 'text-indigo-600' : 'text-gray-500'}`}>
-                                 {targetMatch.opponentName || '상대팀'}
-                             </Text>
-                         </TouchableOpacity>
+                          <TouchableOpacity onPress={() => setSelectedWinner(targetMatch.teamId === myTeamId ? (targetMatch.guestId || null) : targetMatch.teamId)} className={`flex-1 p-4 rounded-xl border-2 items-center ${selectedWinner !== null && selectedWinner !== myTeamId ? 'border-indigo-600 bg-indigo-50' : 'border-gray-100'}`}>
+                              <Text className={`font-bold ${selectedWinner !== null && selectedWinner !== myTeamId ? 'text-indigo-600' : 'text-gray-500'}`}>{targetMatch.opponentName || '상대팀'}</Text>
+                          </TouchableOpacity>
                       </View>
                   )}
                   
