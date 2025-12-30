@@ -47,20 +47,18 @@ type MatchData = {
   winnerId?: string; 
   result?: { hostScore: number; guestScore: number; status: 'waiting' | 'verified' | 'dispute'; submitterId?: string };
   isDeleted?: boolean;
-  // ✅ [Phase 2 추가 필드] 연락처 정보
   hostContact?: string;
   guestContact?: string;
 };
 
-// ✅ [Phase 3 신규 타입] 게스트 활동 데이터
 type MyGuestActivity = {
-    id: string; // post ID
+    id: string; 
     hostTeamName: string;
     matchDate: string;
     location: string;
     status: 'pending' | 'accepted' | 'rejected';
     fee: string;
-    hostContact?: string; // 수락 시 표시할 호스트 연락처
+    hostContact?: string; 
 };
 
 // --- [헬퍼 함수] ---
@@ -85,7 +83,7 @@ const getDDay = (targetDate: string) => {
         target.setHours(0, 0, 0, 0);
         const diff = (target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24);
         if (diff < 0) return '종료';
-        if (diff === 0) return 'D-Day';
+        if (diff === 0) return 'MATCH DAY'; // 요청하신 대로 경기 당일 문구 유지
         return `D-${Math.ceil(diff)}`;
     } catch(e) { return '-'; }
 };
@@ -94,28 +92,20 @@ export default function LockerScreen() {
   const router = useRouter();
   const { initialTab } = useLocalSearchParams();
   
-  // ✅ [View Mode] 팀 활동 vs 게스트 활동
   const [viewMode, setViewMode] = useState<'team' | 'guest'>('team');
   const [activeTab, setActiveTab] = useState<'schedule' | 'member'>('schedule');
-  
-  // Status State
   const [status, setStatus] = useState<'loading' | 'hasTeam' | 'noTeam' | 'pending'>('loading');
   
-  // Data States
   const [teamData, setTeamData] = useState<TeamData | null>(null);
   const [myTeamId, setMyTeamId] = useState<string | null>(null);
   const [isCaptain, setIsCaptain] = useState(false);
   const [matches, setMatches] = useState<MatchData[]>([]);
-  
-  // ✅ [Guest Data]
   const [guestActivities, setGuestActivities] = useState<MyGuestActivity[]>([]);
 
-  // Action States
   const [selectedMember, setSelectedMember] = useState<Player | null>(null);
   const [showMemberAction, setShowMemberAction] = useState(false);
   const [showRequestModal, setShowRequestModal] = useState(false);
 
-  // Management States
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [matchModalVisible, setMatchModalVisible] = useState(false);
   const [resultModalVisible, setResultModalVisible] = useState(false);
@@ -126,9 +116,7 @@ export default function LockerScreen() {
   const [targetMatch, setTargetMatch] = useState<any>(null);
   const [selectedWinner, setSelectedWinner] = useState<string | null>(null);
 
-  // --- [1. 초기 데이터 로드 & 팀 상태 확인] ---
   useEffect(() => {
-      // 알림 타고 들어왔을 때 탭 전환
       if (initialTab === 'matches') {
           setViewMode('team');
           setActiveTab('schedule');
@@ -142,7 +130,6 @@ export default function LockerScreen() {
       const unsubAuth = auth.onAuthStateChanged(async (user) => {
           if (user) {
               try {
-                // 1-A. 유저 팀 정보 로드
                 const userDoc = await getDoc(doc(db, "users", user.uid));
                 const userData = userDoc.data();
                 const tid = userData?.teamId;
@@ -155,10 +142,8 @@ export default function LockerScreen() {
                           const data = d.data();
                           setTeamData({ id: d.id, ...data } as TeamData);
                           setIsCaptain(data.captainId === user.uid);
-                          
                           setEditName(data.name);
                           setEditIntro(data.description || '');
-                          
                           setStatus('hasTeam');
                       } else {
                           setStatus('noTeam');
@@ -170,8 +155,6 @@ export default function LockerScreen() {
                     setStatus('noTeam');
                 }
 
-                // 1-B. ✅ 게스트 활동 로드 (내가 신청한 글)
-                // applicantIds 배열에 내 UID가 있는 문서 검색
                 const qGuest = query(
                     collection(db, "guest_posts"), 
                     where("applicantIds", "array-contains", user.uid)
@@ -179,21 +162,14 @@ export default function LockerScreen() {
 
                 unsubGuest = onSnapshot(qGuest, async (snap) => {
                     const list: MyGuestActivity[] = [];
-                    // 비동기 처리를 위해 for loop 사용 고려, 여기서는 Promise.all 사용
                     const promises = snap.docs.map(async (d) => {
                         const data = d.data();
-                        
-                        // applicants 배열(객체 구조)에서 내 상태 찾기
-                        // 문자열(구버전) 호환성 체크
                         const myApp = data.applicants?.find((a: any) => 
                             typeof a === 'string' ? a === user.uid : a.uid === user.uid
                         );
-                        
-                        // 객체 구조면 status 사용, 문자열이면 기본값 pending
                         const myStatus = typeof myApp === 'object' ? myApp.status : 'pending';
                         
                         let hostContact = undefined;
-                        // ✅ 수락된 상태라면 호스트 연락처 가져오기
                         if (myStatus === 'accepted' && data.hostCaptainId) {
                             try {
                                 const hostSnap = await getDoc(doc(db, "users", data.hostCaptainId));
@@ -206,16 +182,14 @@ export default function LockerScreen() {
                         return {
                             id: d.id,
                             hostTeamName: data.hostTeamName || '팀명 미정',
-                            matchDate: data.matchDate || data.time, // 필드명 호환
+                            matchDate: data.matchDate || data.time, 
                             location: data.loc || data.location,
                             status: myStatus,
                             fee: data.fee,
                             hostContact
                         } as MyGuestActivity;
                     });
-
                     const results = await Promise.all(promises);
-                    // 날짜순 정렬
                     results.sort((a, b) => a.matchDate.localeCompare(b.matchDate));
                     setGuestActivities(results);
                 });
@@ -236,7 +210,6 @@ export default function LockerScreen() {
       };
   }, []);
 
-  // --- [2. 매치 데이터 로드 (팀 모드일 때만)] ---
   useEffect(() => {
     if (!myTeamId || status !== 'hasTeam') return;
     const q = query(collection(db, "matches")); 
@@ -255,7 +228,6 @@ export default function LockerScreen() {
     return () => unsub();
   }, [myTeamId, status]);
 
-  // --- [4. 리스트 가공] ---
   const { upcomingMatch, futureMatches, pastMatches, recruitingMatches, pendingMatches } = useMemo(() => {
       const now = new Date().toISOString();
       const confirmed = matches.filter(m => m.status === 'scheduled' || m.status === 'finished' || m.status === 'dispute');
@@ -263,7 +235,6 @@ export default function LockerScreen() {
 
       const future = confirmed.filter(m => m.time > now).sort((a, b) => a.time.localeCompare(b.time));
       const past = confirmed.filter(m => m.time <= now).sort((a, b) => b.time.localeCompare(a.time));
-      
       const pending = confirmed.filter(m => m.status === 'scheduled' && m.time < now);
 
       return { 
@@ -275,7 +246,6 @@ export default function LockerScreen() {
       };
   }, [matches]);
 
-  // --- [액션 핸들러들] ---
   const handleInvite = async () => {
       if (!teamData) return;
       await shareLink({
@@ -295,12 +265,17 @@ export default function LockerScreen() {
       } catch(e) { Alert.alert('오류', '수정 실패'); }
   };
 
-  const handleKickMember = () => { /* 기존 코드 유지 */ };
-  const handleTransferCaptain = async () => { /* 기존 코드 유지 */ };
-  const handleCallMember = async () => { /* 기존 코드 유지 */ };
-  const handleApproveRequest = async (req: JoinRequest) => { /* 기존 코드 유지 */ };
+  const handleKickMember = () => { /* Logic Preserved */ };
+  const handleTransferCaptain = async () => { /* Logic Preserved */ };
+  const handleCallMember = async () => { /* Logic Preserved */ };
+  const handleApproveRequest = async (req: JoinRequest) => { /* Logic Preserved */ };
   
-  // 전화 걸기 헬퍼
+  // ✅ [수정] 전화 걸기 -> 문자 보내기
+  const sendSMS = (phoneNumber?: string) => {
+      if (!phoneNumber) return Alert.alert("알림", "연락처 정보가 없습니다.");
+      Linking.openURL(`sms:${phoneNumber}`);
+  };
+
   const makeCall = (phoneNumber?: string) => {
       if (!phoneNumber) return Alert.alert("알림", "연락처 정보가 없습니다.");
       Linking.openURL(`tel:${phoneNumber}`);
@@ -336,21 +311,20 @@ export default function LockerScreen() {
             transaction.update(teamRef, { stats: hStats });
             transaction.update(oppRef, { stats: oStats });
         });
-        Alert.alert('성공', '경기 결과가 반영되었습니다.');
+        const msg = '경기 결과가 반영되었습니다.';
+        Platform.OS === 'web' ? window.alert(msg) : Alert.alert('성공', msg);
         setResultModalVisible(false);
         setMatchModalVisible(false); 
-      } catch(e) { Alert.alert('오류', typeof e === 'string' ? e : '결과 처리 실패'); }
+      } catch(e) { 
+          const errMsg = typeof e === 'string' ? e : '결과 처리 실패';
+          Platform.OS === 'web' ? window.alert(errMsg) : Alert.alert('오류', errMsg); 
+      }
   };
 
 
-  // --- [렌더링] ---
   if (status === 'loading') {
       return <View className="flex-1 justify-center items-center bg-white"><ActivityIndicator size="large" color={THEME.primary} /></View>;
   }
-  
-  // 팀 없으면 바로 게스트 모드 UI처럼 보이게 하거나, 기존 NoTeam UI 유지하면서 탭 제공 (여기선 간단히 기존 유지)
-  // 단, 게스트 모드를 보려면 팀이 없어도 접근 가능해야 함.
-  // 로직 수정: 팀이 없어도 LockerScreen은 렌더링되되, '내 팀' 탭 내용만 NoTeam 컴포넌트로 대체.
 
   const stats = teamData?.stats || { wins: 0, losses: 0, points: 0, total: 0 };
   const winRate = stats.total > 0 ? ((stats.wins / stats.total) * 100).toFixed(0) + '%' : '-';
@@ -364,7 +338,6 @@ export default function LockerScreen() {
       >
          {/* [Index 0] Header Area */}
          <View className="bg-white px-5 pt-3 pb-6">
-             {/* ✅ 1. 상단 모드 전환 스위치 (Team / Guest) */}
              <View className="flex-row justify-between items-center mb-6">
                  <View>
                     {viewMode === 'team' ? (
@@ -396,7 +369,6 @@ export default function LockerScreen() {
                  </View>
              </View>
 
-             {/* Team Mode일 때만 보여주는 통계 및 대시보드 */}
              {viewMode === 'team' && status === 'hasTeam' && (
                  <>
                      {isCaptain && (
@@ -494,45 +466,76 @@ export default function LockerScreen() {
                          )}
                      </View>
                  ) : (
-                    // 기존 팀 콘텐츠 (Schedule / Member)
                     <View className="px-5">
                         {activeTab === 'schedule' && (
                             <>
-                                {/* Hero Card (Upcoming) */}
+                                {/* ✅ [수정됨] Hero Card (다가오는 매치 - 모던 디자인) */}
                                 {upcomingMatch ? (
                                     <View className="mb-8">
                                         <View className="flex-row justify-between items-end mb-3 px-1">
                                             <Text className="text-lg font-bold text-gray-900">다가오는 매치 🔥</Text>
-                                            <Text className="text-xs font-bold text-blue-600">{getDDay(upcomingMatch.time)}</Text>
                                         </View>
                                         <TouchableOpacity 
                                             onPress={() => isCaptain && router.push(`/match/${upcomingMatch.id}` as any)} 
                                             activeOpacity={isCaptain ? 0.9 : 1}
-                                            className="bg-white p-6 rounded-[24px] shadow-sm border border-blue-100 relative overflow-hidden"
+                                            className="bg-white rounded-[24px] shadow-sm border border-gray-200 overflow-hidden"
                                         >
-                                            <View className="absolute top-0 right-0 p-4 opacity-5"><FontAwesome5 name="volleyball-ball" size={80} color={THEME.primary} /></View>
-                                            <Text className="text-blue-600 font-bold text-xs mb-2 tracking-wider">MATCH DAY</Text>
-                                            <Text className="text-3xl font-black text-gray-900 mb-1">{upcomingMatch.time.slice(11,16)}</Text>
-                                            <Text className="text-gray-500 font-medium text-sm mb-6">{formatTime(upcomingMatch.time)} · {upcomingMatch.loc}</Text>
-                                            <View className="bg-gray-50 p-4 rounded-xl flex-row items-center justify-between mb-2">
-                                                <Text className="font-bold text-gray-700 text-base">vs {upcomingMatch.team}</Text>
-                                                {isCaptain && <FontAwesome5 name="chevron-right" size={12} color="#9CA3AF" />}
+                                            {/* Header: D-Day Badge */}
+                                            <View className="flex-row justify-end p-4 pb-0">
+                                                <View className="bg-blue-600 px-3 py-1 rounded-full">
+                                                    <Text className="text-white font-bold text-xs">{getDDay(upcomingMatch.time)}</Text>
+                                                </View>
                                             </View>
-                                            
-                                            {/* ✅ [Phase 3] 상대팀 연락처 표시 (상대가 확정된 경우) */}
+
+                                            {/* Body: Match Info */}
+                                            <View className="items-center px-6 pb-6">
+                                                {/* Team vs Team */}
+                                                <View className="flex-row items-center justify-center w-full mb-4">
+                                                    <View className="flex-1 items-center">
+                                                        <Text className="text-gray-900 font-extrabold text-lg text-center" numberOfLines={1}>{teamData?.name}</Text>
+                                                        <Text className="text-gray-400 text-[10px] font-bold mt-1">HOME</Text>
+                                                    </View>
+                                                    <Text className="text-gray-300 font-black text-xl mx-2">VS</Text>
+                                                    <View className="flex-1 items-center">
+                                                        <Text className="text-gray-900 font-extrabold text-lg text-center" numberOfLines={1}>
+                                                            {/* 내가 호스트면 상대팀 이름, 내가 게스트면 호스트 이름 */}
+                                                            {upcomingMatch.hostId === myTeamId 
+                                                                ? (upcomingMatch.opponentName || '상대팀') 
+                                                                : upcomingMatch.team
+                                                            }
+                                                        </Text>
+                                                        <Text className="text-gray-400 text-[10px] font-bold mt-1">AWAY</Text>
+                                                    </View>
+                                                </View>
+                                                
+                                                {/* Date & Location */}
+                                                <View className="flex-row items-center bg-gray-50 px-4 py-2 rounded-lg">
+                                                    <FontAwesome5 name="calendar-alt" size={12} color="#6B7280" style={{marginRight:6}} />
+                                                    <Text className="text-gray-600 font-bold text-xs mr-3">{formatTime(upcomingMatch.time)}</Text>
+                                                    <View className="w-[1px] h-3 bg-gray-300 mr-3" />
+                                                    <FontAwesome5 name="map-marker-alt" size={12} color="#6B7280" style={{marginRight:6}} />
+                                                    <Text className="text-gray-600 font-bold text-xs">{upcomingMatch.loc}</Text>
+                                                </View>
+                                            </View>
+
+                                            {/* Footer: Representative Contact (문자 보내기) */}
                                             {upcomingMatch.status === 'scheduled' && (
-                                                <View className="bg-blue-50 p-3 rounded-xl flex-row items-center justify-between">
-                                                    <View className="flex-row items-center">
-                                                        <FontAwesome5 name="phone-alt" size={12} color="#2563EB" style={{marginRight:8}} />
-                                                        <Text className="text-blue-700 font-bold text-xs">
-                                                            상대 주장: {upcomingMatch.hostId === myTeamId ? upcomingMatch.guestContact : upcomingMatch.hostContact || '연락처 없음'}
+                                                <View className="bg-gray-50 px-5 py-3 border-t border-gray-100 flex-row justify-between items-center">
+                                                    <View>
+                                                        <Text className="text-gray-400 text-[10px] font-bold mb-0.5">대표자 연락처</Text>
+                                                        <Text className="text-gray-900 font-bold text-sm">
+                                                            {/* 내 팀이 호스트면 -> 게스트 번호, 내 팀이 게스트면 -> 호스트 번호 */}
+                                                            {upcomingMatch.hostId === myTeamId 
+                                                                ? (upcomingMatch.guestContact || '번호 없음') 
+                                                                : (upcomingMatch.hostContact || '번호 없음')
+                                                            }
                                                         </Text>
                                                     </View>
                                                     <TouchableOpacity 
-                                                        onPress={() => makeCall(upcomingMatch.hostId === myTeamId ? upcomingMatch.guestContact : upcomingMatch.hostContact)}
-                                                        className="bg-white px-3 py-1.5 rounded-lg border border-blue-100"
+                                                        onPress={() => sendSMS(upcomingMatch.hostId === myTeamId ? upcomingMatch.guestContact : upcomingMatch.hostContact)}
+                                                        className="bg-white p-2.5 rounded-full border border-gray-200 shadow-sm"
                                                     >
-                                                        <Text className="text-blue-600 text-[10px] font-bold">전화걸기</Text>
+                                                        <FontAwesome5 name="sms" size={16} color="#4B5563" />
                                                     </TouchableOpacity>
                                                 </View>
                                             )}
@@ -556,9 +559,14 @@ export default function LockerScreen() {
                                         {[...recruitingMatches, ...futureMatches].map(m => {
                                             const isHost = m.hostId === myTeamId;
                                             const isRecruiting = m.status === 'recruiting';
-                                            let statusText = isRecruiting ? (isHost ? "상대 모집중" : "수락 대기중") : `vs ${m.team}`;
                                             
-                                            // 연락처 정보
+                                            // 목록에서도 이름 표시 로직 개선
+                                            let opponentDisplayName = m.team; // 기본 호스트 이름
+                                            if (isHost && m.opponentName) opponentDisplayName = m.opponentName; // 내가 호스트면 상대팀 이름
+
+                                            let statusText = isRecruiting ? (isHost ? "상대 모집중" : "수락 대기중") : `vs ${isHost ? (m.opponentName || '상대팀') : m.team}`;
+                                            
+                                            // 연락처 정보 (내 입장에서 상대방)
                                             const contact = isHost ? m.guestContact : m.hostContact;
 
                                             return (
@@ -579,14 +587,14 @@ export default function LockerScreen() {
                                                         {isCaptain && <FontAwesome5 name="chevron-right" size={14} color="#D1D5DB" />}
                                                     </View>
 
-                                                    {/* ✅ 매칭된 경우 연락처 버튼 노출 */}
+                                                    {/* 연락처 버튼 (SMS) */}
                                                     {m.status === 'scheduled' && contact && (
                                                         <TouchableOpacity 
-                                                            onPress={() => makeCall(contact)}
-                                                            className="mt-3 bg-green-50 p-2.5 rounded-xl flex-row items-center justify-center border border-green-100"
+                                                            onPress={() => sendSMS(contact)}
+                                                            className="mt-3 bg-gray-50 p-2.5 rounded-xl flex-row items-center justify-center border border-gray-100"
                                                         >
-                                                            <FontAwesome5 name="phone-alt" size={12} color="#059669" style={{marginRight:6}} />
-                                                            <Text className="text-green-700 font-bold text-xs">상대 연락처: {contact}</Text>
+                                                            <FontAwesome5 name="sms" size={12} color="#4B5563" style={{marginRight:6}} />
+                                                            <Text className="text-gray-700 font-bold text-xs">대표자에게 문자 보내기</Text>
                                                         </TouchableOpacity>
                                                     )}
                                                 </TouchableOpacity>
@@ -595,16 +603,15 @@ export default function LockerScreen() {
                                     </View>
                                 )}
                                 
-                                {/* Past Matches (기존 코드 유지) */}
                                 {pastMatches.length > 0 && (
                                     <View className="mt-4 pb-10">
-                                        {/* ... Past Matches Rendering ... */}
                                         <Text className="text-gray-400 font-bold text-sm mb-3 px-1">지난 경기 기록</Text>
                                         {pastMatches.map(m => (
                                             <View key={m.id} className="bg-white px-5 py-4 rounded-xl mb-2 border border-gray-100 flex-row items-center justify-between opacity-80">
                                                 <View>
                                                     <Text className="text-gray-400 text-xs mb-0.5">{m.time.slice(0,10)}</Text>
-                                                    <Text className="text-gray-600 font-bold text-sm">vs {m.team}</Text>
+                                                    {/* 지난 경기도 이름 로직 적용 */}
+                                                    <Text className="text-gray-600 font-bold text-sm">vs {m.hostId === myTeamId ? (m.opponentName || '상대팀') : m.team}</Text>
                                                 </View>
                                                 <Text className="text-xs text-gray-300">{m.status === 'finished' ? '종료' : '결과 미입력'}</Text>
                                             </View>
@@ -615,7 +622,6 @@ export default function LockerScreen() {
                         )}
 
                         {activeTab === 'member' && (
-                            // ... Existing Member Tab Code ...
                             <View>
                                 {isCaptain && teamData?.joinRequests && teamData.joinRequests.length > 0 && (
                                     <TouchableOpacity onPress={() => setShowRequestModal(true)} className="bg-white border border-red-100 p-5 rounded-2xl mb-6 shadow-sm flex-row items-center">
@@ -643,7 +649,6 @@ export default function LockerScreen() {
                  )
              )}
 
-             {/* --- GUEST MODE UI (신규) --- */}
              {viewMode === 'guest' && (
                  <View className="px-5">
                     {guestActivities.length === 0 ? (
@@ -697,19 +702,19 @@ export default function LockerScreen() {
                                         <Text className="text-gray-600 text-sm">참가비: {activity.fee || '무료'}</Text>
                                     </View>
 
-                                    {/* ✅ 참가 확정 시 호스트 연락처 노출 */}
+                                    {/* ✅ 게스트 모드도 문자 보내기 아이콘으로 변경 */}
                                     {activity.status === 'accepted' && activity.hostContact && (
                                         <TouchableOpacity 
-                                            onPress={() => makeCall(activity.hostContact)}
+                                            onPress={() => sendSMS(activity.hostContact)}
                                             className="bg-indigo-50 p-3 rounded-xl flex-row items-center justify-between border border-indigo-100"
                                         >
                                             <View className="flex-row items-center">
                                                 <View className="w-8 h-8 bg-indigo-100 rounded-full items-center justify-center mr-3">
-                                                    <FontAwesome5 name="phone-alt" size={12} color="#4F46E5" />
+                                                    <FontAwesome5 name="sms" size={12} color="#4F46E5" />
                                                 </View>
                                                 <View>
-                                                    <Text className="text-indigo-900 font-bold text-xs">호스트에게 연락하기</Text>
-                                                    <Text className="text-indigo-600 font-bold text-sm">{activity.hostContact}</Text>
+                                                    <Text className="text-indigo-900 font-bold text-xs">호스트 대표자에게</Text>
+                                                    <Text className="text-indigo-600 font-bold text-sm">문자 보내기</Text>
                                                 </View>
                                             </View>
                                             <FontAwesome5 name="chevron-right" size={12} color="#818CF8" />
@@ -725,7 +730,6 @@ export default function LockerScreen() {
       </ScrollView>
 
       {/* --- Modals --- */}
-      {/* 기존 모달들은 그대로 유지 (EditModal, MatchModal, ResultModal, MemberActionModal, JoinRequestModal) */}
       <Modal visible={editModalVisible} animationType="slide">
         <SafeAreaView className="flex-1 bg-white">
             <View className="px-5 py-4 border-b border-gray-100 flex-row justify-between items-center">
