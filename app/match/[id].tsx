@@ -7,7 +7,7 @@ import {
   ActivityIndicator, 
   Alert, 
   Modal,
-  Platform // ✅ 플랫폼 감지를 위해 필수
+  Platform 
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -24,7 +24,6 @@ import { db } from '../../configs/firebaseConfig';
 import { useUser } from '../context/UserContext';
 import { shareLink } from '../../utils/share';
 
-// MatchData 타입 정의
 type MatchData = {
   id: string;
   teamId: string;
@@ -40,13 +39,11 @@ type MatchData = {
   description: string;
   status: 'recruiting' | 'scheduled' | 'finished' | 'matched';
   
-  // 매칭 관련 필드
   applicants?: string[]; 
   opponentId?: string;   
   guestId?: string;      
   opponentName?: string; 
   
-  // 연락처 (보안 필드)
   hostContact?: string;
   guestContact?: string;
 
@@ -63,7 +60,6 @@ export default function MatchDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [applying, setApplying] = useState(false); 
   
-  // 결과 입력 모달 상태
   const [showResultModal, setShowResultModal] = useState(false);
   const [selectedWinner, setSelectedWinner] = useState<string | null>(null);
   const [processing, setProcessing] = useState(false);
@@ -119,7 +115,6 @@ export default function MatchDetailScreen() {
       });
   };
 
-  // ✅ [Updated] 웹 호환성 적용된 매치 신청 로직
   const applyMatch = async () => {
     if (!user) return Alert.alert("알림", "로그인이 필요합니다.");
     if (!user.teamId) return Alert.alert("알림", "팀에 소속되어야 신청할 수 있습니다.");
@@ -132,7 +127,6 @@ export default function MatchDetailScreen() {
         return Alert.alert("알림", "이미 신청한 매치입니다.");
     }
 
-    // 실제 신청 처리 함수 (재사용을 위해 분리)
     const processApplication = async () => {
         setApplying(true);
         try {
@@ -156,7 +150,6 @@ export default function MatchDetailScreen() {
         }
     };
 
-    // 플랫폼별 분기 처리
     if (Platform.OS === 'web') {
         const confirmed = window.confirm(`'${getTeamName()}' 팀과의 경기를 신청하시겠습니까?`);
         if (confirmed) {
@@ -170,7 +163,6 @@ export default function MatchDetailScreen() {
     }
   };
 
-  // ✅ [Updated] 웹 호환성 적용된 결과 입력 로직
   const submitResult = async () => {
     const opponentTeamId = match?.opponentId || match?.guestId;
     if (!selectedWinner || !match || !opponentTeamId) return;
@@ -243,7 +235,6 @@ export default function MatchDetailScreen() {
     return <View className="flex-1 bg-white justify-center items-center"><ActivityIndicator color="#4F46E5" /></View>;
   }
 
-  // 권한 및 상태 확인
   const isWriter = user?.uid === match.writerId;
   const isHostTeam = user?.teamId === match.teamId;
   
@@ -263,7 +254,6 @@ export default function MatchDetailScreen() {
 
   return (
     <SafeAreaView className="flex-1 bg-white" edges={['top', 'bottom']}>
-      {/* Header */}
       <View className="px-5 py-3 border-b border-gray-100 flex-row items-center justify-between bg-white">
         <TouchableOpacity onPress={() => router.back()} className="p-2 -ml-2">
             <FontAwesome5 name="arrow-left" size={20} color="#111827" />
@@ -276,7 +266,6 @@ export default function MatchDetailScreen() {
 
       <ScrollView contentContainerStyle={{ paddingBottom: 120 }}>
         
-        {/* 1. Title & Status */}
         <View className="px-6 pt-8 pb-6 border-b border-gray-100">
             <View className="flex-row items-center mb-3">
                 <View className={`flex-row items-center px-2.5 py-1 rounded-md mr-2 ${statusBadge.bg}`}>
@@ -294,7 +283,6 @@ export default function MatchDetailScreen() {
             </Text>
         </View>
 
-        {/* 2. Info Grid */}
         <View className="px-6 py-6 border-b border-gray-100">
             <View className="flex-row items-start mb-5">
                 <View className="w-6 mt-0.5"><FontAwesome5 name="clock" size={16} color="#9CA3AF" /></View>
@@ -314,7 +302,7 @@ export default function MatchDetailScreen() {
             </View>
         </View>
 
-        {/* 연락처 정보 (매칭 확정 시 당사자에게만 노출) */}
+        {/* ✅ [Fix] 연락처 정보: 팀 이름을 동적으로 표시 */}
         {isMatched && (isHostTeam || isGuestTeam) && (
             <View className="px-6 py-4 bg-indigo-50 border-b border-indigo-100">
                 <Text className="text-indigo-900 font-bold text-sm mb-3 flex-row items-center">
@@ -322,19 +310,20 @@ export default function MatchDetailScreen() {
                 </Text>
                 <View className="bg-white p-4 rounded-xl border border-indigo-100 gap-2">
                     <View className="flex-row justify-between">
-                        <Text className="text-gray-500 font-medium text-xs">HOME (호스트)</Text>
+                        {/* HOME 팀 이름 사용 */}
+                        <Text className="text-gray-500 font-medium text-xs">HOME ({getTeamName()})</Text>
                         <Text className="text-gray-900 font-bold">{match.hostContact || "연락처 정보 없음"}</Text>
                     </View>
                     <View className="h-[1px] bg-gray-100 my-1" />
                     <View className="flex-row justify-between">
-                        <Text className="text-gray-500 font-medium text-xs">AWAY (게스트)</Text>
+                        {/* AWAY 팀 이름 사용 (없으면 '상대팀') */}
+                        <Text className="text-gray-500 font-medium text-xs">AWAY ({match.opponentName || "상대팀"})</Text>
                         <Text className="text-gray-900 font-bold">{match.guestContact || "연락처 정보 없음"}</Text>
                     </View>
                 </View>
             </View>
         )}
 
-        {/* 3. Matchup Card */}
         {isMatched && (match.opponentName || match.guestId) && (
              <View className="px-6 py-6 border-b border-gray-100">
                 <Text className="text-sm font-bold text-gray-900 mb-4 flex-row items-center">
@@ -365,7 +354,6 @@ export default function MatchDetailScreen() {
             </View>
         )}
 
-        {/* 4. Description */}
         <View className="px-6 py-6">
             <Text className="text-sm font-bold text-gray-900 mb-3">상세 내용 및 공지</Text>
             <View className="bg-gray-50 p-5 rounded-2xl">
@@ -377,10 +365,8 @@ export default function MatchDetailScreen() {
 
       </ScrollView>
 
-      {/* Bottom Floating Buttons */}
       <View className="absolute bottom-0 w-full bg-white border-t border-gray-100 p-5 pb-8 shadow-lg z-10">
         {canManage ? (
-            // [관리자/작성자 모드]
             <View className="gap-3">
                 {match.status === 'recruiting' && (
                     <TouchableOpacity 
@@ -410,7 +396,6 @@ export default function MatchDetailScreen() {
                 )}
             </View>
         ) : (
-            // [일반 방문자 모드]
             match.status === 'recruiting' ? (
                 iHaveApplied ? (
                     <View className="w-full bg-gray-300 py-4 rounded-xl items-center flex-row justify-center">
@@ -441,7 +426,6 @@ export default function MatchDetailScreen() {
         )}
       </View>
 
-      {/* [Modal] 결과 입력 모달 */}
       <Modal visible={showResultModal} transparent animationType="fade">
         <View className="flex-1 bg-black/60 justify-center items-center p-6">
             <View className="bg-white w-full max-w-sm rounded-3xl p-6 shadow-2xl">

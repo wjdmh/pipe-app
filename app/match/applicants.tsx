@@ -6,7 +6,7 @@ import {
   FlatList, 
   Alert, 
   ActivityIndicator,
-  Platform // ✅ 웹 호환성을 위해 추가
+  Platform 
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { doc, getDoc, addDoc, collection, runTransaction, serverTimestamp } from 'firebase/firestore';
@@ -107,7 +107,6 @@ export default function MatchApplicantManageScreen() {
       } catch (e) { console.warn("알림 전송 실패:", e); }
   };
 
-  // ✅ [Updated] 웹 호환성이 적용된 수락 핸들러
   const handleAccept = async (team: TeamInfo) => {
     if (isProcessing) return;
     if (!user) {
@@ -115,7 +114,6 @@ export default function MatchApplicantManageScreen() {
         return Platform.OS === 'web' ? window.alert(msg) : Alert.alert("오류", msg);
     }
 
-    // 실제 수락 처리 로직 (재사용을 위해 분리)
     const processAcceptance = async () => {
         if (!matchId) return;
         setIsProcessing(true);
@@ -123,7 +121,10 @@ export default function MatchApplicantManageScreen() {
         try {
             // 1. 상대방(게스트) 주장 연락처 조회
             const guestCaptainSnap = await getDoc(doc(db, "users", team.captainId));
-            const guestPhone = guestCaptainSnap.data()?.phoneNumber || "연락처 미등록";
+            const guestData = guestCaptainSnap.data();
+            
+            // ✅ [Fix] phoneNumber 또는 phone 필드 모두 확인 (DB 필드 불일치 해결)
+            const guestPhone = guestData?.phoneNumber || guestData?.phone || "연락처 미등록";
             const myPhone = user.phoneNumber || "연락처 미등록";
 
             // 2. 트랜잭션 실행
@@ -136,12 +137,12 @@ export default function MatchApplicantManageScreen() {
                 if (data.status !== 'recruiting') throw "이미 마감된 경기입니다.";
 
                 transaction.update(matchRef, {
-                    status: 'scheduled', // 상태 통일
+                    status: 'scheduled', 
                     guestId: team.id,
                     opponentId: team.id,
                     opponentName: team.name, 
                     hostContact: myPhone,
-                    guestContact: guestPhone,
+                    guestContact: guestPhone, // ✅ 확보된 연락처 저장
                     applicants: [],
                     matchedAt: serverTimestamp()
                 });
@@ -189,7 +190,6 @@ export default function MatchApplicantManageScreen() {
 
     const confirmMsg = `'${team.name}' 팀과 매칭을 확정하시겠습니까?\n상대 팀에게 내 연락처가 공개됩니다.`;
 
-    // 플랫폼별 분기 처리
     if (Platform.OS === 'web') {
         const confirmed = window.confirm(confirmMsg);
         if (confirmed) {
@@ -214,7 +214,6 @@ export default function MatchApplicantManageScreen() {
         </View>
       )}
 
-      {/* Header */}
       <View className="px-5 py-3 border-b border-gray-100 flex-row items-center bg-white" style={{ paddingTop: 20 }}>
         <TouchableOpacity onPress={() => router.back()} className="mr-4 p-1">
           <FontAwesome5 name="arrow-left" size={20} color="#111827" />
