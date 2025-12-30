@@ -6,30 +6,21 @@ import {
   ActivityIndicator, 
   RefreshControl, 
   StatusBar, 
-  FlatList, 
-  Platform 
+  FlatList 
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { collection, query, orderBy, where, limit, getDocs } from 'firebase/firestore';
 import { db } from '../../configs/firebaseConfig';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
+
+// ✅ [New] 컴포넌트 임포트
 import GuestCard from '../../components/GuestCard';
+import MatchCard, { MatchData } from '../../components/MatchCard'; 
 import { GuestPost } from '../../hooks/useGuest';
 
 const TEAM_COLOR = '#4F46E5'; 
 const GUEST_COLOR = '#EA580C'; 
-
-type MatchData = { 
-  id: string; 
-  team: string; 
-  type: '6man' | '9man'; 
-  gender: 'male' | 'female' | 'mixed'; 
-  time: string; 
-  loc: string; 
-  status: string; 
-  isDeleted?: boolean;
-};
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -45,6 +36,7 @@ export default function HomeScreen() {
           const collectionName = activeTab === 'match' ? 'matches' : 'guest_posts';
           const nowISO = new Date().toISOString();
 
+          // 모집중이고, 현재 시간 이후의 매치/게스트만 조회
           const q = query(
               collection(db, collectionName), 
               where("status", "==", "recruiting"), 
@@ -59,9 +51,10 @@ export default function HomeScreen() {
           snapshot.forEach(d => {
               const data = d.data();
               if (!data.isDeleted) {
-                  // [Fix] 홈 화면에서도 포지션/시간 데이터 정제
+                  // 시간 데이터 정제
                   const time = data.time || data.matchDate || nowISO;
                   
+                  // 게스트 모집일 경우 포지션 데이터 정제
                   let safePositions: string[] = [];
                   if (activeTab === 'guest') {
                       if (Array.isArray(data.positions)) {
@@ -71,11 +64,12 @@ export default function HomeScreen() {
                       }
                   }
 
+                  // ✅ 데이터 병합 (teamName 필드도 여기서 자동으로 포함됨)
                   rawItems.push({ 
                       id: d.id, 
                       ...data, 
                       time,
-                      positions: safePositions, // 정제된 배열 주입
+                      positions: safePositions, 
                       applicants: data.applicants || []
                   });
               }
@@ -103,6 +97,7 @@ export default function HomeScreen() {
   const renderItem = ({ item }: { item: any }) => {
     const isMatch = activeTab === 'match';
 
+    // 1. 게스트 모집 카드 렌더링
     if (!isMatch) {
         return (
             <GuestCard 
@@ -113,46 +108,13 @@ export default function HomeScreen() {
         );
     }
 
-    let dateStr = "";
-    let timeStr = "";
-    try {
-        const d = new Date(item.time);
-        const month = d.getMonth() + 1;
-        const date = d.getDate();
-        const days = ['일', '월', '화', '수', '목', '금', '토'];
-        const day = days[d.getDay()];
-        dateStr = `${month}.${date} (${day})`;
-        const hour = d.getHours().toString().padStart(2, '0');
-        const min = d.getMinutes().toString().padStart(2, '0');
-        timeStr = `${hour}:${min}`;
-    } catch(e) { dateStr = "-"; timeStr = "-"; }
-
+    // 2. [New] 매치 카드 렌더링 (교체 완료)
+    // 기존의 복잡한 인라인 코드를 MatchCard 컴포넌트로 대체하여 가독성과 재사용성을 높였습니다.
     return (
-      <TouchableOpacity 
+      <MatchCard 
+        item={item as MatchData}
         onPress={() => router.push(`/match/${item.id}` as any)}
-        activeOpacity={0.7}
-        className="flex-row items-center py-4 px-5 border-b border-gray-100 bg-white mb-1"
-      >
-        <View className="w-[72px] mr-3 items-start justify-center">
-            <Text className="text-[12px] font-medium text-gray-500 mb-0.5">{dateStr}</Text>
-            <Text className="text-[16px] font-bold text-gray-900 tracking-tight">{timeStr}</Text>
-        </View>
-
-        <View className="flex-1 justify-center pr-2">
-            <Text className="text-[16px] font-bold text-gray-900 mb-1" numberOfLines={1}>
-                {item.team}
-            </Text>
-            <Text className="text-[13px] font-medium text-gray-500" numberOfLines={1}>
-                {item.loc} · {item.gender === 'male' ? '남성' : item.gender === 'female' ? '여성' : '혼성'} · {item.type === '6man' ? '6인제' : '9인제'}
-            </Text>
-        </View>
-
-        <View className="ml-1 shrink-0">
-            <View className="bg-blue-50 px-2.5 py-1.5 rounded-lg border border-blue-100">
-                <Text className="text-blue-600 text-[11px] font-bold">신청가능</Text>
-            </View>
-        </View>
-      </TouchableOpacity>
+      />
     );
   };
 
@@ -160,6 +122,7 @@ export default function HomeScreen() {
     <SafeAreaView className="flex-1 bg-white" edges={['top']}>
       <StatusBar barStyle="dark-content" />
       
+      {/* Header & Tabs */}
       <View className="bg-white px-5 pt-2 pb-0 z-10">
         <Text className="text-xl font-extrabold text-gray-900 italic tracking-tighter mb-4">PIPE</Text>
         
@@ -184,6 +147,7 @@ export default function HomeScreen() {
         </View>
       </View>
 
+      {/* Ranking Banner */}
       <TouchableOpacity 
             onPress={() => router.push('/home/ranking')}
             className="mx-5 mb-2 mt-2 bg-gray-900 rounded-xl px-4 py-3 flex-row justify-between items-center shadow-sm"
@@ -196,11 +160,12 @@ export default function HomeScreen() {
             <FontAwesome5 name="chevron-right" size={12} color="white" />
       </TouchableOpacity>
 
+      {/* List Area */}
       <FlatList
         data={items}
         keyExtractor={(item) => item.id}
         renderItem={renderItem}
-        contentContainerStyle={{ paddingBottom: 80, paddingHorizontal: activeTab === 'guest' ? 20 : 0, paddingTop: 10 }}
+        contentContainerStyle={{ paddingBottom: 80, paddingHorizontal: 20, paddingTop: 10 }}
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         ListEmptyComponent={
@@ -217,6 +182,7 @@ export default function HomeScreen() {
         }
       />
       
+      {/* Floating Action Button (FAB) */}
       <TouchableOpacity 
         onPress={() => router.push(activeTab === 'match' ? '/match/write' : '/guest/write')}
         className="absolute bottom-6 right-5 w-14 h-14 bg-gray-900 rounded-full items-center justify-center shadow-lg shadow-gray-400/50"

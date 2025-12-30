@@ -21,10 +21,12 @@ import { useUser } from '../context/UserContext';
 // 공유 유틸리티
 import { shareLink } from '../../utils/share';
 
+// ✅ [Fix] MatchData 타입 확장 (teamName, team 호환성 확보)
 type MatchData = {
   id: string;
   teamId: string;
-  teamName: string;
+  teamName?: string; // 신규 필드
+  team?: string;     // 구형 필드 (하위 호환)
   writerId: string;
   type: '6man' | '9man';
   gender: 'male' | 'female' | 'mixed';
@@ -85,6 +87,12 @@ export default function MatchDetailScreen() {
         const dayName = days[d.getDay()];
         return `${month}월 ${day}일 (${dayName}) ${hour}:${min.toString().padStart(2, '0')}`;
     } catch { return isoString; }
+  };
+
+  // ✅ [Fix] 팀 이름 안전하게 가져오기 (Fallback 로직)
+  const getTeamName = () => {
+      if (!match) return "";
+      return match.teamName || match.team || "팀명 미정";
   };
 
   // 공유하기
@@ -213,6 +221,7 @@ ${match.description ? `📢 비고: ${match.description}` : ''}`;
         <View className="px-6 pt-8 pb-6 border-b border-gray-100">
             <View className="flex-row items-center mb-3">
                 <View className={`flex-row items-center px-2.5 py-1 rounded-md mr-2 ${statusBadge.bg}`}>
+                    {/* @ts-ignore */}
                     <FontAwesome5 name={statusBadge.icon} size={10} style={{ marginRight: 4 }} className={statusBadge.color.replace('text-', 'text-opacity-80 ')} />
                     <Text className={`text-xs font-bold ${statusBadge.color}`}>{statusBadge.text}</Text>
                 </View>
@@ -220,7 +229,10 @@ ${match.description ? `📢 비고: ${match.description}` : ''}`;
                    {match.gender === 'male' ? '남자부' : match.gender === 'female' ? '여자부' : '혼성'} · {match.level}
                 </Text>
             </View>
-            <Text className="text-[24px] font-extrabold text-gray-900 leading-tight mb-2">{match.teamName}</Text>
+            
+            {/* ✅ [Fix] 팀 이름 안전 표시 (getTeamName 함수 사용) */}
+            <Text className="text-[24px] font-extrabold text-gray-900 leading-tight mb-2">{getTeamName()}</Text>
+            
             <Text className="text-[15px] text-gray-600">
                 {match.type === '6man' ? '6인제' : '9인제'} 경기를 제안합니다.
             </Text>
@@ -254,7 +266,8 @@ ${match.description ? `📢 비고: ${match.description}` : ''}`;
                 </Text>
                 <View className="flex-row items-center justify-between bg-white border border-gray-200 p-5 rounded-2xl shadow-sm">
                     <View className="items-center w-[40%]">
-                        <Text className="font-black text-gray-900 text-lg mb-1 text-center" numberOfLines={1}>{match.teamName}</Text>
+                        {/* ✅ [Fix] 팀 이름 안전 표시 */}
+                        <Text className="font-black text-gray-900 text-lg mb-1 text-center" numberOfLines={1}>{getTeamName()}</Text>
                         <View className="bg-indigo-100 px-2 py-0.5 rounded"><Text className="text-[10px] text-indigo-700 font-bold">HOME</Text></View>
                     </View>
                     <Text className="text-xl font-black text-gray-300 italic">VS</Text>
@@ -269,7 +282,7 @@ ${match.description ? `📢 비고: ${match.description}` : ''}`;
                     <View className="mt-4 flex-row items-center justify-center p-3 bg-gray-900 rounded-xl gap-2">
                         <FontAwesome5 name="trophy" size={14} color="#FBBF24" />
                         <Text className="text-white font-bold">
-                            승리: {match.winnerId === match.teamId ? match.teamName : match.opponentName}
+                            승리: {match.winnerId === match.teamId ? getTeamName() : match.opponentName}
                         </Text>
                     </View>
                 )}
@@ -350,7 +363,8 @@ ${match.description ? `📢 비고: ${match.description}` : ''}`;
                         onPress={() => setSelectedWinner(match.teamId)}
                         className={`flex-1 p-5 rounded-2xl border-2 items-center justify-center ${selectedWinner === match.teamId ? 'border-indigo-600 bg-indigo-50' : 'border-gray-100 bg-white'}`}
                     >
-                        <Text className={`font-black text-lg ${selectedWinner === match.teamId ? 'text-indigo-600' : 'text-gray-400'}`} numberOfLines={1}>{match.teamName}</Text>
+                        {/* ✅ [Fix] 팀 이름 안전 표시 */}
+                        <Text className={`font-black text-lg ${selectedWinner === match.teamId ? 'text-indigo-600' : 'text-gray-400'}`} numberOfLines={1}>{getTeamName()}</Text>
                         <Text className="text-xs text-gray-400 mt-1 font-bold">HOME</Text>
                     </TouchableOpacity>
 
