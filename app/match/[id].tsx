@@ -7,7 +7,8 @@ import {
   ActivityIndicator, 
   Alert, 
   Modal,
-  Platform 
+  Platform,
+  Linking // 문자 보내기 기능을 위해 사용
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -235,11 +236,12 @@ export default function MatchDetailScreen() {
     return <View className="flex-1 bg-white justify-center items-center"><ActivityIndicator color="#4F46E5" /></View>;
   }
 
+  // 변수 및 권한 설정
+  // ✅ [수정] isWriter 정의 복구
   const isWriter = user?.uid === match.writerId;
-  const isHostTeam = user?.teamId === match.teamId;
-  
+  const isHost = user?.teamId === match.teamId;
   const confirmedOpponentId = match.guestId || match.opponentId;
-  const isGuestTeam = user?.teamId === confirmedOpponentId;
+  const isGuest = user?.teamId === confirmedOpponentId;
   
   const canManage = isWriter || user?.role === 'admin';
   const isMatched = match.status === 'scheduled' || match.status === 'matched';
@@ -251,6 +253,20 @@ export default function MatchDetailScreen() {
       scheduled: { text: '경기 예정', color: 'text-green-600', bg: 'bg-green-50', icon: 'calendar-check' },
       finished: { text: '종료됨', color: 'text-gray-500', bg: 'bg-gray-100', icon: 'flag-checkered' }
   }[match.status] || { text: '상태 미정', color: 'text-gray-500', bg: 'bg-gray-100', icon: 'question' };
+
+  // 상대방 연락처 정보 결정
+  let targetTeamName = "";
+  let targetContact = "";
+  
+  if (isMatched) {
+      if (isHost) {
+          targetTeamName = match.opponentName || "상대팀";
+          targetContact = match.guestContact || "연락처 미등록";
+      } else if (isGuest) {
+          targetTeamName = getTeamName();
+          targetContact = match.hostContact || "연락처 정보 없음";
+      }
+  }
 
   return (
     <SafeAreaView className="flex-1 bg-white" edges={['top', 'bottom']}>
@@ -302,24 +318,24 @@ export default function MatchDetailScreen() {
             </View>
         </View>
 
-        {/* ✅ [Fix] 연락처 정보: 팀 이름을 동적으로 표시 */}
-        {isMatched && (isHostTeam || isGuestTeam) && (
+        {/* 대표자 연락처 표시 (상대방 번호만 노출) */}
+        {isMatched && (isHost || isGuest) && (
             <View className="px-6 py-4 bg-indigo-50 border-b border-indigo-100">
                 <Text className="text-indigo-900 font-bold text-sm mb-3 flex-row items-center">
-                    <FontAwesome5 name="lock" size={12} color="#312E81" />  매칭 확정 연락처 (본인 팀만 조회 가능)
+                    <FontAwesome5 name="id-card" size={12} color="#312E81" />  대표자 연락처 확인
                 </Text>
-                <View className="bg-white p-4 rounded-xl border border-indigo-100 gap-2">
-                    <View className="flex-row justify-between">
-                        {/* HOME 팀 이름 사용 */}
-                        <Text className="text-gray-500 font-medium text-xs">HOME ({getTeamName()})</Text>
-                        <Text className="text-gray-900 font-bold">{match.hostContact || "연락처 정보 없음"}</Text>
+                <View className="bg-white p-4 rounded-xl border border-indigo-100 flex-row justify-between items-center shadow-sm">
+                    <View>
+                        <Text className="text-gray-500 font-medium text-xs mb-1">상대팀 대표자 ({targetTeamName})</Text>
+                        <Text className="text-gray-900 font-extrabold text-lg tracking-wide">{targetContact}</Text>
                     </View>
-                    <View className="h-[1px] bg-gray-100 my-1" />
-                    <View className="flex-row justify-between">
-                        {/* AWAY 팀 이름 사용 (없으면 '상대팀') */}
-                        <Text className="text-gray-500 font-medium text-xs">AWAY ({match.opponentName || "상대팀"})</Text>
-                        <Text className="text-gray-900 font-bold">{match.guestContact || "연락처 정보 없음"}</Text>
-                    </View>
+                    {/* ✅ [수정] 문자 보내기 버튼 (sms:) */}
+                    <TouchableOpacity 
+                        onPress={() => Linking.openURL(`sms:${targetContact}`)}
+                        className="bg-indigo-100 p-3 rounded-full"
+                    >
+                        <FontAwesome5 name="sms" size={16} color="#4F46E5" />
+                    </TouchableOpacity>
                 </View>
             </View>
         )}
