@@ -1,11 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity, FlatList, Alert, ActivityIndicator, Linking } from 'react-native';
+import { View, Text, TouchableOpacity, FlatList, Alert, ActivityIndicator } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { doc, getDoc, addDoc, collection, runTransaction, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../configs/firebaseConfig';
-import { FontAwesome } from '@expo/vector-icons';
+import { FontAwesome, FontAwesome5 } from '@expo/vector-icons';
 import { sendPushNotification } from '../../utils/notificationHelper';
-import { useUser } from '../context/UserContext'; // ✅ 내 정보(연락처) 가져오기
+import { useUser } from '../context/UserContext'; 
 
 type TeamInfo = {
   id: string;
@@ -18,8 +18,8 @@ type TeamInfo = {
 
 export default function MatchApplicantManageScreen() {
   const router = useRouter();
-  const { id } = useLocalSearchParams(); // matchId
-  const matchId = Array.isArray(id) ? id[0] : id; // 파라미터 안전 처리
+  const { id } = useLocalSearchParams(); 
+  const matchId = Array.isArray(id) ? id[0] : id; 
   
   const { user } = useUser(); // ✅ 호스트(나) 정보
   const [loading, setLoading] = useState(true);
@@ -41,6 +41,8 @@ export default function MatchApplicantManageScreen() {
       }
 
       const matchData = matchSnap.data();
+      // 이미 매칭된 경우도 목록 확인은 가능하게 하려면 이 체크를 완화할 수도 있으나, 
+      // 현재는 모집중일 때만 들어오도록 유지
       if (matchData.status !== 'recruiting') {
         Alert.alert('알림', '이미 마감된 모집입니다.');
         router.back();
@@ -57,9 +59,9 @@ export default function MatchApplicantManageScreen() {
           teams.push({ 
             id: teamSnap.id, 
             name: tData.name,
-            level: tData.level,
-            affiliation: tData.affiliation,
-            stats: tData.stats,
+            level: tData.level || 'Unranked',
+            affiliation: tData.affiliation || '소속 없음',
+            stats: tData.stats || { wins: 0, total: 0 },
             captainId: tData.captainId
           });
         }
@@ -115,7 +117,7 @@ export default function MatchApplicantManageScreen() {
             const guestPhone = guestCaptainSnap.data()?.phoneNumber || "연락처 미등록";
             const myPhone = user.phoneNumber || "연락처 미등록";
 
-            // 2. 트랜잭션 실행 (상태 변경 + 연락처 박제)
+            // 2. 트랜잭션 실행 (상태 변경 + 연락처 박제 + 상대팀 정보 저장)
             await runTransaction(db, async (transaction) => {
               const matchRef = doc(db, "matches", matchId);
               const matchDoc = await transaction.get(matchRef);
@@ -125,13 +127,19 @@ export default function MatchApplicantManageScreen() {
               if (data.status !== 'recruiting') throw "이미 마감된 경기입니다.";
 
               transaction.update(matchRef, {
-                status: 'matched',
-                guestId: team.id,
-                applicants: [], // 신청자 목록 초기화
+                // ✅ [Fix] 상태 통일: 'matched' 대신 'scheduled' 사용 (경기 예정 상태)
+                status: 'scheduled', 
                 
-                // ✅ 연락처 스냅샷 저장 (핵심)
+                // ✅ [Fix] 상대팀 정보 확실하게 저장 (상세 페이지 호환용)
+                guestId: team.id,       // 신규 필드
+                opponentId: team.id,    // 구형 필드 (호환성 유지)
+                opponentName: team.name, 
+
+                // ✅ [Fix] 연락처 저장 (상세 페이지 노출용)
                 hostContact: myPhone,
                 guestContact: guestPhone,
+                
+                applicants: [], // 신청자 목록 초기화 (모집 종료)
                 matchedAt: serverTimestamp()
               });
             });
@@ -140,9 +148,9 @@ export default function MatchApplicantManageScreen() {
             // 승리팀(게스트)에게: 내 번호 전송
             await sendNotification(
                 team.captainId,
-                'match_confirmed', // 라커룸 이동용 타입
+                'match_confirmed', 
                 '매칭 성사! 🎉',
-                `경기 매칭이 확정되었습니다.\n상대 주장 연락처: ${myPhone}\n라커룸에서 확인하세요.`
+                `경기 매칭이 확정되었습니다.\n상대 주장 연락처: ${myPhone}\n라커룸 또는 매치 상세에서 확인하세요.`
             );
 
             // 탈락팀들에게: 위로 문자
@@ -157,8 +165,9 @@ export default function MatchApplicantManageScreen() {
             );
             await Promise.all(notifyPromises);
 
-            Alert.alert('매칭 확정', `매칭이 성공적으로 성사되었습니다!\n상대 주장 연락처: ${guestPhone}`);
-            router.back(); 
+            Alert.alert('매칭 확정', `매칭이 성공적으로 성사되었습니다!\n상대 주장 연락처: ${guestPhone}`, [
+                { text: '확인', onPress: () => router.back() }
+            ]);
 
           } catch (e: any) {
             console.error("Match Accept Error:", e);
@@ -172,7 +181,7 @@ export default function MatchApplicantManageScreen() {
     ]);
   };
 
-  if (loading) return <View className="flex-1 justify-center items-center bg-white"><ActivityIndicator color="#3182F6" /></View>;
+  if (loading) return <View className="flex-1 justify-center items-center bg-white"><ActivityIndicator color="#4F46E5" /></View>;
 
   return (
     <View className="flex-1 bg-white">
@@ -183,36 +192,37 @@ export default function MatchApplicantManageScreen() {
         </View>
       )}
 
-      <View className="px-6 pt-14 pb-4 border-b border-slate-100 flex-row items-center bg-white">
+      {/* Header */}
+      <View className="px-5 py-3 border-b border-gray-100 flex-row items-center bg-white" style={{ paddingTop: 20 }}>
         <TouchableOpacity onPress={() => router.back()} className="mr-4 p-1">
-          <FontAwesome name="arrow-left" size={20} color="#64748b" />
+          <FontAwesome5 name="arrow-left" size={20} color="#111827" />
         </TouchableOpacity>
-        <Text className="text-lg font-bold text-slate-800">신청자 목록 ({applicants.length})</Text>
+        <Text className="text-lg font-bold text-gray-900">신청자 목록 ({applicants.length})</Text>
       </View>
 
       <FlatList
         data={applicants}
         keyExtractor={item => item.id}
-        contentContainerClassName="p-6 pb-20"
+        contentContainerStyle={{ padding: 24, paddingBottom: 80 }}
         ListEmptyComponent={
             <View className="items-center mt-20">
-                <FontAwesome name="inbox" size={48} color="#E2E8F0" />
-                <Text className="text-center text-slate-400 mt-4">아직 신청한 팀이 없습니다.</Text>
+                <FontAwesome5 name="inbox" size={48} color="#E2E8F0" />
+                <Text className="text-center text-gray-400 mt-4 font-bold">아직 신청한 팀이 없습니다.</Text>
             </View>
         }
         renderItem={({ item }) => (
-          <View className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm mb-4 flex-row justify-between items-center">
+          <View className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm mb-4 flex-row justify-between items-center">
             <View className="flex-1 mr-4">
               <View className="flex-row items-center mb-1.5">
-                <Text className="font-bold text-lg text-slate-800 mr-2">{item.name}</Text>
-                <View className="bg-slate-100 px-2 py-0.5 rounded text-xs">
-                    <Text className="text-slate-500 text-xs font-bold">{item.level}급</Text>
+                <Text className="font-bold text-lg text-gray-900 mr-2">{item.name}</Text>
+                <View className="bg-gray-100 px-2 py-0.5 rounded text-xs">
+                    <Text className="text-gray-500 text-xs font-bold">{item.level}급</Text>
                 </View>
               </View>
-              <Text className="text-slate-500 text-sm mb-1">{item.affiliation}</Text>
+              <Text className="text-gray-500 text-sm mb-1">{item.affiliation}</Text>
               <View className="flex-row items-center">
-                  <Text className="text-xs text-slate-400 mr-2">전적</Text>
-                  <Text className="text-indigo-500 text-xs font-bold">
+                  <Text className="text-xs text-gray-400 mr-2">전적</Text>
+                  <Text className="text-indigo-600 text-xs font-bold">
                     {item.stats?.total > 0 
                         ? `${item.stats.wins}승 ${item.stats.total - item.stats.wins}패 (${Math.round((item.stats.wins/item.stats.total)*100)}%)` 
                         : '기록 없음'}

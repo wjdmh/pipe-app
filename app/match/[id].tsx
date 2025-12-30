@@ -6,27 +6,29 @@ import {
   ScrollView, 
   ActivityIndicator, 
   Alert, 
-  Modal,
-  Platform,
-  Linking
+  Modal
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { 
-    doc, getDoc, runTransaction, serverTimestamp 
+    doc, 
+    getDoc, 
+    updateDoc, 
+    arrayUnion, 
+    runTransaction, 
+    serverTimestamp 
 } from 'firebase/firestore';
 import { db } from '../../configs/firebaseConfig';
 import { useUser } from '../context/UserContext';
-// 공유 유틸리티
 import { shareLink } from '../../utils/share';
 
-// ✅ [Fix] MatchData 타입 확장 (teamName, team 호환성 확보)
+// ✅ [Updated] MatchData 타입 확장 (신청자, 게스트ID, 연락처 포함)
 type MatchData = {
   id: string;
   teamId: string;
-  teamName?: string; // 신규 필드
-  team?: string;     // 구형 필드 (하위 호환)
+  teamName?: string;
+  team?: string; // 하위 호환
   writerId: string;
   type: '6man' | '9man';
   gender: 'male' | 'female' | 'mixed';
@@ -35,9 +37,18 @@ type MatchData = {
   time: string;
   loc: string;
   description: string;
-  status: 'recruiting' | 'scheduled' | 'finished';
-  opponentId?: string; 
-  opponentName?: string; 
+  status: 'recruiting' | 'scheduled' | 'finished' | 'matched'; // matched 상태 추가
+  
+  // 매칭 관련 필드
+  applicants?: string[]; // 신청한 팀 ID 목록
+  opponentId?: string;   // 확정된 상대 팀 ID (DB 필드명 확인 필요, 보통 guestId 사용)
+  guestId?: string;      // 확정된 상대 팀 ID
+  opponentName?: string; // 확정된 상대 팀 이름
+  
+  // 연락처 (보안 필드)
+  hostContact?: string;
+  guestContact?: string;
+
   winnerId?: string; 
 };
 
@@ -49,6 +60,7 @@ export default function MatchDetailScreen() {
 
   const [match, setMatch] = useState<MatchData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [applying, setApplying] = useState(false); // 신청 처리 상태
   
   // 결과 입력 모달 상태
   const [showResultModal, setShowResultModal] = useState(false);
@@ -75,7 +87,6 @@ export default function MatchDetailScreen() {
     }
   };
 
-  // 날짜 포맷팅 헬퍼
   const formatTimeDetail = (isoString: string) => {
     try {
         const d = new Date(isoString);
@@ -89,25 +100,16 @@ export default function MatchDetailScreen() {
     } catch { return isoString; }
   };
 
-  // ✅ [Fix] 팀 이름 안전하게 가져오기 (Fallback 로직)
   const getTeamName = () => {
       if (!match) return "";
       return match.teamName || match.team || "팀명 미정";
   };
 
-  // 공유하기
   const handleShare = async () => {
       if (!match) return;
-
       const typeText = `${match.type === '6man' ? '6인제' : '9인제'} | ${match.gender === 'male' ? '남자부' : match.gender === 'female' ? '여자부' : '혼성'} | ${match.level}`;
       const shareUrl = `https://pipe-app.vercel.app/match/${match.id}`;
-
-      const shareMessage = `🏐 [PIPE 매치 초청] 상대 팀을 찾습니다!
-
-📅 ${match.timeDisplay}
-📍 ${match.loc}
-🔥 ${typeText}
-${match.description ? `📢 비고: ${match.description}` : ''}`;
+      const shareMessage = `🏐 [PIPE 매치 초청] 상대 팀을 찾습니다!\n\n📅 ${match.timeDisplay}\n📍 ${match.loc}\n🔥 ${typeText}\n${match.description ? `📢 비고: ${match.description}` : ''}`;
 
       await shareLink({
           title: 'PIPE 매치 공유',
@@ -116,18 +118,52 @@ ${match.description ? `📢 비고: ${match.description}` : ''}`;
       });
   };
 
-  // 매치 신청하기
+  // ✅ [Updated] 실제 매치 신청 로직 구현
   const applyMatch = async () => {
-    if (!user?.teamId) return Alert.alert("알림", "팀에 소속되어야 신청할 수 있습니다.");
-    if (user.teamId === match?.teamId) return Alert.alert("알림", "자신의 팀 매치에는 신청할 수 없습니다.");
-    
-    // 실제 로직은 별도 구현 필요, 여기선 안내만
-    Alert.alert("신청", "매치 신청 기능은 '신청자 관리' 페이지와 연동됩니다.");
+    if (!user) return Alert.alert("알림", "로그인이 필요합니다.");
+    if (!user.teamId) return Alert.alert("알림", "팀에 소속되어야 신청할 수 있습니다.");
+    if (!match) return;
+
+    // 예외 처리
+    if (user.teamId === match.teamId) {
+        return Alert.alert("알림", "자신의 팀 매치에는 신청할 수 없습니다.");
+    }
+    if (match.applicants?.includes(user.teamId)) {
+        return Alert.alert("알림", "이미 신청한 매치입니다.");
+    }
+
+    Alert.alert("매치 신청", `'${getTeamName()}' 팀과의 경기를 신청하시겠습니까?`, [
+        { text: "취소", style: "cancel" },
+        { 
+            text: "신청하기", 
+            onPress: async () => {
+                setApplying(true);
+                try {
+                    const matchRef = doc(db, "matches", match.id);
+                    // Firestore 배열에 내 팀 ID 추가
+                    await updateDoc(matchRef, {
+                        applicants: arrayUnion(user.teamId)
+                    });
+                    
+                    Alert.alert("완료", "신청이 완료되었습니다. 호스트가 수락하면 매칭이 확정됩니다.");
+                    fetchMatchInfo(); // 데이터 갱신
+                } catch (e) {
+                    console.error("Match Apply Error:", e);
+                    Alert.alert("오류", "신청 중 문제가 발생했습니다.");
+                } finally {
+                    setApplying(false);
+                }
+            } 
+        }
+    ]);
   };
 
   // 경기 결과 입력 로직
   const submitResult = async () => {
-    if (!selectedWinner || !match || !match.opponentId) return;
+    // 상대팀 ID 식별 (opponentId 혹은 guestId)
+    const opponentTeamId = match?.opponentId || match?.guestId;
+
+    if (!selectedWinner || !match || !opponentTeamId) return;
     
     setProcessing(true);
     try {
@@ -138,7 +174,7 @@ ${match.description ? `📢 비고: ${match.description}` : ''}`;
             if (matchDoc.data().status === 'finished') throw "이미 종료된 경기입니다.";
 
             const homeRef = doc(db, "teams", match.teamId);
-            const awayRef = doc(db, "teams", match.opponentId!);
+            const awayRef = doc(db, "teams", opponentTeamId);
             
             const homeDoc = await transaction.get(homeRef);
             const awayDoc = await transaction.get(awayRef);
@@ -190,15 +226,28 @@ ${match.description ? `📢 비고: ${match.description}` : ''}`;
     return <View className="flex-1 bg-white justify-center items-center"><ActivityIndicator color="#4F46E5" /></View>;
   }
 
+  // 권한 및 상태 확인
   const isWriter = user?.uid === match.writerId;
+  const isHostTeam = user?.teamId === match.teamId;
+  
+  // 상대팀 ID (guestId가 우선, 없으면 opponentId)
+  const confirmedOpponentId = match.guestId || match.opponentId;
+  const isGuestTeam = user?.teamId === confirmedOpponentId;
+  
   const canManage = isWriter || user?.role === 'admin';
 
-  // 상태 배지 스타일 정의
+  // 매칭 확정 상태 여부 (scheduled 혹은 matched)
+  const isMatched = match.status === 'scheduled' || match.status === 'matched';
+
+  // 내가 이미 신청했는지 여부
+  const iHaveApplied = user?.teamId ? match.applicants?.includes(user.teamId) : false;
+
   const statusBadge = {
       recruiting: { text: '모집중', color: 'text-blue-600', bg: 'bg-blue-50', icon: 'bullhorn' },
+      matched: { text: '매칭 확정', color: 'text-indigo-600', bg: 'bg-indigo-50', icon: 'handshake' }, // matched 추가
       scheduled: { text: '경기 예정', color: 'text-green-600', bg: 'bg-green-50', icon: 'calendar-check' },
       finished: { text: '종료됨', color: 'text-gray-500', bg: 'bg-gray-100', icon: 'flag-checkered' }
-  }[match.status];
+  }[match.status] || { text: '상태 미정', color: 'text-gray-500', bg: 'bg-gray-100', icon: 'question' };
 
   return (
     <SafeAreaView className="flex-1 bg-white" edges={['top', 'bottom']}>
@@ -208,8 +257,6 @@ ${match.description ? `📢 비고: ${match.description}` : ''}`;
             <FontAwesome5 name="arrow-left" size={20} color="#111827" />
         </TouchableOpacity>
         <Text className="text-lg font-bold text-gray-900">매치 정보</Text>
-        
-        {/* 공유 아이콘 */}
         <TouchableOpacity onPress={handleShare} className="p-2 -mr-2">
             <FontAwesome5 name="share-square" size={20} color="#111827" />
         </TouchableOpacity>
@@ -217,7 +264,7 @@ ${match.description ? `📢 비고: ${match.description}` : ''}`;
 
       <ScrollView contentContainerStyle={{ paddingBottom: 120 }}>
         
-        {/* 1. Title & Status Section */}
+        {/* 1. Title & Status */}
         <View className="px-6 pt-8 pb-6 border-b border-gray-100">
             <View className="flex-row items-center mb-3">
                 <View className={`flex-row items-center px-2.5 py-1 rounded-md mr-2 ${statusBadge.bg}`}>
@@ -229,16 +276,13 @@ ${match.description ? `📢 비고: ${match.description}` : ''}`;
                    {match.gender === 'male' ? '남자부' : match.gender === 'female' ? '여자부' : '혼성'} · {match.level}
                 </Text>
             </View>
-            
-            {/* ✅ [Fix] 팀 이름 안전 표시 (getTeamName 함수 사용) */}
             <Text className="text-[24px] font-extrabold text-gray-900 leading-tight mb-2">{getTeamName()}</Text>
-            
             <Text className="text-[15px] text-gray-600">
                 {match.type === '6man' ? '6인제' : '9인제'} 경기를 제안합니다.
             </Text>
         </View>
 
-        {/* 2. Info Grid (시간/장소) */}
+        {/* 2. Info Grid */}
         <View className="px-6 py-6 border-b border-gray-100">
             <View className="flex-row items-start mb-5">
                 <View className="w-6 mt-0.5"><FontAwesome5 name="clock" size={16} color="#9CA3AF" /></View>
@@ -258,38 +302,58 @@ ${match.description ? `📢 비고: ${match.description}` : ''}`;
             </View>
         </View>
 
-        {/* 3. Matchup Card (매칭 성사 시 표시) */}
-        {match.status !== 'recruiting' && match.opponentName && (
+        {/* ✅ [New] 연락처 정보 (매칭 확정 시 당사자에게만 노출) */}
+        {isMatched && (isHostTeam || isGuestTeam) && (
+            <View className="px-6 py-4 bg-indigo-50 border-b border-indigo-100">
+                <Text className="text-indigo-900 font-bold text-sm mb-3 flex-row items-center">
+                    <FontAwesome5 name="lock" size={12} color="#312E81" />  매칭 확정 연락처 (본인 팀만 조회 가능)
+                </Text>
+                <View className="bg-white p-4 rounded-xl border border-indigo-100 gap-2">
+                    <View className="flex-row justify-between">
+                        <Text className="text-gray-500 font-medium text-xs">HOME (호스트)</Text>
+                        <Text className="text-gray-900 font-bold">{match.hostContact || "연락처 정보 없음"}</Text>
+                    </View>
+                    <View className="h-[1px] bg-gray-100 my-1" />
+                    <View className="flex-row justify-between">
+                        <Text className="text-gray-500 font-medium text-xs">AWAY (게스트)</Text>
+                        <Text className="text-gray-900 font-bold">{match.guestContact || "연락처 정보 없음"}</Text>
+                    </View>
+                </View>
+            </View>
+        )}
+
+        {/* 3. Matchup Card */}
+        {isMatched && (match.opponentName || match.guestId) && (
              <View className="px-6 py-6 border-b border-gray-100">
                 <Text className="text-sm font-bold text-gray-900 mb-4 flex-row items-center">
                     <FontAwesome5 name="handshake" size={14} color="#111827" /> 매치업
                 </Text>
                 <View className="flex-row items-center justify-between bg-white border border-gray-200 p-5 rounded-2xl shadow-sm">
                     <View className="items-center w-[40%]">
-                        {/* ✅ [Fix] 팀 이름 안전 표시 */}
                         <Text className="font-black text-gray-900 text-lg mb-1 text-center" numberOfLines={1}>{getTeamName()}</Text>
                         <View className="bg-indigo-100 px-2 py-0.5 rounded"><Text className="text-[10px] text-indigo-700 font-bold">HOME</Text></View>
                     </View>
                     <Text className="text-xl font-black text-gray-300 italic">VS</Text>
                     <View className="items-center w-[40%]">
-                        <Text className="font-black text-gray-900 text-lg mb-1 text-center" numberOfLines={1}>{match.opponentName}</Text>
+                        <Text className="font-black text-gray-900 text-lg mb-1 text-center" numberOfLines={1}>
+                            {match.opponentName || "상대팀"}
+                        </Text>
                         <View className="bg-gray-100 px-2 py-0.5 rounded"><Text className="text-[10px] text-gray-600 font-bold">AWAY</Text></View>
                     </View>
                 </View>
 
-                {/* 경기 결과 표시 */}
                 {match.status === 'finished' && (
                     <View className="mt-4 flex-row items-center justify-center p-3 bg-gray-900 rounded-xl gap-2">
                         <FontAwesome5 name="trophy" size={14} color="#FBBF24" />
                         <Text className="text-white font-bold">
-                            승리: {match.winnerId === match.teamId ? getTeamName() : match.opponentName}
+                            승리: {match.winnerId === match.teamId ? getTeamName() : (match.opponentName || "상대팀")}
                         </Text>
                     </View>
                 )}
             </View>
         )}
 
-        {/* 4. Description (공지사항) */}
+        {/* 4. Description */}
         <View className="px-6 py-6">
             <Text className="text-sm font-bold text-gray-900 mb-3">상세 내용 및 공지</Text>
             <View className="bg-gray-50 p-5 rounded-2xl">
@@ -312,11 +376,13 @@ ${match.description ? `📢 비고: ${match.description}` : ''}`;
                         className="w-full bg-indigo-600 py-4 rounded-xl items-center flex-row justify-center shadow-md shadow-indigo-200"
                     >
                         <FontAwesome5 name="users" size={16} color="white" style={{ marginRight: 8 }} />
-                        <Text className="text-white font-bold text-lg">신청자 관리 / 매칭 확정</Text>
+                        <Text className="text-white font-bold text-lg">
+                            신청자 관리 ({match.applicants?.length || 0})
+                        </Text>
                     </TouchableOpacity>
                 )}
                 
-                {match.status === 'scheduled' && (
+                {isMatched && match.status !== 'finished' && (
                     <TouchableOpacity 
                         onPress={() => setShowResultModal(true)}
                         className="w-full bg-gray-900 py-4 rounded-xl items-center shadow-lg"
@@ -334,13 +400,27 @@ ${match.description ? `📢 비고: ${match.description}` : ''}`;
         ) : (
             // [일반 방문자 모드]
             match.status === 'recruiting' ? (
-                <TouchableOpacity 
-                    onPress={applyMatch}
-                    className="w-full bg-indigo-600 py-4 rounded-xl items-center flex-row justify-center shadow-md shadow-indigo-200"
-                >
-                    <FontAwesome5 name="paper-plane" size={16} color="white" style={{ marginRight: 8 }} />
-                    <Text className="text-white font-bold text-lg">매치 신청하기</Text>
-                </TouchableOpacity>
+                iHaveApplied ? (
+                    <View className="w-full bg-gray-300 py-4 rounded-xl items-center flex-row justify-center">
+                        <FontAwesome5 name="check" size={16} color="white" style={{ marginRight: 8 }} />
+                        <Text className="text-white font-bold text-lg">신청 완료 (대기중)</Text>
+                    </View>
+                ) : (
+                    <TouchableOpacity 
+                        onPress={applyMatch}
+                        disabled={applying}
+                        className={`w-full py-4 rounded-xl items-center flex-row justify-center shadow-md shadow-indigo-200 ${applying ? 'bg-indigo-400' : 'bg-indigo-600'}`}
+                    >
+                        {applying ? (
+                            <ActivityIndicator color="white" />
+                        ) : (
+                            <>
+                                <FontAwesome5 name="paper-plane" size={16} color="white" style={{ marginRight: 8 }} />
+                                <Text className="text-white font-bold text-lg">매치 신청하기</Text>
+                            </>
+                        )}
+                    </TouchableOpacity>
+                )
             ) : (
                 <View className="w-full bg-gray-200 py-4 rounded-xl items-center">
                     <Text className="text-gray-500 font-bold text-lg">모집이 마감되었습니다</Text>
@@ -363,16 +443,15 @@ ${match.description ? `📢 비고: ${match.description}` : ''}`;
                         onPress={() => setSelectedWinner(match.teamId)}
                         className={`flex-1 p-5 rounded-2xl border-2 items-center justify-center ${selectedWinner === match.teamId ? 'border-indigo-600 bg-indigo-50' : 'border-gray-100 bg-white'}`}
                     >
-                        {/* ✅ [Fix] 팀 이름 안전 표시 */}
                         <Text className={`font-black text-lg ${selectedWinner === match.teamId ? 'text-indigo-600' : 'text-gray-400'}`} numberOfLines={1}>{getTeamName()}</Text>
                         <Text className="text-xs text-gray-400 mt-1 font-bold">HOME</Text>
                     </TouchableOpacity>
 
                     <TouchableOpacity 
-                        onPress={() => setSelectedWinner(match.opponentId!)}
-                        className={`flex-1 p-5 rounded-2xl border-2 items-center justify-center ${selectedWinner === match.opponentId ? 'border-indigo-600 bg-indigo-50' : 'border-gray-100 bg-white'}`}
+                        onPress={() => setSelectedWinner(confirmedOpponentId!)}
+                        className={`flex-1 p-5 rounded-2xl border-2 items-center justify-center ${selectedWinner === confirmedOpponentId ? 'border-indigo-600 bg-indigo-50' : 'border-gray-100 bg-white'}`}
                     >
-                        <Text className={`font-black text-lg ${selectedWinner === match.opponentId ? 'text-indigo-600' : 'text-gray-400'}`} numberOfLines={1}>{match.opponentName}</Text>
+                        <Text className={`font-black text-lg ${selectedWinner === confirmedOpponentId ? 'text-indigo-600' : 'text-gray-400'}`} numberOfLines={1}>{match.opponentName || "상대팀"}</Text>
                         <Text className="text-xs text-gray-400 mt-1 font-bold">AWAY</Text>
                     </TouchableOpacity>
                 </View>
