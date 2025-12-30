@@ -1,9 +1,17 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity, FlatList, Alert, ActivityIndicator } from 'react-native';
+import { 
+  View, 
+  Text, 
+  TouchableOpacity, 
+  FlatList, 
+  Alert, 
+  ActivityIndicator,
+  Platform // ✅ 웹 호환성을 위해 추가
+} from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { doc, getDoc, addDoc, collection, runTransaction, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../configs/firebaseConfig';
-import { FontAwesome, FontAwesome5 } from '@expo/vector-icons';
+import { FontAwesome5 } from '@expo/vector-icons';
 import { sendPushNotification } from '../../utils/notificationHelper';
 import { useUser } from '../context/UserContext'; 
 
@@ -21,7 +29,7 @@ export default function MatchApplicantManageScreen() {
   const { id } = useLocalSearchParams(); 
   const matchId = Array.isArray(id) ? id[0] : id; 
   
-  const { user } = useUser(); // ✅ 호스트(나) 정보
+  const { user } = useUser(); 
   const [loading, setLoading] = useState(true);
   const [applicants, setApplicants] = useState<TeamInfo[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -35,16 +43,16 @@ export default function MatchApplicantManageScreen() {
     try {
       const matchSnap = await getDoc(doc(db, "matches", matchId));
       if (!matchSnap.exists()) {
-        Alert.alert('오류', '존재하지 않는 게시글입니다.');
+        const msg = '존재하지 않는 게시글입니다.';
+        Platform.OS === 'web' ? window.alert(msg) : Alert.alert('오류', msg);
         router.back();
         return;
       }
 
       const matchData = matchSnap.data();
-      // 이미 매칭된 경우도 목록 확인은 가능하게 하려면 이 체크를 완화할 수도 있으나, 
-      // 현재는 모집중일 때만 들어오도록 유지
       if (matchData.status !== 'recruiting') {
-        Alert.alert('알림', '이미 마감된 모집입니다.');
+        const msg = '이미 마감된 모집입니다.';
+        Platform.OS === 'web' ? window.alert(msg) : Alert.alert('알림', msg);
         router.back();
         return;
       }
@@ -69,13 +77,13 @@ export default function MatchApplicantManageScreen() {
       setApplicants(teams);
     } catch (e) {
       console.error(e);
-      Alert.alert('오류', '신청자 목록을 불러오지 못했습니다.');
+      const msg = '신청자 목록을 불러오지 못했습니다.';
+      Platform.OS === 'web' ? window.alert(msg) : Alert.alert('오류', msg);
     } finally {
       setLoading(false);
     }
   };
 
-  // 알림 전송 헬퍼
   const sendNotification = async (targetUid: string, type: string, title: string, msg: string, link: string = '/home/locker') => {
       if (!targetUid) return;
       try {
@@ -99,53 +107,47 @@ export default function MatchApplicantManageScreen() {
       } catch (e) { console.warn("알림 전송 실패:", e); }
   };
 
+  // ✅ [Updated] 웹 호환성이 적용된 수락 핸들러
   const handleAccept = async (team: TeamInfo) => {
     if (isProcessing) return;
-    if (!user) return Alert.alert("오류", "사용자 정보를 불러올 수 없습니다.");
+    if (!user) {
+        const msg = "사용자 정보를 불러올 수 없습니다.";
+        return Platform.OS === 'web' ? window.alert(msg) : Alert.alert("오류", msg);
+    }
 
-    Alert.alert('매칭 수락', `'${team.name}' 팀과 매칭을 확정하시겠습니까?\n상대 팀에게 내 연락처가 공개됩니다.`, [
-      { text: '취소', style: 'cancel' },
-      {
-        text: '확정하기',
-        onPress: async () => {
-          if (!matchId) return;
-          setIsProcessing(true);
+    // 실제 수락 처리 로직 (재사용을 위해 분리)
+    const processAcceptance = async () => {
+        if (!matchId) return;
+        setIsProcessing(true);
 
-          try {
+        try {
             // 1. 상대방(게스트) 주장 연락처 조회
             const guestCaptainSnap = await getDoc(doc(db, "users", team.captainId));
             const guestPhone = guestCaptainSnap.data()?.phoneNumber || "연락처 미등록";
             const myPhone = user.phoneNumber || "연락처 미등록";
 
-            // 2. 트랜잭션 실행 (상태 변경 + 연락처 박제 + 상대팀 정보 저장)
+            // 2. 트랜잭션 실행
             await runTransaction(db, async (transaction) => {
-              const matchRef = doc(db, "matches", matchId);
-              const matchDoc = await transaction.get(matchRef);
+                const matchRef = doc(db, "matches", matchId);
+                const matchDoc = await transaction.get(matchRef);
 
-              if (!matchDoc.exists()) throw "존재하지 않는 게시글입니다.";
-              const data = matchDoc.data();
-              if (data.status !== 'recruiting') throw "이미 마감된 경기입니다.";
+                if (!matchDoc.exists()) throw "존재하지 않는 게시글입니다.";
+                const data = matchDoc.data();
+                if (data.status !== 'recruiting') throw "이미 마감된 경기입니다.";
 
-              transaction.update(matchRef, {
-                // ✅ [Fix] 상태 통일: 'matched' 대신 'scheduled' 사용 (경기 예정 상태)
-                status: 'scheduled', 
-                
-                // ✅ [Fix] 상대팀 정보 확실하게 저장 (상세 페이지 호환용)
-                guestId: team.id,       // 신규 필드
-                opponentId: team.id,    // 구형 필드 (호환성 유지)
-                opponentName: team.name, 
-
-                // ✅ [Fix] 연락처 저장 (상세 페이지 노출용)
-                hostContact: myPhone,
-                guestContact: guestPhone,
-                
-                applicants: [], // 신청자 목록 초기화 (모집 종료)
-                matchedAt: serverTimestamp()
-              });
+                transaction.update(matchRef, {
+                    status: 'scheduled', // 상태 통일
+                    guestId: team.id,
+                    opponentId: team.id,
+                    opponentName: team.name, 
+                    hostContact: myPhone,
+                    guestContact: guestPhone,
+                    applicants: [],
+                    matchedAt: serverTimestamp()
+                });
             });
 
             // 3. 알림 발송
-            // 승리팀(게스트)에게: 내 번호 전송
             await sendNotification(
                 team.captainId,
                 'match_confirmed', 
@@ -153,7 +155,6 @@ export default function MatchApplicantManageScreen() {
                 `경기 매칭이 확정되었습니다.\n상대 주장 연락처: ${myPhone}\n라커룸 또는 매치 상세에서 확인하세요.`
             );
 
-            // 탈락팀들에게: 위로 문자
             const rejectedTeams = applicants.filter(t => t.id !== team.id);
             const notifyPromises = rejectedTeams.map(rejected => 
                 sendNotification(
@@ -165,20 +166,41 @@ export default function MatchApplicantManageScreen() {
             );
             await Promise.all(notifyPromises);
 
-            Alert.alert('매칭 확정', `매칭이 성공적으로 성사되었습니다!\n상대 주장 연락처: ${guestPhone}`, [
-                { text: '확인', onPress: () => router.back() }
-            ]);
+            const successMsg = `매칭이 성공적으로 성사되었습니다!\n상대 주장 연락처: ${guestPhone}`;
+            
+            if (Platform.OS === 'web') {
+                window.alert(successMsg);
+                router.back();
+            } else {
+                Alert.alert('매칭 확정', successMsg, [
+                    { text: '확인', onPress: () => router.back() }
+                ]);
+            }
 
-          } catch (e: any) {
+        } catch (e: any) {
             console.error("Match Accept Error:", e);
-            Alert.alert('오류', typeof e === 'string' ? e : '수락 처리 중 오류가 발생했습니다.');
-            loadApplicants(); // 상태 동기화
-          } finally {
+            const errMsg = typeof e === 'string' ? e : '수락 처리 중 오류가 발생했습니다.';
+            Platform.OS === 'web' ? window.alert(errMsg) : Alert.alert('오류', errMsg);
+            loadApplicants(); 
+        } finally {
             setIsProcessing(false);
-          }
         }
-      }
-    ]);
+    };
+
+    const confirmMsg = `'${team.name}' 팀과 매칭을 확정하시겠습니까?\n상대 팀에게 내 연락처가 공개됩니다.`;
+
+    // 플랫폼별 분기 처리
+    if (Platform.OS === 'web') {
+        const confirmed = window.confirm(confirmMsg);
+        if (confirmed) {
+            await processAcceptance();
+        }
+    } else {
+        Alert.alert('매칭 수락', confirmMsg, [
+            { text: '취소', style: 'cancel' },
+            { text: '확정하기', onPress: processAcceptance }
+        ]);
+    }
   };
 
   if (loading) return <View className="flex-1 justify-center items-center bg-white"><ActivityIndicator color="#4F46E5" /></View>;
