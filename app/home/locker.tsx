@@ -4,8 +4,9 @@ import {
   Modal, FlatList, Linking, TextInput, Platform 
 } from 'react-native';
 import { 
-  doc, updateDoc, arrayRemove, runTransaction, 
-  collection, query, onSnapshot, serverTimestamp, getDoc, where 
+  doc, updateDoc, arrayRemove, arrayUnion, runTransaction, 
+  collection, query, onSnapshot, serverTimestamp, getDoc, where,
+  deleteField // ✅ [Fix] 필드 삭제를 위한 함수 추가
 } from 'firebase/firestore';
 import { auth, db } from '../../configs/firebaseConfig';
 import { FontAwesome5 } from '@expo/vector-icons';
@@ -40,10 +41,11 @@ type TeamData = {
     kusfId?: string; 
 };
 
+// MatchData 구조
 type MatchData = {
   id: string; 
-  teamId: string; // 호스트(모집) 팀 ID (HOME)
-  guestId?: string; // 게스트 팀 ID (AWAY)
+  teamId: string; // 호스트(모집) 팀 ID
+  guestId?: string; 
   team: string;   // 호스트 팀 이름
   time: string; 
   loc: string; 
@@ -55,13 +57,13 @@ type MatchData = {
   // 결과 검증을 위한 임시 필드
   pendingResult?: {
       winnerId: string;
-      submitterId: string; // 누가 입력했는지 (팀ID)
+      submitterId: string; 
   };
 
   isDeleted?: boolean;
   hostContact?: string;
   guestContact?: string;
-  teamName?: string; // 호환성용
+  teamName?: string; 
 };
 
 type MyGuestActivity = {
@@ -115,7 +117,6 @@ export default function LockerScreen() {
   const [matches, setMatches] = useState<MatchData[]>([]);
   const [guestActivities, setGuestActivities] = useState<MyGuestActivity[]>([]);
 
-  // 동적 연락처 상태
   const [dynamicContact, setDynamicContact] = useState<string | null>(null);
 
   const [selectedMember, setSelectedMember] = useState<Player | null>(null);
@@ -254,17 +255,15 @@ export default function LockerScreen() {
     return () => unsub();
   }, [myTeamId, status]);
 
-  // --- [매치 분류 (Memo)] ---
+  // --- [매치 분류] ---
   const { upcomingMatch, futureMatches, pastMatches, recruitingMatches, pendingMatches } = useMemo(() => {
       const now = new Date().toISOString();
-      // 확인된 매치 목록
       const confirmed = matches.filter(m => ['scheduled', 'waiting_verify', 'finished', 'dispute'].includes(m.status));
       const recruiting = matches.filter(m => m.status === 'recruiting'); 
 
       const future = confirmed.filter(m => m.status !== 'finished' && m.time > now).sort((a, b) => a.time.localeCompare(b.time));
       const past = confirmed.filter(m => m.status === 'finished' || (m.time <= now && m.status !== 'waiting_verify')).sort((a, b) => b.time.localeCompare(a.time));
       
-      // ✅ [기준] 결과 처리가 필요한 매치 (시간 지남 or 검증 대기중)
       const pending = confirmed.filter(m => 
           (m.status === 'scheduled' && m.time < now) || 
           (m.status === 'waiting_verify')
@@ -352,8 +351,7 @@ export default function LockerScreen() {
       Linking.openURL(`sms:${phoneNumber}`);
   };
 
-  // ✅ [Updated] 1단계: 결과 제안 (Propose) - 검증 대기 상태로 변경
-  // 홈팀(모집자)만 호출 가능
+  // 1단계: 결과 제안 (Propose)
   const handleProposeResult = async () => {
       if (!targetMatch || !selectedWinner || !myTeamId) return;
       
@@ -364,7 +362,7 @@ export default function LockerScreen() {
               status: 'waiting_verify',
               pendingResult: {
                   winnerId: selectedWinner,
-                  submitterId: myTeamId, // 내가 입력함
+                  submitterId: myTeamId, 
               }
           });
 
@@ -379,12 +377,11 @@ export default function LockerScreen() {
       }
   };
 
-  // ✅ [Updated] 2단계: 결과 승인 (Approve & Apply Stats) - 실제 점수 반영
-  // 어웨이팀(지원자)만 호출 가능
+  // ✅ [Fixed] 2단계: 결과 승인 (Approve & Apply Stats) - deleteField 사용
   const handleApproveResult = async (match: MatchData) => {
       if (!myTeamId || !match.pendingResult) return;
 
-      // 승리한 팀 이름 찾기 (팝업 표시용)
+      // 승리한 팀 이름 찾기
       const winningTeamId = match.pendingResult.winnerId;
       let winningTeamName = "알 수 없음";
       if (winningTeamId === match.teamId) winningTeamName = match.teamName || match.team;
@@ -400,7 +397,7 @@ export default function LockerScreen() {
               const isHost = match.teamId === myTeamId; 
               const oppId = isHost ? match.guestId : match.teamId;
               
-              if(!oppId) throw "상대팀 정보 오류";
+              if(!oppId) throw "상대팀 정보 오류 (Opponent ID Missing)";
               const oppRef = doc(db, "teams", oppId);
               
               await runTransaction(db, async (transaction) => {
@@ -411,13 +408,16 @@ export default function LockerScreen() {
 
                   const winnerId = mData.pendingResult.winnerId;
 
-                  // 팀 스탯 가져오기 (없으면 초기값)
+                  // 팀 스탯 가져오기
                   const homeDoc = await transaction.get(teamRef);
                   const oppDoc = await transaction.get(oppRef);
+                  
+                  if (!homeDoc.exists() || !oppDoc.exists()) throw "팀 데이터를 찾을 수 없습니다.";
+
                   const hStats = (homeDoc.data() as any)?.stats || { wins:0, losses:0, points:0, total:0 };
                   const oStats = (oppDoc.data() as any)?.stats || { wins:0, losses:0, points:0, total:0 };
 
-                  // 승점 계산 (승 3점, 패 1점)
+                  // 승점 계산
                   if (winnerId === myTeamId) {
                       hStats.wins++; hStats.points += 3;
                       oStats.losses++; oStats.points += 1;
@@ -427,12 +427,12 @@ export default function LockerScreen() {
                   }
                   hStats.total++; oStats.total++;
 
-                  // DB 업데이트
+                  // DB 업데이트 (deleteField 사용)
                   transaction.update(matchRef, { 
                       status: 'finished', 
                       winnerId: winnerId, 
                       endedAt: serverTimestamp(),
-                      pendingResult: arrayRemove() 
+                      pendingResult: deleteField() // ✅ arrayRemove -> deleteField 수정 완료
                   });
                   transaction.update(teamRef, { stats: hStats });
                   transaction.update(oppRef, { stats: oStats });
@@ -442,8 +442,9 @@ export default function LockerScreen() {
               Platform.OS === 'web' ? window.alert(msg) : Alert.alert("완료", msg);
               setMatchModalVisible(false);
 
-          } catch(e) {
-              const errMsg = typeof e === 'string' ? e : "승인 처리 중 오류가 발생했습니다.";
+          } catch(e: any) {
+              console.error("Approve Error:", e);
+              const errMsg = typeof e === 'string' ? e : (e.message || "승인 처리 중 오류가 발생했습니다.");
               Platform.OS === 'web' ? window.alert(errMsg) : Alert.alert("오류", errMsg);
           }
       };
@@ -644,7 +645,6 @@ export default function LockerScreen() {
                                                     <View>
                                                         <Text className="text-gray-400 text-[10px] font-bold mb-0.5">대표자 연락처</Text>
                                                         <Text className="text-gray-900 font-bold text-sm">
-                                                            {/* ✅ [Fix] undefined 할당 방지 */}
                                                             {dynamicContact || (upcomingMatch.teamId === myTeamId 
                                                                 ? (upcomingMatch.guestContact || '로딩 중...') 
                                                                 : (upcomingMatch.hostContact || '로딩 중...')
@@ -803,9 +803,6 @@ export default function LockerScreen() {
                             const isMySubmission = m.pendingResult?.submitterId === myTeamId;
                             // 내가 호스트(모집자)인가?
                             const isHost = m.teamId === myTeamId;
-                            // 버튼 표시 조건:
-                            // 1. 입력 전이고, 내가 호스트일 때 -> 결과 입력
-                            // 2. 검증 대기중이고, 내가 제출자가 아닐 때 -> 결과 승인
                             
                             return (
                                 <View key={m.id} className="bg-red-50 border border-red-100 p-4 rounded-xl mb-2 flex-row justify-between items-center">
