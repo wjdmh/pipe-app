@@ -13,7 +13,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { shareLink } from '../../utils/share';
 
-// --- [디자인 테마 상수] ---
 const THEME = {
     bg: '#F3F4F6',    
     white: '#FFFFFF', 
@@ -23,7 +22,6 @@ const THEME = {
     border: '#E5E7EB',   
 };
 
-// --- [타입 정의] ---
 type JoinRequest = { uid: string; name: string; position: string; requestedAt: string; };
 type Player = { id: number; uid?: string; name: string; position: string; };
 type TeamData = { 
@@ -39,13 +37,11 @@ type TeamData = {
     joinRequests?: JoinRequest[]; 
     kusfId?: string; 
 };
-
-// ✅ [Fix] hostId -> teamId로 필드명 수정 (DB와 일치시킴)
 type MatchData = {
   id: string; 
   teamId: string; // 호스트(모집) 팀 ID
   guestId?: string; 
-  team: string; // 팀 이름
+  team: string; 
   time: string; 
   loc: string; 
   status: 'recruiting' | 'scheduled' | 'finished' | 'dispute'; 
@@ -56,7 +52,7 @@ type MatchData = {
   isDeleted?: boolean;
   hostContact?: string;
   guestContact?: string;
-  teamName?: string; // 안전장치용
+  teamName?: string;
 };
 
 type MyGuestActivity = {
@@ -69,7 +65,6 @@ type MyGuestActivity = {
     hostContact?: string; 
 };
 
-// --- [헬퍼 함수] ---
 const formatTime = (isoString: string) => {
     if (!isoString) return '-';
     try {
@@ -109,6 +104,9 @@ export default function LockerScreen() {
   const [isCaptain, setIsCaptain] = useState(false);
   const [matches, setMatches] = useState<MatchData[]>([]);
   const [guestActivities, setGuestActivities] = useState<MyGuestActivity[]>([]);
+
+  // ✅ [New] 동적으로 가져온 연락처를 저장할 상태
+  const [dynamicContact, setDynamicContact] = useState<string | null>(null);
 
   const [selectedMember, setSelectedMember] = useState<Player | null>(null);
   const [showMemberAction, setShowMemberAction] = useState(false);
@@ -227,7 +225,6 @@ export default function LockerScreen() {
             const data = d.data();
             if (data.isDeleted) return;
             
-            // ✅ [Fix] 필터링 조건에서 hostId -> teamId로 수정
             if (data.teamId === myTeamId || data.guestId === myTeamId || data.applicants?.includes(myTeamId)) {
                 const mappedStatus = data.status === 'matched' ? 'scheduled' : data.status;
                 const safeTeamName = data.teamName || data.team || '팀명 미정';
@@ -263,6 +260,67 @@ export default function LockerScreen() {
       };
   }, [matches]);
 
+  // ✅ [New] 연락처 강제 조회 로직 (Robustness)
+  // 매치 데이터에 연락처가 비어있을 경우, 팀 ID -> 주장 ID -> 유저 정보를 조회하여 찾아냅니다.
+  useEffect(() => {
+    if (!upcomingMatch || !myTeamId) return;
+    if (upcomingMatch.status !== 'scheduled') return;
+
+    const fetchContact = async () => {
+        const isHost = upcomingMatch.teamId === myTeamId;
+        // 이미 데이터가 있으면 그것을 사용
+        const existingContact = isHost ? upcomingMatch.guestContact : upcomingMatch.hostContact;
+        
+        if (existingContact) {
+            setDynamicContact(existingContact);
+            return;
+        }
+
+        // 데이터가 없으면 직접 찾아나섬
+        try {
+            // 내가 호스트면 -> 게스트 팀(guestId)을 찾음
+            // 내가 게스트면 -> 호스트 팀(teamId)을 찾음
+            const targetTeamId = isHost ? upcomingMatch.guestId : upcomingMatch.teamId;
+            
+            if (!targetTeamId) {
+                setDynamicContact("팀 정보 없음");
+                return;
+            }
+
+            // 1. 상대 팀 정보 가져오기
+            const teamSnap = await getDoc(doc(db, "teams", targetTeamId));
+            if (!teamSnap.exists()) {
+                setDynamicContact("상대팀 정보 없음");
+                return;
+            }
+            
+            const captainId = teamSnap.data().captainId;
+            if (!captainId) {
+                setDynamicContact("대표자 미지정");
+                return;
+            }
+
+            // 2. 상대 팀 대표자 정보 가져오기
+            const userSnap = await getDoc(doc(db, "users", captainId));
+            if (userSnap.exists()) {
+                const userData = userSnap.data();
+                // phoneNumber 혹은 phone 필드 확인
+                const phone = userData.phoneNumber || userData.phone || "연락처 미공개";
+                setDynamicContact(phone);
+            } else {
+                setDynamicContact("유저 정보 없음");
+            }
+
+        } catch (e) {
+            console.error("Contact Fetch Error:", e);
+            setDynamicContact("조회 실패");
+        }
+    };
+
+    fetchContact();
+  }, [upcomingMatch, myTeamId]);
+
+
   const handleInvite = async () => {
       if (!teamData) return;
       await shareLink({
@@ -288,19 +346,15 @@ export default function LockerScreen() {
   const handleApproveRequest = async (req: JoinRequest) => { /* Logic Preserved */ };
   
   const sendSMS = (phoneNumber?: string) => {
-      if (!phoneNumber) return Alert.alert("알림", "연락처 정보가 없습니다.");
+      if (!phoneNumber || phoneNumber.includes("없음") || phoneNumber.includes("실패")) {
+          return Alert.alert("알림", "유효한 연락처가 없습니다.");
+      }
       Linking.openURL(`sms:${phoneNumber}`);
-  };
-
-  const makeCall = (phoneNumber?: string) => {
-      if (!phoneNumber) return Alert.alert("알림", "연락처 정보가 없습니다.");
-      Linking.openURL(`tel:${phoneNumber}`);
   };
 
   const handleInputResult = async () => {
       if (!targetMatch || !selectedWinner || !myTeamId) return;
       try {
-        // ✅ [Fix] 결과 입력 로직에서도 hostId -> teamId로 수정
         const matchRef = doc(db, "matches", targetMatch.id);
         const teamRef = doc(db, "teams", myTeamId);
         
@@ -535,20 +589,20 @@ export default function LockerScreen() {
                                                 </View>
                                             </View>
 
-                                            {/* ✅ [Fix] 연락처 표시 로직 수정 (teamId 비교) */}
+                                            {/* ✅ [Fix] 연락처 표시: dynamicContact 우선 사용 */}
                                             {upcomingMatch.status === 'scheduled' && (
                                                 <View className="bg-gray-50 px-5 py-3 border-t border-gray-100 flex-row justify-between items-center">
                                                     <View>
                                                         <Text className="text-gray-400 text-[10px] font-bold mb-0.5">대표자 연락처</Text>
                                                         <Text className="text-gray-900 font-bold text-sm">
-                                                            {upcomingMatch.teamId === myTeamId 
-                                                                ? (upcomingMatch.guestContact || '번호 없음') 
-                                                                : (upcomingMatch.hostContact || '번호 없음')
-                                                            }
+                                                            {dynamicContact || (upcomingMatch.teamId === myTeamId 
+                                                                ? (upcomingMatch.guestContact || '로딩 중...') 
+                                                                : (upcomingMatch.hostContact || '로딩 중...')
+                                                            )}
                                                         </Text>
                                                     </View>
                                                     <TouchableOpacity 
-                                                        onPress={() => sendSMS(upcomingMatch.teamId === myTeamId ? upcomingMatch.guestContact : upcomingMatch.hostContact)}
+                                                        onPress={() => sendSMS(dynamicContact || (upcomingMatch.teamId === myTeamId ? upcomingMatch.guestContact : upcomingMatch.hostContact))}
                                                         className="bg-white p-2.5 rounded-full border border-gray-200 shadow-sm"
                                                     >
                                                         <FontAwesome5 name="sms" size={16} color="#4B5563" />
@@ -573,7 +627,6 @@ export default function LockerScreen() {
                                     <View className="mb-6">
                                         <Text className="text-gray-900 font-bold text-lg mb-3 px-1">예정된 일정</Text>
                                         {[...recruitingMatches, ...futureMatches].map(m => {
-                                            // ✅ [Fix] 리스트 로직 수정
                                             const isHost = m.teamId === myTeamId;
                                             const isRecruiting = m.status === 'recruiting';
                                             const hostName = m.teamName || m.team || '팀명 미정';
