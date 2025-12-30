@@ -468,7 +468,7 @@ export default function LockerScreen() {
                     <View className="px-5">
                         {activeTab === 'schedule' && (
                             <>
-                                {/* ✅ [수정됨] Hero Card */}
+                                {/* ✅ [수정됨] Hero Card (Upcoming Match) */}
                                 {upcomingMatch ? (
                                     <View className="mb-8">
                                         <View className="flex-row justify-between items-end mb-3 px-1">
@@ -479,16 +479,15 @@ export default function LockerScreen() {
                                             activeOpacity={isCaptain ? 0.9 : 1}
                                             className="bg-white rounded-[24px] shadow-sm border border-gray-200 overflow-hidden"
                                         >
-                                            {/* Header: D-Day Badge */}
-                                            <View className="flex-row justify-end p-4 pb-0">
+                                            {/* 1. 배지 (상단 중앙) */}
+                                            <View className="items-center pt-4 pb-2">
                                                 <View className="bg-blue-600 px-3 py-1 rounded-full">
                                                     <Text className="text-white font-bold text-xs">{getDDay(upcomingMatch.time)}</Text>
                                                 </View>
                                             </View>
 
-                                            {/* Body: Match Info */}
-                                            <View className="items-center px-6 pb-6">
-                                                {/* Team vs Team (HOME: 모집팀, AWAY: 지원팀) */}
+                                            {/* 2. 팀 정보 (HOME: 모집자, AWAY: 지원자) */}
+                                            <View className="items-center px-6 pb-6 pt-2">
                                                 <View className="flex-row items-center justify-center w-full mb-4">
                                                     {/* HOME: 항상 모집글 올린 팀 */}
                                                     <View className="flex-1 items-center">
@@ -496,7 +495,7 @@ export default function LockerScreen() {
                                                         <Text className="text-gray-400 text-[10px] font-bold mt-1">HOME</Text>
                                                     </View>
                                                     
-                                                    <Text className="text-gray-300 font-black text-xl mx-2">VS</Text>
+                                                    <Text className="text-gray-300 font-black text-xl mx-3">VS</Text>
                                                     
                                                     {/* AWAY: 항상 지원한 상대 팀 */}
                                                     <View className="flex-1 items-center">
@@ -507,7 +506,7 @@ export default function LockerScreen() {
                                                     </View>
                                                 </View>
                                                 
-                                                {/* Date & Location */}
+                                                {/* 3. 일시 및 장소 */}
                                                 <View className="flex-row items-center bg-gray-50 px-4 py-2 rounded-lg">
                                                     <FontAwesome5 name="calendar-alt" size={12} color="#6B7280" style={{marginRight:6}} />
                                                     <Text className="text-gray-600 font-bold text-xs mr-3">{formatTime(upcomingMatch.time)}</Text>
@@ -517,13 +516,13 @@ export default function LockerScreen() {
                                                 </View>
                                             </View>
 
-                                            {/* Footer: Representative Contact (문자 보내기) */}
-                                            {/* 로직: 내가 호스트면 게스트 연락처, 내가 게스트면 호스트 연락처 */}
+                                            {/* 4. 대표자 연락처 (내 팀 기준 상대방) */}
                                             {upcomingMatch.status === 'scheduled' && (
                                                 <View className="bg-gray-50 px-5 py-3 border-t border-gray-100 flex-row justify-between items-center">
                                                     <View>
                                                         <Text className="text-gray-400 text-[10px] font-bold mb-0.5">대표자 연락처</Text>
                                                         <Text className="text-gray-900 font-bold text-sm">
+                                                            {/* 내가 호스트면 게스트 연락처, 아니면 호스트 연락처 */}
                                                             {upcomingMatch.hostId === myTeamId 
                                                                 ? (upcomingMatch.guestContact || '번호 없음') 
                                                                 : (upcomingMatch.hostContact || '번호 없음')
@@ -559,7 +558,8 @@ export default function LockerScreen() {
                                             const isHost = m.hostId === myTeamId;
                                             const isRecruiting = m.status === 'recruiting';
                                             
-                                            // 목록 표시 로직: 내가 호스트면 '상대 모집중' or 'vs 상대팀'
+                                            // 목록에서도 팀 이름 로직 통일 (HOME: 모집팀 / AWAY: 상대팀)
+                                            // 모집 중일 땐 상대팀 이름이 없으므로 '상대 모집중' 처리
                                             let statusText = isRecruiting 
                                                 ? (isHost ? "상대 모집중" : "수락 대기중") 
                                                 : `vs ${isHost ? (m.opponentName || '상대팀') : m.team}`;
