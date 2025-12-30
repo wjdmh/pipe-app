@@ -83,7 +83,7 @@ const getDDay = (targetDate: string) => {
         target.setHours(0, 0, 0, 0);
         const diff = (target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24);
         if (diff < 0) return '종료';
-        if (diff === 0) return 'MATCH DAY'; // 요청하신 대로 경기 당일 문구 유지
+        if (diff === 0) return 'MATCH DAY';
         return `D-${Math.ceil(diff)}`;
     } catch(e) { return '-'; }
 };
@@ -270,7 +270,6 @@ export default function LockerScreen() {
   const handleCallMember = async () => { /* Logic Preserved */ };
   const handleApproveRequest = async (req: JoinRequest) => { /* Logic Preserved */ };
   
-  // ✅ [수정] 전화 걸기 -> 문자 보내기
   const sendSMS = (phoneNumber?: string) => {
       if (!phoneNumber) return Alert.alert("알림", "연락처 정보가 없습니다.");
       Linking.openURL(`sms:${phoneNumber}`);
@@ -469,7 +468,7 @@ export default function LockerScreen() {
                     <View className="px-5">
                         {activeTab === 'schedule' && (
                             <>
-                                {/* ✅ [수정됨] Hero Card (다가오는 매치 - 모던 디자인) */}
+                                {/* ✅ [수정됨] Hero Card */}
                                 {upcomingMatch ? (
                                     <View className="mb-8">
                                         <View className="flex-row justify-between items-end mb-3 px-1">
@@ -489,20 +488,20 @@ export default function LockerScreen() {
 
                                             {/* Body: Match Info */}
                                             <View className="items-center px-6 pb-6">
-                                                {/* Team vs Team */}
+                                                {/* Team vs Team (HOME: 모집팀, AWAY: 지원팀) */}
                                                 <View className="flex-row items-center justify-center w-full mb-4">
+                                                    {/* HOME: 항상 모집글 올린 팀 */}
                                                     <View className="flex-1 items-center">
-                                                        <Text className="text-gray-900 font-extrabold text-lg text-center" numberOfLines={1}>{teamData?.name}</Text>
+                                                        <Text className="text-gray-900 font-extrabold text-lg text-center" numberOfLines={1}>{upcomingMatch.team}</Text>
                                                         <Text className="text-gray-400 text-[10px] font-bold mt-1">HOME</Text>
                                                     </View>
+                                                    
                                                     <Text className="text-gray-300 font-black text-xl mx-2">VS</Text>
+                                                    
+                                                    {/* AWAY: 항상 지원한 상대 팀 */}
                                                     <View className="flex-1 items-center">
                                                         <Text className="text-gray-900 font-extrabold text-lg text-center" numberOfLines={1}>
-                                                            {/* 내가 호스트면 상대팀 이름, 내가 게스트면 호스트 이름 */}
-                                                            {upcomingMatch.hostId === myTeamId 
-                                                                ? (upcomingMatch.opponentName || '상대팀') 
-                                                                : upcomingMatch.team
-                                                            }
+                                                            {upcomingMatch.opponentName || '상대팀'}
                                                         </Text>
                                                         <Text className="text-gray-400 text-[10px] font-bold mt-1">AWAY</Text>
                                                     </View>
@@ -519,12 +518,12 @@ export default function LockerScreen() {
                                             </View>
 
                                             {/* Footer: Representative Contact (문자 보내기) */}
+                                            {/* 로직: 내가 호스트면 게스트 연락처, 내가 게스트면 호스트 연락처 */}
                                             {upcomingMatch.status === 'scheduled' && (
                                                 <View className="bg-gray-50 px-5 py-3 border-t border-gray-100 flex-row justify-between items-center">
                                                     <View>
                                                         <Text className="text-gray-400 text-[10px] font-bold mb-0.5">대표자 연락처</Text>
                                                         <Text className="text-gray-900 font-bold text-sm">
-                                                            {/* 내 팀이 호스트면 -> 게스트 번호, 내 팀이 게스트면 -> 호스트 번호 */}
                                                             {upcomingMatch.hostId === myTeamId 
                                                                 ? (upcomingMatch.guestContact || '번호 없음') 
                                                                 : (upcomingMatch.hostContact || '번호 없음')
@@ -560,13 +559,12 @@ export default function LockerScreen() {
                                             const isHost = m.hostId === myTeamId;
                                             const isRecruiting = m.status === 'recruiting';
                                             
-                                            // 목록에서도 이름 표시 로직 개선
-                                            let opponentDisplayName = m.team; // 기본 호스트 이름
-                                            if (isHost && m.opponentName) opponentDisplayName = m.opponentName; // 내가 호스트면 상대팀 이름
-
-                                            let statusText = isRecruiting ? (isHost ? "상대 모집중" : "수락 대기중") : `vs ${isHost ? (m.opponentName || '상대팀') : m.team}`;
+                                            // 목록 표시 로직: 내가 호스트면 '상대 모집중' or 'vs 상대팀'
+                                            let statusText = isRecruiting 
+                                                ? (isHost ? "상대 모집중" : "수락 대기중") 
+                                                : `vs ${isHost ? (m.opponentName || '상대팀') : m.team}`;
                                             
-                                            // 연락처 정보 (내 입장에서 상대방)
+                                            // 연락처 정보: 내가 호스트면 게스트 연락처, 반대면 호스트 연락처
                                             const contact = isHost ? m.guestContact : m.hostContact;
 
                                             return (
@@ -587,7 +585,7 @@ export default function LockerScreen() {
                                                         {isCaptain && <FontAwesome5 name="chevron-right" size={14} color="#D1D5DB" />}
                                                     </View>
 
-                                                    {/* 연락처 버튼 (SMS) */}
+                                                    {/* 목록에서도 연락처 버튼 (SMS) */}
                                                     {m.status === 'scheduled' && contact && (
                                                         <TouchableOpacity 
                                                             onPress={() => sendSMS(contact)}
@@ -610,8 +608,9 @@ export default function LockerScreen() {
                                             <View key={m.id} className="bg-white px-5 py-4 rounded-xl mb-2 border border-gray-100 flex-row items-center justify-between opacity-80">
                                                 <View>
                                                     <Text className="text-gray-400 text-xs mb-0.5">{m.time.slice(0,10)}</Text>
-                                                    {/* 지난 경기도 이름 로직 적용 */}
-                                                    <Text className="text-gray-600 font-bold text-sm">vs {m.hostId === myTeamId ? (m.opponentName || '상대팀') : m.team}</Text>
+                                                    <Text className="text-gray-600 font-bold text-sm">
+                                                        vs {m.hostId === myTeamId ? (m.opponentName || '상대팀') : m.team}
+                                                    </Text>
                                                 </View>
                                                 <Text className="text-xs text-gray-300">{m.status === 'finished' ? '종료' : '결과 미입력'}</Text>
                                             </View>
