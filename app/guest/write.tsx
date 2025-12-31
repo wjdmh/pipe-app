@@ -82,14 +82,19 @@ export default function GuestWriteScreen() {
           const hasUnsavedChanges = step > 1 || selectedPositions.length > 0 || location.length > 0 || note.length > 0;
           if (!hasUnsavedChanges || submitting) return;
           e.preventDefault();
-          Alert.alert(
-              '작성 중인 내용이 있습니다',
-              '정말 나가시겠습니까?\n작성하신 내용은 저장되지 않습니다.',
-              [
-                  { text: '계속 작성', style: 'cancel', onPress: () => {} },
-                  { text: '나가기', style: 'destructive', onPress: () => navigation.dispatch(e.data.action) },
-              ]
-          );
+          if (Platform.OS === 'web') {
+              const confirm = window.confirm('작성 중인 내용이 있습니다. 정말 나가시겠습니까?');
+              if (confirm) navigation.dispatch(e.data.action);
+          } else {
+              Alert.alert(
+                  '작성 중인 내용이 있습니다',
+                  '정말 나가시겠습니까?\n작성하신 내용은 저장되지 않습니다.',
+                  [
+                      { text: '계속 작성', style: 'cancel', onPress: () => {} },
+                      { text: '나가기', style: 'destructive', onPress: () => navigation.dispatch(e.data.action) },
+                  ]
+              );
+          }
       });
       return beforeRemoveListener;
   }, [navigation, step, selectedPositions, location, note, submitting]);
@@ -102,16 +107,25 @@ export default function GuestWriteScreen() {
       if (Platform.OS === 'android') setShowTimePicker(false);
       if (time) setSelectedTime(time);
   };
+  
+  // [Fix] 웹 날짜 처리: 단순 Date 객체 변환 시 타임존 이슈 방지
   const onChangeDateWeb = (e: any) => {
-      const val = e.target.value; 
+      const val = e.target.value; // "YYYY-MM-DD"
       if (!val) return;
-      setSelectedDate(new Date(val));
+      const [y, m, d] = val.split('-').map(Number);
+      const newDate = new Date(selectedDate);
+      newDate.setFullYear(y);
+      newDate.setMonth(m - 1);
+      newDate.setDate(d);
+      setSelectedDate(newDate);
   };
+  
+  // [Fix] 웹 시간 처리
   const onChangeTimeWeb = (e: any) => {
-      const val = e.target.value; 
+      const val = e.target.value; // "HH:MM"
       if (!val) return;
       const [h, m] = val.split(':').map(Number);
-      const newTime = new Date();
+      const newTime = new Date(selectedTime);
       newTime.setHours(h);
       newTime.setMinutes(m);
       setSelectedTime(newTime);
@@ -150,8 +164,14 @@ export default function GuestWriteScreen() {
   };
 
   const goNext = () => {
-      if (step === 1 && selectedPositions.length === 0) return Alert.alert('알림', '최소 하나의 포지션을 선택해주세요.');
-      if (step === 2 && !location.trim()) return Alert.alert('알림', '장소를 입력해주세요.');
+      if (step === 1 && selectedPositions.length === 0) {
+          const msg = '최소 하나의 포지션을 선택해주세요.';
+          return Platform.OS === 'web' ? window.alert(msg) : Alert.alert('알림', msg);
+      }
+      if (step === 2 && !location.trim()) {
+          const msg = '장소를 입력해주세요.';
+          return Platform.OS === 'web' ? window.alert(msg) : Alert.alert('알림', msg);
+      }
       setStep(prev => prev + 1);
   };
 
@@ -161,20 +181,29 @@ export default function GuestWriteScreen() {
           const finalDate = new Date(selectedDate);
           finalDate.setHours(selectedTime.getHours());
           finalDate.setMinutes(selectedTime.getMinutes());
+          
+          const isoDate = finalDate.toISOString();
 
           await addDoc(collection(db, "guest_posts"), {
               hostCaptainId: user!.uid,
-              teamId: teamInfo.id,
-              teamName: teamInfo.name,
-              gender: gender,
+              hostTeamId: teamInfo.id, // [New] 표준 필드명
+              hostTeamName: teamInfo.name, // [New] 표준 필드명
               
-              // 🚨 [Fix] .join(', ') 제거 -> 배열 그대로 저장
-              positions: selectedPositions, 
+              teamId: teamInfo.id,     // Legacy 호환
+              teamName: teamInfo.name, // Legacy 호환
+              
+              gender: gender,
+              positions: selectedPositions, // Array 저장
               
               targetLevel: targetLevel,
               recruitmentCount: recruitmentCount, 
-              time: finalDate.toISOString(),
-              loc: location,
+              
+              time: isoDate,      // Legacy
+              matchDate: isoDate, // [Fix] 정렬 기준 필드 추가
+              
+              loc: location,        // Legacy
+              location: location,   // Standard
+              
               note: note,
               status: 'recruiting',
               applicants: [], 
@@ -191,7 +220,10 @@ export default function GuestWriteScreen() {
           }
 
       } catch (e) {
-          Alert.alert("오류", "등록 중 문제가 발생했습니다.");
+          console.error(e);
+          const msg = "등록 중 문제가 발생했습니다.";
+          if (Platform.OS === 'web') window.alert(msg);
+          else Alert.alert("오류", msg);
           setSubmitting(false);
       }
   };

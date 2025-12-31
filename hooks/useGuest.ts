@@ -12,24 +12,23 @@ import { sendPushNotification } from '../utils/notificationHelper';
 export type GuestPost = {
   id: string;
   hostTeamId: string;
-  hostTeamName: string; // UI 표준
+  hostTeamName: string; 
   hostCaptainId: string;
   
-  // 날짜 관련 필드 (호환성 유지)
+  // 날짜 관련 필드 (표준: matchDate)
   time: string;       
   matchDate: string;  
   
   location: string;   
   loc?: string;       
 
-  positions: string[]; // 무조건 배열로 변환됨
+  positions: string[]; // 무조건 배열
   gender: 'male' | 'female' | 'mixed';
   targetLevel: string; 
   fee: string; 
   
   note?: string;       
-  description?: string; 
-
+  
   status: 'recruiting' | 'closed';
   
   recruitmentCount?: number; 
@@ -54,8 +53,7 @@ export const useGuest = () => {
 
   // 1. 모집글 목록 조회
   useEffect(() => {
-    // 🚨 [Fix 1] 쿼리 기준을 'matchDate'로 복구 (예전 글들이 보이도록)
-    // 주의: 만약 콘솔에 'index required' 에러가 뜨면 matchDate 기준 인덱스를 생성해주세요.
+    // [Fix] 정렬 기준을 'matchDate'로 통일
     const q = query(
       collection(db, "guest_posts"),
       where("status", "==", "recruiting"),
@@ -67,13 +65,13 @@ export const useGuest = () => {
       snapshot.forEach((doc) => {
         const data = doc.data();
         
-        // 🚨 [Fix 2] 데이터 표준화 (Normalization)
-        // 예전 데이터와 새 데이터의 필드명 차이를 여기서 통합합니다.
+        // [Fix] 데이터 표준화 (Legacy -> Standard)
+        // matchDate가 없으면 time을 사용하고, 그것도 없으면 현재 시간
         const standardizedTime = data.matchDate || data.time || new Date().toISOString();
         const standardizedLoc = data.location || data.loc || '';
         const standardizedTeamName = data.hostTeamName || data.teamName || '팀명 미정';
 
-        // 🚨 [Fix 3] 포지션 데이터 타입 안전 변환 (String -> Array)
+        // [Fix] 포지션 데이터 타입 안전 변환 (String -> Array)
         let safePositions: string[] = [];
         if (Array.isArray(data.positions)) {
             safePositions = data.positions;
@@ -84,11 +82,11 @@ export const useGuest = () => {
         list.push({ 
             id: doc.id, 
             ...data,
-            // UI 컴포넌트가 사용할 표준 필드에 값 주입
+            // UI 표준 필드 주입
             time: standardizedTime,
             matchDate: standardizedTime, 
             location: standardizedLoc,
-            hostTeamName: standardizedTeamName, // 팀명 복구
+            hostTeamName: standardizedTeamName, 
             positions: safePositions, 
             applicants: data.applicants || [] 
         } as GuestPost);
@@ -97,6 +95,8 @@ export const useGuest = () => {
       setLoading(false);
     }, (error) => {
       console.error("Guest Fetch Error:", error);
+      // 만약 matchDate 인덱스가 없어서 에러가 난다면, 일단 time으로 시도해볼 수도 있겠지만
+      // 원칙적으로 인덱스를 생성해야 함. (개발자 콘솔 링크 타고 가서 생성 필요)
       setLoading(false);
     });
 
@@ -146,6 +146,7 @@ export const useGuest = () => {
         let currentApplicants = data.applicants || [];
         let currentIds = data.applicantIds || [];
 
+        // Legacy 데이터(문자열 UID만 있는 경우) 처리
         if (currentApplicants.length > 0 && typeof currentApplicants[0] === 'string') {
             currentIds = [...currentApplicants];
             currentApplicants = currentApplicants.map((uid: string) => ({
