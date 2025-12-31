@@ -16,31 +16,33 @@ import { doc, getDoc, updateDoc, arrayUnion } from 'firebase/firestore';
 import { auth, db } from '../../configs/firebaseConfig';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { FontAwesome5 } from '@expo/vector-icons';
-// 공유 유틸리티
 import { shareLink } from '../../utils/share';
+import { useGuest } from '../../hooks/useGuest'; // 훅 활용
 
-// [상수] 포지션 선택지
 const POSITIONS = ['세터', '레프트', '라이트', '센터', '리베로', '올라운더'];
 
-// [타입 정의]
 type GuestPost = {
   id: string;
   hostCaptainId: string;
   teamName: string;
   gender: 'male' | 'female' | 'mixed';
-  positions: string; 
+  positions: string[] | string; 
   targetLevel: string;
   time: string;
-  loc: string;
+  matchDate?: string;
+  loc?: string;
+  location?: string;
   note: string;
   status: string;
   applicants: any[];
+  applicantIds?: string[];
   isDeleted?: boolean;
 };
 
 export default function GuestDetailScreen() {
   const { id } = useLocalSearchParams();
   const router = useRouter();
+  const { applyForGuest, deletePost } = useGuest(); // 훅에서 로직 가져옴
   
   const [post, setPost] = useState<GuestPost | null>(null);
   const [loading, setLoading] = useState(true);
@@ -51,10 +53,12 @@ export default function GuestDetailScreen() {
   const [myPosition, setMyPosition] = useState('');
   const [message, setMessage] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  
+  // 연락처 (신청 시 호스트에게 전송)
+  const [myContact, setMyContact] = useState('');
 
   // [Logic] 데이터 불러오기
-  useEffect(() => {
-    const fetchPost = async () => {
+  const fetchPost = async () => {
       if (!id) return;
       try {
         const docRef = doc(db, "guest_posts", id as string);
@@ -63,7 +67,8 @@ export default function GuestDetailScreen() {
         if (docSnap.exists()) {
           setPost({ id: docSnap.id, ...docSnap.data() } as GuestPost);
         } else {
-          Alert.alert('오류', '존재하지 않는 게시글입니다.');
+          const msg = '존재하지 않는 게시글입니다.';
+          Platform.OS === 'web' ? window.alert(msg) : Alert.alert('오류', msg);
           router.back();
         }
       } catch (e) {
@@ -71,7 +76,9 @@ export default function GuestDetailScreen() {
       } finally {
         setLoading(false);
       }
-    };
+  };
+
+  useEffect(() => {
     fetchPost();
   }, [id]);
 
@@ -89,22 +96,19 @@ export default function GuestDetailScreen() {
     } catch { return isoString; }
   };
 
-  // ✅ [Updated] 공유 유틸리티(shareLink) 고도화 적용
   const handleShare = async () => {
       if (!post) return;
-
-      const genderText = post.gender === 'male' ? '남자부' : post.gender === 'female' ? '여자부' : '혼성';
+      // @ts-ignore
+      const posString = Array.isArray(post.positions) ? post.positions.join(', ') : post.positions;
+      
       const shareUrl = `https://pipe-app.vercel.app/guest/${post.id}`;
-
-      // 본문 메시지 (링크는 shareLink 내부에서 붙음)
       const shareMessage = `🏃‍♂️ [PIPE 게스트 모집] 함께 뛰실 분!
       
 ${post.teamName}팀에서 용병을 찾고 있어요.
 
-🛡️ 필요 포지션: ${post.positions}
-📅 일시: ${formatTime(post.time)}
-📍 장소: ${post.loc}
-🏐 레벨: ${genderText} (${post.targetLevel})
+🛡️ 필요 포지션: ${posString}
+📅 일시: ${formatTime(post.time || post.matchDate || '')}
+📍 장소: ${post.location || post.loc}
 ${post.note ? `📢 비고: ${post.note}` : ''}`;
 
       await shareLink({
@@ -114,55 +118,57 @@ ${post.note ? `📢 비고: ${post.note}` : ''}`;
       });
   };
 
-  // [Logic] 지원하기 제출
+  // [Logic] 지원하기 제출 (Web 호환 수정)
   const handleApply = async () => {
-    if (!myPosition) return Alert.alert('알림', '주 포지션을 선택해주세요.');
-    if (!user) {
-        Alert.alert('로그인 필요', '로그인 후 이용해주세요.');
-        return router.push('/auth/login' as any);
+    if (!myPosition) {
+        const msg = '주 포지션을 선택해주세요.';
+        return Platform.OS === 'web' ? window.alert(msg) : Alert.alert('알림', msg);
     }
-
+    if (!myContact) {
+        const msg = '호스트가 연락할 전화번호를 입력해주세요.';
+        return Platform.OS === 'web' ? window.alert(msg) : Alert.alert('알림', msg);
+    }
+    
     setSubmitting(true);
     try {
-        const docRef = doc(db, "guest_posts", id as string);
+        // useGuest 훅의 applyForGuest 함수 사용 (트랜잭션 처리됨)
+        // @ts-ignore
+        await applyForGuest(post, message, myContact);
         
-        const applicationData = {
-            uid: user.uid,
-            name: user.displayName || '익명',
-            position: myPosition,
-            message: message.trim(),
-            appliedAt: new Date().toISOString()
-        };
-
-        await updateDoc(docRef, {
-            applicants: arrayUnion(applicationData)
-        });
-
-        Alert.alert('신청 완료', '호스트에게 신청을 보냈습니다.', [
-            { text: '확인', onPress: () => {
-                setShowApplyModal(false);
-                setPost(prev => prev ? ({...prev, applicants: [...prev.applicants, applicationData]}) : null);
-            }}
-        ]);
+        // 성공 시 상태 업데이트
+        setShowApplyModal(false);
+        fetchPost(); // 최신 상태 리로드 (applicants 배열 갱신 확인용)
 
     } catch (e) {
-        Alert.alert('오류', '신청 중 문제가 발생했습니다.');
+        // 에러는 useGuest 내부에서 alert 처리됨
     } finally {
         setSubmitting(false);
     }
   };
 
-  // [Logic] 삭제하기 (호스트 전용)
+  // [Logic] 삭제하기 (Web 호환 수정)
   const handleDelete = async () => {
-      Alert.alert('삭제 확인', '정말 이 모집글을 삭제하시겠습니까?', [
-          { text: '취소', style: 'cancel' },
-          { text: '삭제', style: 'destructive', onPress: async () => {
-              try {
-                  await updateDoc(doc(db, "guest_posts", id as string), { isDeleted: true });
+      // 지원자가 있는지 확인
+      if (post && post.applicants && post.applicants.length > 0) {
+          const msg = "이미 지원자가 있어 삭제할 수 없습니다.\n관리자에게 문의해주세요.";
+          return Platform.OS === 'web' ? window.alert(msg) : Alert.alert('삭제 불가', msg);
+      }
+
+      const confirmMsg = '정말 이 모집글을 삭제하시겠습니까?';
+      if (Platform.OS === 'web') {
+          if (window.confirm(confirmMsg)) {
+              await deletePost(id as string);
+              router.back();
+          }
+      } else {
+          Alert.alert('삭제 확인', confirmMsg, [
+              { text: '취소', style: 'cancel' },
+              { text: '삭제', style: 'destructive', onPress: async () => {
+                  await deletePost(id as string);
                   router.back();
-              } catch(e) { Alert.alert('오류', '삭제 실패'); }
-          }}
-      ]);
+              }}
+          ]);
+      }
   };
 
   if (loading || !post) {
@@ -170,7 +176,12 @@ ${post.note ? `📢 비고: ${post.note}` : ''}`;
   }
 
   const isHost = user?.uid === post.hostCaptainId;
-  const isApplied = post.applicants?.some(a => a.uid === user?.uid);
+  const safeApplicantIds = post.applicantIds || [];
+  const isApplied = safeApplicantIds.includes(user?.uid || '') || post.applicants?.some(a => a.uid === user?.uid);
+  
+  // 포지션 배열 처리
+  const displayPositions = Array.isArray(post.positions) ? post.positions.join(', ') : post.positions;
+  const displayLocation = post.location || post.loc || '';
 
   return (
     <SafeAreaView className="flex-1 bg-white" edges={['bottom']}>
@@ -181,15 +192,12 @@ ${post.note ? `📢 비고: ${post.note}` : ''}`;
                 <FontAwesome5 name="arrow-left" size={20} color="#111827" />
             </TouchableOpacity>
             <Text className="font-bold text-[16px]">모집 상세</Text>
-            
-            {/* 공유 아이콘 */}
             <TouchableOpacity onPress={handleShare} className="p-2 -mr-2">
                 <FontAwesome5 name="share-square" size={20} color="#111827" />
             </TouchableOpacity>
         </View>
 
         <ScrollView contentContainerStyle={{ paddingBottom: 100 }}>
-            {/* 1. Title Section */}
             <View className="px-6 pt-8 pb-6 border-b border-gray-100">
                 <View className="flex-row items-center mb-3">
                     <View className="bg-orange-50 px-2.5 py-1 rounded-md mr-2">
@@ -198,28 +206,26 @@ ${post.note ? `📢 비고: ${post.note}` : ''}`;
                     <Text className="text-gray-500 font-medium text-[13px]">{post.gender === 'male' ? '남자부' : post.gender === 'female' ? '여자부' : '혼성'} · {post.targetLevel}</Text>
                 </View>
                 <Text className="text-[24px] font-extrabold text-gray-900 leading-tight mb-2">{post.teamName}</Text>
-                <Text className="text-[15px] text-gray-600">{post.positions} 포지션을 찾고 있어요.</Text>
+                <Text className="text-[15px] text-gray-600">{displayPositions} 포지션을 찾고 있어요.</Text>
             </View>
 
-            {/* 2. Info Grid */}
             <View className="px-6 py-6 border-b border-gray-100">
                 <View className="flex-row items-start mb-5">
                     <View className="w-6 mt-0.5"><FontAwesome5 name="clock" size={16} color="#9CA3AF" /></View>
                     <View>
                         <Text className="text-gray-400 text-[12px] font-bold mb-0.5">일시</Text>
-                        <Text className="text-gray-900 text-[16px] font-bold">{formatTime(post.time)}</Text>
+                        <Text className="text-gray-900 text-[16px] font-bold">{formatTime(post.time || post.matchDate || '')}</Text>
                     </View>
                 </View>
                 <View className="flex-row items-start">
                     <View className="w-6 mt-0.5"><FontAwesome5 name="map-marker-alt" size={16} color="#9CA3AF" /></View>
                     <View className="flex-1">
                         <Text className="text-gray-400 text-[12px] font-bold mb-0.5">장소</Text>
-                        <Text className="text-gray-900 text-[16px] font-bold">{post.loc}</Text>
+                        <Text className="text-gray-900 text-[16px] font-bold">{displayLocation}</Text>
                     </View>
                 </View>
             </View>
 
-            {/* 3. Note */}
             <View className="px-6 py-6">
                 <Text className="text-gray-900 text-[16px] leading-relaxed">
                     {post.note || "상세 내용이 없습니다."}
@@ -240,9 +246,12 @@ ${post.note ? `📢 비고: ${post.note}` : ''}`;
                   </TouchableOpacity>
                   <TouchableOpacity 
                     className="flex-1 bg-gray-900 h-[52px] rounded-xl items-center justify-center"
-                    onPress={() => Alert.alert('준비중', '마감 기능은 준비 중입니다.')}
+                    onPress={() => {
+                        // 신청자 관리 페이지로 이동
+                        router.push(`/guest/applicants?id=${post.id}` as any);
+                    }}
                   >
-                      <Text className="text-white font-bold text-[16px]">마감하기</Text>
+                      <Text className="text-white font-bold text-[16px]">신청자 관리</Text>
                   </TouchableOpacity>
               </View>
           ) : (
@@ -252,7 +261,7 @@ ${post.note ? `📢 비고: ${post.note}` : ''}`;
                 className={`w-full h-[56px] rounded-xl items-center justify-center ${isApplied ? 'bg-gray-300' : 'bg-gray-900 shadow-lg shadow-gray-200'}`}
               >
                   <Text className="text-white font-bold text-[17px]">
-                      {isApplied ? '신청 완료' : '지원하기'}
+                      {isApplied ? '신청 완료 (대기중)' : '지원하기'}
                   </Text>
               </TouchableOpacity>
           )}
@@ -265,7 +274,6 @@ ${post.note ? `📢 비고: ${post.note}` : ''}`;
               <View className="bg-white rounded-t-[24px] p-6 pb-10">
                   <Text className="text-xl font-bold text-gray-900 mb-6">게스트 지원하기</Text>
                   
-                  {/* 포지션 선택 */}
                   <Text className="text-[14px] font-bold text-gray-500 mb-3">내 포지션</Text>
                   <View className="flex-row flex-wrap gap-2 mb-6">
                       {POSITIONS.map(pos => (
@@ -279,10 +287,18 @@ ${post.note ? `📢 비고: ${post.note}` : ''}`;
                       ))}
                   </View>
 
-                  {/* 메시지 입력 */}
+                  <Text className="text-[14px] font-bold text-gray-500 mb-3">연락처 (필수)</Text>
+                  <TextInput 
+                      className="bg-gray-50 rounded-xl p-4 text-[16px] mb-6 border border-gray-100"
+                      placeholder="010-0000-0000"
+                      keyboardType="phone-pad"
+                      value={myContact}
+                      onChangeText={setMyContact}
+                  />
+
                   <Text className="text-[14px] font-bold text-gray-500 mb-3">한마디 (선택)</Text>
                   <TextInput 
-                      className="bg-gray-50 rounded-xl p-4 text-[16px] min-h-[100px] mb-6 border border-gray-100"
+                      className="bg-gray-50 rounded-xl p-4 text-[16px] min-h-[80px] mb-6 border border-gray-100"
                       placeholder="실력, 경험 등 간단한 소개를 남겨주세요."
                       multiline
                       textAlignVertical="top"
@@ -300,7 +316,6 @@ ${post.note ? `📢 비고: ${post.note}` : ''}`;
               </View>
           </KeyboardAvoidingView>
       </Modal>
-
     </SafeAreaView>
   );
 }

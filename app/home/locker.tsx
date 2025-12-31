@@ -1,18 +1,19 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { 
   View, Text, TouchableOpacity, ScrollView, Alert, ActivityIndicator, 
-  Modal, FlatList, Linking, TextInput, Platform 
+  Modal, FlatList, Linking, TextInput, Platform, RefreshControl
 } from 'react-native';
 import { 
   doc, updateDoc, arrayRemove, arrayUnion, runTransaction, 
-  collection, query, onSnapshot, serverTimestamp, getDoc, where,
-  deleteField // ✅ [Fix] 필드 삭제를 위한 함수 추가
+  collection, query, onSnapshot, serverTimestamp, getDoc, where, getDocs,
+  deleteField, orderBy
 } from 'firebase/firestore';
 import { auth, db } from '../../configs/firebaseConfig';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { shareLink } from '../../utils/share';
+import GuestCard from '../../components/GuestCard'; // 게스트 카드 컴포넌트 재사용
 
 // --- [디자인 테마 상수] ---
 const THEME = {
@@ -73,7 +74,16 @@ type MyGuestActivity = {
     location: string;
     status: 'pending' | 'accepted' | 'rejected';
     fee: string;
-    hostContact?: string; 
+    hostContact?: string;
+    isMyPost?: boolean;
+    // GuestCard 호환 필드
+    time?: string;
+    hostCaptainId?: string;
+    positions?: string[];
+    gender?: 'male' | 'female' | 'mixed';
+    targetLevel?: string;
+    recruitmentCount?: number;
+    applicants?: any[];
 };
 
 // --- [헬퍼 함수] ---
@@ -132,6 +142,8 @@ export default function LockerScreen() {
   
   const [targetMatch, setTargetMatch] = useState<MatchData | null>(null);
   const [selectedWinner, setSelectedWinner] = useState<string | null>(null);
+  
+  const [refreshing, setRefreshing] = useState(false);
 
   // --- [인증 및 데이터 구독] ---
   useEffect(() => {
@@ -173,44 +185,57 @@ export default function LockerScreen() {
                     setStatus('noTeam');
                 }
 
-                const qGuest = query(
-                    collection(db, "guest_posts"), 
-                    where("applicantIds", "array-contains", user.uid)
-                );
+                // [Fix] 게스트 활동 데이터 구독 (내가 호스트 OR 내가 신청자)
+                // Firestore의 OR 쿼리 한계로 인해 각각 쿼리 후 병합하는 방식 대신, 
+                // 각각의 Snapshot을 합치는 로직으로 구현하거나, 편의상 두 번 호출합니다.
+                // 여기서는 간단하게 '내가 신청한 글'과 '내가 작성한 글'을 각각 불러옵니다.
+                
+                const fetchGuests = async () => {
+                    // 1. 내가 작성한 글 (Host)
+                    const hostQ = query(collection(db, "guest_posts"), where("hostCaptainId", "==", user.uid));
+                    // 2. 내가 신청한 글 (Applicant) - applicantIds 배열에 내 UID 포함
+                    const applyQ = query(collection(db, "guest_posts"), where("applicantIds", "array-contains", user.uid));
+                    
+                    // 실시간 구독을 위해 onSnapshot을 사용해야 하지만, 
+                    // 두 쿼리를 합치기 복잡하므로 여기서는 onSnapshot 하나만 예시로(내가 신청한 것) 걸거나
+                    // 주기적으로 fetch하는 방식을 쓸 수 있습니다. 
+                    // 일단 '내가 신청한 것' 위주로 구독하고, '내가 쓴 글'은 추가로 가져오는 방식을 택합니다.
+                    
+                    unsubGuest = onSnapshot(query(collection(db, "guest_posts")), (snap) => {
+                        const list: MyGuestActivity[] = [];
+                        snap.forEach((doc) => {
+                            const data = doc.data();
+                            const isHost = data.hostCaptainId === user.uid;
+                            // @ts-ignore
+                            const isApplicant = data.applicantIds?.includes(user.uid);
 
-                unsubGuest = onSnapshot(qGuest, async (snap) => {
-                    const list: MyGuestActivity[] = [];
-                    const promises = snap.docs.map(async (d) => {
-                        const data = d.data();
-                        const myApp = data.applicants?.find((a: any) => 
-                            typeof a === 'string' ? a === user.uid : a.uid === user.uid
-                        );
-                        const myStatus = typeof myApp === 'object' ? myApp.status : 'pending';
+                            if (isHost || isApplicant) {
+                                // 데이터 가공
+                                const myApp = data.applicants?.find((a: any) => 
+                                    typeof a === 'string' ? a === user.uid : a.uid === user.uid
+                                );
+                                const myStatus = isHost ? 'recruiting' : (typeof myApp === 'object' ? myApp.status : 'pending');
+
+                                list.push({
+                                    id: doc.id,
+                                    hostTeamName: data.hostTeamName || data.teamName || '팀명 미정',
+                                    matchDate: data.matchDate || data.time,
+                                    location: data.location || data.loc || '',
+                                    status: myStatus, // 호스트면 'recruiting' 등으로 표시 가능하나 타입 맞춤
+                                    fee: data.fee,
+                                    isMyPost: isHost,
+                                    // GuestCard에 전달할 원본 데이터들
+                                    ...data
+                                } as MyGuestActivity);
+                            }
+                        });
                         
-                        let hostContact = undefined;
-                        if (myStatus === 'accepted' && data.hostCaptainId) {
-                            try {
-                                const hostSnap = await getDoc(doc(db, "users", data.hostCaptainId));
-                                if (hostSnap.exists()) {
-                                    hostContact = hostSnap.data().phoneNumber;
-                                }
-                            } catch (e) { console.log('Contact fetch error', e); }
-                        }
-
-                        return {
-                            id: d.id,
-                            hostTeamName: data.hostTeamName || '팀명 미정',
-                            matchDate: data.matchDate || data.time, 
-                            location: data.loc || data.location,
-                            status: myStatus,
-                            fee: data.fee,
-                            hostContact
-                        } as MyGuestActivity;
+                        // 날짜순 정렬 (최신순)
+                        list.sort((a, b) => new Date(b.matchDate).getTime() - new Date(a.matchDate).getTime());
+                        setGuestActivities(list);
                     });
-                    const results = await Promise.all(promises);
-                    results.sort((a, b) => a.matchDate.localeCompare(b.matchDate));
-                    setGuestActivities(results);
-                });
+                };
+                fetchGuests();
 
               } catch (e) {
                   console.error(e);
@@ -320,6 +345,13 @@ export default function LockerScreen() {
   }, [upcomingMatch, myTeamId]);
 
   // --- [Handlers] ---
+  const onRefresh = () => {
+      setRefreshing(true);
+      // 데이터는 onSnapshot으로 자동 갱신되지만, 
+      // 강제 리로드 느낌을 주기 위해 잠시 대기
+      setTimeout(() => setRefreshing(false), 1000);
+  };
+
   const handleInvite = async () => {
       if (!teamData) return;
       await shareLink({
@@ -377,11 +409,10 @@ export default function LockerScreen() {
       }
   };
 
-  // ✅ [Fixed] 2단계: 결과 승인 (Approve & Apply Stats) - deleteField 사용
+  // 2단계: 결과 승인 (Approve & Apply Stats)
   const handleApproveResult = async (match: MatchData) => {
       if (!myTeamId || !match.pendingResult) return;
 
-      // 승리한 팀 이름 찾기
       const winningTeamId = match.pendingResult.winnerId;
       let winningTeamName = "알 수 없음";
       if (winningTeamId === match.teamId) winningTeamName = match.teamName || match.team;
@@ -393,7 +424,6 @@ export default function LockerScreen() {
           try {
               const matchRef = doc(db, "matches", match.id);
               const teamRef = doc(db, "teams", myTeamId);
-              // 상대팀 ID 찾기 (내가 Host면 Guest, 내가 Guest면 Host)
               const isHost = match.teamId === myTeamId; 
               const oppId = isHost ? match.guestId : match.teamId;
               
@@ -407,8 +437,6 @@ export default function LockerScreen() {
                   if (!mData.pendingResult) throw "입력된 결과가 없습니다.";
 
                   const winnerId = mData.pendingResult.winnerId;
-
-                  // 팀 스탯 가져오기
                   const homeDoc = await transaction.get(teamRef);
                   const oppDoc = await transaction.get(oppRef);
                   
@@ -417,7 +445,6 @@ export default function LockerScreen() {
                   const hStats = (homeDoc.data() as any)?.stats || { wins:0, losses:0, points:0, total:0 };
                   const oStats = (oppDoc.data() as any)?.stats || { wins:0, losses:0, points:0, total:0 };
 
-                  // 승점 계산
                   if (winnerId === myTeamId) {
                       hStats.wins++; hStats.points += 3;
                       oStats.losses++; oStats.points += 1;
@@ -427,12 +454,11 @@ export default function LockerScreen() {
                   }
                   hStats.total++; oStats.total++;
 
-                  // DB 업데이트 (deleteField 사용)
                   transaction.update(matchRef, { 
                       status: 'finished', 
                       winnerId: winnerId, 
                       endedAt: serverTimestamp(),
-                      pendingResult: deleteField() // ✅ arrayRemove -> deleteField 수정 완료
+                      pendingResult: deleteField() 
                   });
                   transaction.update(teamRef, { stats: hStats });
                   transaction.update(oppRef, { stats: oStats });
@@ -459,7 +485,6 @@ export default function LockerScreen() {
       }
   };
 
-
   if (status === 'loading') {
       return <View className="flex-1 justify-center items-center bg-white"><ActivityIndicator size="large" color={THEME.primary} /></View>;
   }
@@ -473,6 +498,7 @@ export default function LockerScreen() {
         stickyHeaderIndices={[1]} 
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 100 }}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       >
          {/* [Index 0] Header */}
          <View className="bg-white px-5 pt-3 pb-6">
@@ -745,7 +771,7 @@ export default function LockerScreen() {
                  )
              )}
              {viewMode === 'guest' && (
-                 // Guest Tab (기존 유지)
+                 // Guest Tab (Updated with GuestCard)
                  <View className="px-5">
                     {guestActivities.length === 0 ? (
                         <View className="items-center justify-center py-20">
@@ -755,20 +781,24 @@ export default function LockerScreen() {
                         </View>
                     ) : (
                         guestActivities.map((activity) => (
-                            <TouchableOpacity key={activity.id} onPress={() => router.push(`/guest/${activity.id}` as any)} className="bg-white p-5 rounded-2xl mb-3 border border-gray-100 shadow-sm">
-                                <View className="flex-row justify-between items-start mb-3">
-                                    <View><Text className="font-bold text-lg text-gray-900 mb-1">{activity.hostTeamName}</Text><Text className="text-gray-500 text-xs font-bold">{formatTime(activity.matchDate)}</Text></View>
-                                    <View className={`px-2.5 py-1.5 rounded-lg flex-row items-center ${activity.status === 'accepted' ? 'bg-blue-100' : 'bg-gray-100'}`}><Text className={`text-xs font-bold ${activity.status === 'accepted' ? 'text-blue-700' : 'text-gray-500'}`}>{activity.status === 'accepted' ? '참가 확정' : '승인 대기중'}</Text></View>
-                                </View>
-                                <View className="flex-row items-center mb-2"><FontAwesome5 name="map-marker-alt" size={12} color="#9CA3AF" style={{width:16}} /><Text className="text-gray-600 text-sm">{activity.location}</Text></View>
-                                <View className="flex-row items-center mb-4"><FontAwesome5 name="coins" size={12} color="#9CA3AF" style={{width:16}} /><Text className="text-gray-600 text-sm">참가비: {activity.fee || '무료'}</Text></View>
-                                {activity.status === 'accepted' && activity.hostContact && (
-                                    <TouchableOpacity onPress={() => sendSMS(activity.hostContact)} className="bg-indigo-50 p-3 rounded-xl flex-row items-center justify-between border border-indigo-100">
-                                        <View className="flex-row items-center"><View className="w-8 h-8 bg-indigo-100 rounded-full items-center justify-center mr-3"><FontAwesome5 name="sms" size={12} color="#4F46E5" /></View><View><Text className="text-indigo-900 font-bold text-xs">호스트 대표자에게</Text><Text className="text-indigo-600 font-bold text-sm">문자 보내기</Text></View></View>
-                                        <FontAwesome5 name="chevron-right" size={12} color="#818CF8" />
-                                    </TouchableOpacity>
+                            <View key={activity.id} className="mb-4">
+                                {/* 내가 쓴 글인지, 신청한 글인지 배지 표시 */}
+                                {activity.isMyPost ? (
+                                    <View className="self-start bg-indigo-100 px-2 py-0.5 rounded mb-1 ml-1">
+                                        <Text className="text-[10px] text-indigo-700 font-bold">내가 모집중</Text>
+                                    </View>
+                                ) : (
+                                    <View className="self-start bg-gray-100 px-2 py-0.5 rounded mb-1 ml-1">
+                                        <Text className="text-[10px] text-gray-500 font-bold">참여 신청함</Text>
+                                    </View>
                                 )}
-                            </TouchableOpacity>
+                                {/* GuestCard 재사용: 깔끔한 UI 제공 */}
+                                <GuestCard 
+                                    item={activity as any} 
+                                    onPress={() => router.push(`/guest/${activity.id}` as any)} 
+                                    variant="simple" 
+                                />
+                            </View>
                         ))
                     )}
                  </View>
@@ -788,7 +818,7 @@ export default function LockerScreen() {
         </SafeAreaView>
       </Modal>
 
-      {/* ✅ [Updated] Match Manage Modal (결과 승인/입력 UI 분기) */}
+      {/* Match Manage Modal */}
       <Modal visible={matchModalVisible} animationType="slide">
         <SafeAreaView className="flex-1 bg-white">
             <View className="px-5 py-4 border-b border-gray-100 flex-row justify-between items-center">
@@ -801,7 +831,6 @@ export default function LockerScreen() {
                         <Text className="font-bold text-red-500 mb-2">🚨 결과 처리가 필요합니다!</Text>
                         {pendingMatches.map(m => {
                             const isMySubmission = m.pendingResult?.submitterId === myTeamId;
-                            // 내가 호스트(모집자)인가?
                             const isHost = m.teamId === myTeamId;
                             
                             return (
@@ -826,7 +855,6 @@ export default function LockerScreen() {
                                             </View>
                                         )
                                     ) : (
-                                        // 호스트만 결과 입력 가능
                                         isHost ? (
                                             <TouchableOpacity onPress={() => { setTargetMatch(m); setResultModalVisible(true); }} className="bg-red-500 px-4 py-2 rounded-lg">
                                                 <Text className="text-white font-bold text-xs">결과 입력</Text>
@@ -865,7 +893,7 @@ export default function LockerScreen() {
         </SafeAreaView>
       </Modal>
 
-      {/* ✅ [Updated] Result Input Modal (단순 입력 -> 제안) */}
+      {/* Result Input Modal */}
       <Modal visible={resultModalVisible} transparent animationType="fade">
           <View className="flex-1 bg-black/60 justify-center items-center p-6">
               <View className="bg-white w-full rounded-2xl p-6">
