@@ -17,7 +17,7 @@ import { FontAwesome5 } from '@expo/vector-icons';
 import { collection, addDoc, serverTimestamp, doc, getDoc } from 'firebase/firestore';
 import DateTimePicker from '@react-native-community/datetimepicker'; 
 import { db } from '../../configs/firebaseConfig';
-import { useUser } from '../context/UserContext';
+import { useUser } from '../../context/UserContext';
 
 const POSITIONS = ['세터', '레프트', '라이트', '센터', '리베로', '올라운더'];
 

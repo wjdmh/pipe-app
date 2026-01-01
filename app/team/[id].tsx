@@ -20,7 +20,7 @@ import {
 } from 'firebase/firestore';
 // 👇 [Path Check] 경로가 맞는지 확인해주세요
 import { db, auth } from '../../configs/firebaseConfig';
-import { useUser } from '../context/UserContext';
+import { useUser } from '../../context/UserContext';
 // 👇 [New] 공유 유틸리티 불러오기
 import { shareLink } from '../../utils/share';
 

@@ -18,7 +18,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { useGuest, GuestPost } from '../../hooks/useGuest';
 import { auth } from '../../configs/firebaseConfig';
-import { useUser } from '../context/UserContext';
+import { useUser } from '../../context/UserContext';
 import GuestCard from '../../components/GuestCard'; 
 
 // ⚠️ VirtualizedLists 경고 무시
@@ -29,7 +29,7 @@ const POSITIONS = ['세터', '레프트', '라이트', '센터', '리베로', '�
 
 export default function GuestListScreen() {
   const router = useRouter();
-  const { user } = useUser();
+  const { user, requireAuth } = useUser();
   const { posts, loading, applyForGuest, cancelApplication } = useGuest();
   const [filterPos, setFilterPos] = useState<string>('all');
   const [refreshing, setRefreshing] = useState(false);
@@ -72,15 +72,12 @@ export default function GuestListScreen() {
 
   // 신청 버튼 클릭 시 모달 열기
   const openApplyModal = (post: GuestPost) => {
-    if (!auth.currentUser) {
-        Alert.alert("로그인 필요", "게스트 신청을 위해 로그인이 필요합니다.");
-        return router.push('/auth/login');
-    }
-    
-    setSelectedPost(post);
-    setApplyMessage('열심히 하겠습니다!'); 
-    setApplyContact(user?.phoneNumber || ''); 
-    setModalVisible(true);
+    requireAuth(() => {
+      setSelectedPost(post);
+      setApplyMessage('열심히 하겠습니다!'); 
+      setApplyContact(user?.phoneNumber || ''); 
+      setModalVisible(true);
+    });
   };
 
   // 모달 내 "확인" 버튼 클릭 시 실제 신청
@@ -176,7 +173,7 @@ export default function GuestListScreen() {
             <FontAwesome5 name="arrow-left" size={20} color="#191F28" />
         </TouchableOpacity>
         <Text className="text-lg font-bold text-gray-900">게스트 찾기</Text>
-        <TouchableOpacity onPress={() => router.push('/guest/write')} className="p-2 -mr-2">
+        <TouchableOpacity onPress={() => requireAuth(() => router.push('/guest/write'))} className="p-2 -mr-2">
             <FontAwesome5 name="plus" size={20} color="#4f46e5" />
         </TouchableOpacity>
       </View>

@@ -22,7 +22,7 @@ import {
     serverTimestamp 
 } from 'firebase/firestore';
 import { db } from '../../configs/firebaseConfig';
-import { useUser } from '../context/UserContext';
+import { useUser } from '../../context/UserContext';
 import { shareLink } from '../../utils/share';
 
 type MatchData = {
@@ -54,7 +54,7 @@ type MatchData = {
 export default function MatchDetailScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams();
-  const { user } = useUser();
+  const { user, requireAuth } = useUser();
   const matchId = Array.isArray(id) ? id[0] : id;
 
   const [match, setMatch] = useState<MatchData | null>(null);
@@ -420,7 +420,7 @@ export default function MatchDetailScreen() {
                     </View>
                 ) : (
                     <TouchableOpacity 
-                        onPress={applyMatch}
+                        onPress={() => requireAuth(applyMatch)}
                         disabled={applying}
                         className={`w-full py-4 rounded-xl items-center flex-row justify-center shadow-md shadow-indigo-200 ${applying ? 'bg-indigo-400' : 'bg-indigo-600'}`}
                     >

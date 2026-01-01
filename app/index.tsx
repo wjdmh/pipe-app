@@ -46,7 +46,7 @@ export default function Index() {
             <Text className="text-white text-center font-medium">⚡️팀 단위 매치부터 게스트 모집까지</Text>
         </View>
         <TouchableOpacity 
-          onPress={() => router.push('/auth/login')}
+          onPress={() => router.replace('/home')}
           className="w-full bg-white py-5 rounded-2xl items-center shadow-lg active:scale-95"
         >
           <Text className="text-indigo-600 font-bold text-lg">바로 시작하기</Text>

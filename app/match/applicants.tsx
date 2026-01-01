@@ -13,7 +13,7 @@ import { doc, getDoc, addDoc, collection, runTransaction, serverTimestamp } from
 import { db } from '../../configs/firebaseConfig';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { sendPushNotification } from '../../utils/notificationHelper';
-import { useUser } from '../context/UserContext'; 
+import { useUser } from '../../context/UserContext';
 
 type TeamInfo = {
   id: string;

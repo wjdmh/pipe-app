@@ -17,13 +17,13 @@ import { auth, db } from '../../configs/firebaseConfig';
 import { useRouter } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useUser } from '../context/UserContext';
+import { useUser } from '../../context/UserContext';
 
 const ADMIN_EMAIL = 'wjdangus6984@gmail.com';
 
 export default function MyPageScreen() {
   const router = useRouter();
-  const { user, refreshUser } = useUser();
+  const { user, refreshUser, showLoginModal } = useUser();
   
   const [isAdmin, setIsAdmin] = useState(false);
   const [myTeam, setMyTeam] = useState<any>(null);
@@ -51,6 +51,24 @@ export default function MyPageScreen() {
       if (user.teamId) fetchMyTeam(user.teamId);
     }
   }, [user]);
+
+  if (!user) {
+    return (
+      <View className="flex-1 bg-white justify-center items-center px-6">
+        <FontAwesome5 name="user-lock" size={48} color="#E5E7EB" style={{marginBottom: 20}} />
+        <Text className="text-xl font-bold text-gray-900 mb-2">로그인이 필요합니다</Text>
+        <Text className="text-gray-500 text-center mb-8">
+          마이페이지에서 내 정보와{'\n'}소속 팀을 관리해보세요.
+        </Text>
+        <TouchableOpacity 
+          onPress={showLoginModal} 
+          className="w-full bg-indigo-600 py-4 rounded-xl items-center"
+        >
+          <Text className="text-white font-bold text-lg">로그인 / 회원가입</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
   const fetchMyTeam = async (teamId: string) => {
     setLoadingTeam(true);

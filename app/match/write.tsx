@@ -18,7 +18,7 @@ import { FontAwesome5 } from '@expo/vector-icons';
 import { collection, addDoc, serverTimestamp, doc, getDoc } from 'firebase/firestore';
 import DateTimePicker from '@react-native-community/datetimepicker'; 
 import { db } from '../../configs/firebaseConfig';
-import { useUser } from '../context/UserContext';
+import { useUser } from '../../context/UserContext';
 
 export default function MatchWriteScreen() {
   const router = useRouter();

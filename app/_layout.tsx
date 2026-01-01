@@ -2,7 +2,8 @@ import "../global.css"; // ✅ [복구] 스타일 파일 (이게 없어서 UI가
 import "../shim";       // ✅ [복구] Firebase 호환 패치
 import { useEffect } from 'react';
 import { Stack, useRouter, useSegments } from 'expo-router';
-import { UserProvider, useUser } from './context/UserContext';
+import { UserProvider, useUser } from '../context/UserContext';
+import LoginBottomSheet from '../components/LoginBottomSheet';
 import * as SplashScreen from 'expo-splash-screen';
 import { useFonts } from 'expo-font';
 import { View, Platform, LogBox, ActivityIndicator } from 'react-native';
@@ -36,14 +37,15 @@ function InitialLayout() {
     const inAuthGroup = segments[0] === 'auth';
     const inHomeGroup = segments[0] === 'home';
     
-    // [시나리오 A] 비로그인 유저 -> 홈 접근 시 로그인으로
-    if (!user) {
-      if (inHomeGroup) {
-        router.replace('/auth/login');
-      }
-    } 
+    // [수정] 비로그인 유저도 홈 접근 허용 (가드 제거)
+    // if (!user) {
+    //   if (inHomeGroup) {
+    //     router.replace('/auth/login');
+    //   }
+    // } 
+
     // [시나리오 B] 로그인 유저 -> 로그인 페이지 접근 시 홈으로
-    else if (user) {
+    if (user) {
       if (inAuthGroup) {
         router.replace('/home');
       }
@@ -102,6 +104,9 @@ function InitialLayout() {
             <Stack.Screen name="guest/[id]" options={{ title: '게스트 상세', headerShown: true }} />
             <Stack.Screen name="admin/manager" options={{ title: '관리자 페이지', headerShown: true }} />
         </Stack>
+
+        {/* 전역 로그인 유도 모달 */}
+        <LoginBottomSheet />
       </View>
     </View>
   );

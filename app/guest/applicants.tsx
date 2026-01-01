@@ -15,7 +15,7 @@ import { doc, getDoc, runTransaction, addDoc, collection } from 'firebase/firest
 import { db, auth } from '../../configs/firebaseConfig';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { FontAwesome5 } from '@expo/vector-icons';
-import { useUser } from '../context/UserContext';
+import { useUser } from '../../context/UserContext';
 import { sendPushNotification } from '../../utils/notificationHelper';
 
 type Applicant = {

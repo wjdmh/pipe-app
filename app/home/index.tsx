@@ -13,6 +13,7 @@ import { collection, query, orderBy, where, limit, getDocs } from 'firebase/fire
 import { db } from '../../configs/firebaseConfig';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useUser } from '../../context/UserContext';
 
 // ✅ [New] 컴포넌트 임포트
 import GuestCard from '../../components/GuestCard';
@@ -24,6 +25,7 @@ const GUEST_COLOR = '#EA580C';
 
 export default function HomeScreen() {
   const router = useRouter();
+  const { requireAuth } = useUser();
   const [activeTab, setActiveTab] = useState<'match' | 'guest'>('match');
   const [items, setItems] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -184,7 +186,7 @@ export default function HomeScreen() {
       
       {/* Floating Action Button (FAB) */}
       <TouchableOpacity 
-        onPress={() => router.push(activeTab === 'match' ? '/match/write' : '/guest/write')}
+        onPress={() => requireAuth(() => router.push(activeTab === 'match' ? '/match/write' : '/guest/write'))}
         className="absolute bottom-6 right-5 w-14 h-14 bg-gray-900 rounded-full items-center justify-center shadow-lg shadow-gray-400/50"
         activeOpacity={0.8}
       >

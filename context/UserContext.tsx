@@ -1,7 +1,7 @@
 import React, { createContext, useState, useEffect, useContext } from 'react';
 import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
-import { auth, db } from '../../configs/firebaseConfig';
+import { auth, db } from '../configs/firebaseConfig';
 
 // ✅ [수정됨] User 데이터 타입 정의 (호환성 유지)
 type UserData = {
@@ -22,7 +22,11 @@ type UserContextType = {
   user: UserData | null;
   loading: boolean;        
   authInitialized: boolean; 
-  refreshUser: () => Promise<void>; 
+  refreshUser: () => Promise<void>;
+  isLoginModalVisible: boolean;
+  showLoginModal: () => void;
+  hideLoginModal: () => void;
+  requireAuth: (callback: () => void) => void;
 };
 
 const UserContext = createContext<UserContextType>({
@@ -30,12 +34,28 @@ const UserContext = createContext<UserContextType>({
   loading: true,
   authInitialized: false,
   refreshUser: async () => {},
+  isLoginModalVisible: false,
+  showLoginModal: () => {},
+  hideLoginModal: () => {},
+  requireAuth: () => {},
 });
 
 export const UserProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<UserData | null>(null);
   const [loading, setLoading] = useState(true);
   const [authInitialized, setAuthInitialized] = useState(false);
+  const [isLoginModalVisible, setLoginModalVisible] = useState(false);
+
+  const showLoginModal = () => setLoginModalVisible(true);
+  const hideLoginModal = () => setLoginModalVisible(false);
+
+  const requireAuth = (callback: () => void) => {
+    if (user) {
+      callback();
+    } else {
+      showLoginModal();
+    }
+  };
 
   // Firestore에서 추가 유저 정보 가져오기
   const fetchUserData = async (firebaseUser: FirebaseUser) => {
@@ -102,7 +122,16 @@ export const UserProvider = ({ children }: { children: React.ReactNode }) => {
   }, []);
 
   return (
-    <UserContext.Provider value={{ user, loading, authInitialized, refreshUser }}>
+    <UserContext.Provider value={{ 
+      user, 
+      loading, 
+      authInitialized, 
+      refreshUser,
+      isLoginModalVisible,
+      showLoginModal,
+      hideLoginModal,
+      requireAuth
+    }}>
       {children}
     </UserContext.Provider>
   );

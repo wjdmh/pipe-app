@@ -20,7 +20,7 @@ import { db, auth } from '../../configs/firebaseConfig';
 // 👇 [Path Check] app/team/register.tsx -> ../home/ranking (1단계 위 -> home)
 import { KUSF_TEAMS } from '../home/ranking';
 // 👇 [New] 상태 동기화를 위해 useUser 훅 가져오기
-import { useUser } from '../context/UserContext';
+import { useUser } from '../../context/UserContext';
 
 const REGIONS = ["서울", "경기", "인천", "강원", "충북", "충남", "대전", "세종", "전북", "전남", "광주", "경북", "경남", "대구", "울산", "부산", "제주"];
 
