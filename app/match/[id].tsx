@@ -8,7 +8,7 @@ import {
   Alert, 
   Modal,
   Platform,
-  Linking // 문자 보내기 기능을 위해 사용
+  Linking 
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -17,17 +17,25 @@ import {
     doc, 
     getDoc, 
     updateDoc, 
-    arrayUnion, 
-    runTransaction, 
-    serverTimestamp 
+    arrayUnion
 } from 'firebase/firestore';
 import { db } from '../../configs/firebaseConfig';
 import { useUser } from '../../context/UserContext';
 import { shareLink } from '../../utils/share';
+// ✅ [복구] 훅 불러오기
+import { useMatchResult } from '../../hooks/useMatchResult';
+
+type MatchResult = {
+    hostScore: number;
+    guestScore: number;
+    status: 'waiting' | 'verified' | 'dispute';
+    submitterId: string;
+    submittedAt: string;
+};
 
 type MatchData = {
   id: string;
-  teamId: string;
+  teamId: string; // 호스트 팀 ID
   teamName?: string;
   team?: string; 
   writerId: string;
@@ -48,7 +56,10 @@ type MatchData = {
   hostContact?: string;
   guestContact?: string;
 
-  winnerId?: string; 
+  winnerId?: string;
+  
+  // ✅ [추가] 결과 처리를 위한 필드
+  result?: MatchResult; 
 };
 
 export default function MatchDetailScreen() {
@@ -63,11 +74,13 @@ export default function MatchDetailScreen() {
   
   const [showResultModal, setShowResultModal] = useState(false);
   const [selectedWinner, setSelectedWinner] = useState<string | null>(null);
-  const [processing, setProcessing] = useState(false);
+  
+  // ✅ [연결] Hooks 사용 (submitResult, approveResult 등)
+  const { submitResult, approveResult, isProcessing } = useMatchResult();
 
   useEffect(() => {
     if (matchId) fetchMatchInfo();
-  }, [matchId]);
+  }, [matchId, isProcessing]); // 처리 상태가 바뀌면 데이터 갱신
 
   const fetchMatchInfo = async () => {
     try {
@@ -164,97 +177,59 @@ export default function MatchDetailScreen() {
     }
   };
 
-  const submitResult = async () => {
-    // 상대팀 ID 확인 (opponentId 혹은 guestId)
-    const opponentTeamId = match?.opponentId || match?.guestId;
-    
-    if (!selectedWinner || !match) return;
-    if (!opponentTeamId) {
-        Alert.alert("오류", "상대 팀 정보를 찾을 수 없습니다.");
+  // ✅ [수정] Hooks의 submitResult 사용 (호스트만 입력 가능)
+  const handleResultSubmit = async () => {
+    if (!selectedWinner || !match || !user?.teamId) return;
+
+    // 권한 체크: 호스트만 입력 가능
+    if (user.teamId !== match.teamId) {
+        Alert.alert("권한 없음", "경기 결과 입력은 호스트(홈팀)만 가능합니다.");
         return;
     }
+
+    // 승리 팀에 따라 가상의 점수 생성 (Hook이 점수를 요구하므로)
+    // 홈팀 승리 시: 나 3점 vs 상대 0점
+    // 상대팀 승리 시: 나 0점 vs 상대 3점
+    const isMyWin = selectedWinner === match.teamId;
+    const myScore = isMyWin ? 3 : 0;
+    const opScore = isMyWin ? 0 : 3;
+
+    // 🚨 중요: Hook은 'hostId'를 찾지만 현재 match 객체엔 'teamId'로 되어있음.
+    // 따라서 match 객체를 복사하여 hostId를 명시적으로 주입해줌.
+    const matchDataForHook = {
+        ...match,
+        hostId: match.teamId, // Hook 호환성 확보
+        guestId: match.opponentId || match.guestId
+    };
+
+    const success = await submitResult(match.id, myScore, opScore, user.teamId, matchDataForHook);
     
-    setProcessing(true);
-    try {
-        await runTransaction(db, async (transaction) => {
-            const matchRef = doc(db, "matches", match.id);
-            const matchDoc = await transaction.get(matchRef);
-            if (!matchDoc.exists()) throw "매치가 존재하지 않습니다.";
-            if (matchDoc.data().status === 'finished') throw "이미 종료된 경기입니다.";
-
-            const homeRef = doc(db, "teams", match.teamId);
-            const awayRef = doc(db, "teams", opponentTeamId);
-            
-            const homeDoc = await transaction.get(homeRef);
-            const awayDoc = await transaction.get(awayRef);
-
-            if (!homeDoc.exists() || !awayDoc.exists()) throw "팀 정보를 찾을 수 없습니다.";
-
-            // 기존 스탯 가져오기 (없으면 초기화)
-            const homeStats = homeDoc.data().stats || { wins: 0, losses: 0, points: 0, total: 0 };
-            const awayStats = awayDoc.data().stats || { wins: 0, losses: 0, points: 0, total: 0 };
-
-            // 승패에 따른 승점 계산 (승리: +3점, 패배: +1점)
-            if (selectedWinner === match.teamId) {
-                // 홈팀 승리
-                homeStats.wins = (homeStats.wins || 0) + 1;
-                homeStats.points = (homeStats.points || 0) + 3;
-                
-                // 어웨이팀 패배
-                awayStats.losses = (awayStats.losses || 0) + 1;
-                awayStats.points = (awayStats.points || 0) + 1;
-            } else {
-                // 어웨이팀 승리
-                awayStats.wins = (awayStats.wins || 0) + 1;
-                awayStats.points = (awayStats.points || 0) + 3;
-                
-                // 홈팀 패배
-                homeStats.losses = (homeStats.losses || 0) + 1;
-                homeStats.points = (homeStats.points || 0) + 1;
-            }
-            
-            // 경기 수 증가
-            homeStats.total = (homeStats.total || 0) + 1;
-            awayStats.total = (awayStats.total || 0) + 1;
-
-            // 트랜잭션 업데이트 실행
-            transaction.update(matchRef, {
-                status: 'finished',
-                winnerId: selectedWinner,
-                endedAt: serverTimestamp()
-            });
-            transaction.update(homeRef, { stats: homeStats });
-            transaction.update(awayRef, { stats: awayStats });
-        });
-
-        const successMsg = "경기 결과가 랭킹에 반영되었습니다.";
-        if (Platform.OS === 'web') {
-            window.alert(successMsg);
-            setShowResultModal(false);
-            fetchMatchInfo();
-        } else {
-            Alert.alert("처리 완료", successMsg, [
-                { text: "확인", onPress: () => {
-                    setShowResultModal(false);
-                    fetchMatchInfo();
-                }}
-            ]);
-        }
-
-    } catch (e) {
-        console.error("Result Transaction Error:", e);
-        Alert.alert("오류", typeof e === 'string' ? e : "결과 처리 중 문제가 발생했습니다.");
-    } finally {
-        setProcessing(false);
+    if (success) {
+        setShowResultModal(false);
+        fetchMatchInfo(); // 상태 업데이트
     }
+  };
+
+  // ✅ [추가] 결과 승인 핸들러
+  const handleApprove = async () => {
+      if (!match || !user?.teamId) return;
+      
+      // 승인 로직 호출
+      // 마찬가지로 hostId 매핑 필요
+      const matchDataForHook = {
+        ...match,
+        hostId: match.teamId,
+        guestId: match.opponentId || match.guestId
+      };
+
+      await approveResult(matchDataForHook, user.teamId);
+      fetchMatchInfo();
   };
 
   if (loading || !match) {
     return <View className="flex-1 bg-white justify-center items-center"><ActivityIndicator color="#4F46E5" /></View>;
   }
 
-  // 변수 및 권한 설정
-  // ✅ [수정] isWriter 정의 복구
   const isWriter = user?.uid === match.writerId;
   const isHost = user?.teamId === match.teamId;
   const confirmedOpponentId = match.guestId || match.opponentId;
@@ -264,6 +239,12 @@ export default function MatchDetailScreen() {
   const isMatched = match.status === 'scheduled' || match.status === 'matched';
   const iHaveApplied = user?.teamId ? match.applicants?.includes(user.teamId) : false;
 
+  // 결과 관련 상태
+  const hasResult = !!match.result;
+  const isWaitingApproval = match.result?.status === 'waiting';
+  // 내가 결과를 제출했는지 여부
+  const iAmSubmitter = match.result?.submitterId === user?.teamId;
+
   const statusBadge = {
       recruiting: { text: '모집중', color: 'text-blue-600', bg: 'bg-blue-50', icon: 'bullhorn' },
       matched: { text: '매칭 확정', color: 'text-indigo-600', bg: 'bg-indigo-50', icon: 'handshake' }, 
@@ -271,7 +252,6 @@ export default function MatchDetailScreen() {
       finished: { text: '종료됨', color: 'text-gray-500', bg: 'bg-gray-100', icon: 'flag-checkered' }
   }[match.status] || { text: '상태 미정', color: 'text-gray-500', bg: 'bg-gray-100', icon: 'question' };
 
-  // 상대방 연락처 정보 결정
   let targetTeamName = "";
   let targetContact = "";
   
@@ -335,7 +315,6 @@ export default function MatchDetailScreen() {
             </View>
         </View>
 
-        {/* 대표자 연락처 표시 (상대방 번호만 노출) */}
         {isMatched && (isHost || isGuest) && (
             <View className="px-6 py-4 bg-indigo-50 border-b border-indigo-100">
                 <Text className="text-indigo-900 font-bold text-sm mb-3 flex-row items-center">
@@ -346,7 +325,6 @@ export default function MatchDetailScreen() {
                         <Text className="text-gray-500 font-medium text-xs mb-1">상대팀 대표자 ({targetTeamName})</Text>
                         <Text className="text-gray-900 font-extrabold text-lg tracking-wide">{targetContact}</Text>
                     </View>
-                    {/* ✅ [수정] 문자 보내기 버튼 (sms:) */}
                     <TouchableOpacity 
                         onPress={() => Linking.openURL(`sms:${targetContact}`)}
                         className="bg-indigo-100 p-3 rounded-full"
@@ -376,11 +354,15 @@ export default function MatchDetailScreen() {
                     </View>
                 </View>
 
+                {/* ✅ [수정] 결과 표시 로직 강화 */}
                 {match.status === 'finished' && (
                     <View className="mt-4 flex-row items-center justify-center p-3 bg-gray-900 rounded-xl gap-2">
                         <FontAwesome5 name="trophy" size={14} color="#FBBF24" />
                         <Text className="text-white font-bold">
-                            승리: {match.winnerId === match.teamId ? getTeamName() : (match.opponentName || "상대팀")}
+                            {/* winnerId가 있으면 그것을, 없으면 점수 비교 */}
+                            승리: {match.winnerId === match.teamId ? getTeamName() : 
+                                  (match.winnerId === match.opponentId ? (match.opponentName || "상대팀") : 
+                                  (match.result?.hostScore && match.result.hostScore > match.result.guestScore ? getTeamName() : (match.opponentName || "상대팀")))}
                         </Text>
                     </View>
                 )}
@@ -398,6 +380,7 @@ export default function MatchDetailScreen() {
 
       </ScrollView>
 
+      {/* ✅ 하단 버튼 영역 로직 수정 */}
       <View className="absolute bottom-0 w-full bg-white border-t border-gray-100 p-5 pb-8 shadow-lg z-10">
         {canManage ? (
             <View className="gap-3">
@@ -413,13 +396,44 @@ export default function MatchDetailScreen() {
                     </TouchableOpacity>
                 )}
                 
+                {/* 매칭되었고 아직 종료되지 않았을 때 */}
                 {isMatched && match.status !== 'finished' && (
-                    <TouchableOpacity 
-                        onPress={() => setShowResultModal(true)}
-                        className="w-full bg-gray-900 py-4 rounded-xl items-center shadow-lg"
-                    >
-                        <Text className="text-white font-bold text-lg">경기 결과 입력</Text>
-                    </TouchableOpacity>
+                    <>
+                        {/* 1. 결과가 아직 없을 때 (호스트만 입력 가능) */}
+                        {!hasResult && isHost && (
+                            <TouchableOpacity 
+                                onPress={() => setShowResultModal(true)}
+                                className="w-full bg-gray-900 py-4 rounded-xl items-center shadow-lg"
+                            >
+                                <Text className="text-white font-bold text-lg">경기 결과 입력</Text>
+                            </TouchableOpacity>
+                        )}
+
+                        {/* 2. 결과가 아직 없는데 게스트인 경우 (대기 안내) */}
+                        {!hasResult && isGuest && (
+                             <View className="w-full bg-gray-200 py-4 rounded-xl items-center">
+                                <Text className="text-gray-500 font-bold text-lg">호스트의 결과 입력을 기다리는 중</Text>
+                            </View>
+                        )}
+
+                        {/* 3. 결과가 있고 승인 대기 중일 때 */}
+                        {hasResult && isWaitingApproval && (
+                            iAmSubmitter ? (
+                                <View className="w-full bg-indigo-100 py-4 rounded-xl items-center flex-row justify-center">
+                                    <ActivityIndicator size="small" color="#4F46E5" style={{marginRight: 8}}/>
+                                    <Text className="text-indigo-700 font-bold text-lg">상대 팀 승인 대기중</Text>
+                                </View>
+                            ) : (
+                                <TouchableOpacity 
+                                    onPress={handleApprove}
+                                    disabled={isProcessing}
+                                    className="w-full bg-indigo-600 py-4 rounded-xl items-center shadow-lg"
+                                >
+                                    {isProcessing ? <ActivityIndicator color="white"/> : <Text className="text-white font-bold text-lg">경기 결과 승인하기</Text>}
+                                </TouchableOpacity>
+                            )
+                        )}
+                    </>
                 )}
 
                 {match.status === 'finished' && (
@@ -459,15 +473,17 @@ export default function MatchDetailScreen() {
         )}
       </View>
 
+      {/* ✅ 결과 입력 모달 */}
       <Modal visible={showResultModal} transparent animationType="fade">
         <View className="flex-1 bg-black/60 justify-center items-center p-6">
             <View className="bg-white w-full max-w-sm rounded-3xl p-6 shadow-2xl">
                 <Text className="text-xl font-bold text-gray-900 mb-2 text-center">경기 결과 입력</Text>
                 <Text className="text-gray-500 mb-8 text-center text-sm leading-5">
-                    승리한 팀을 선택해주세요.{'\n'}결과는 즉시 랭킹에 반영되며 수정이 불가능합니다.
+                    승리한 팀을 선택해주세요.{'\n'}상대팀이 승인하면 전적에 반영됩니다.
                 </Text>
 
                 <View className="flex-row gap-3 mb-8">
+                    {/* HOME 버튼 */}
                     <TouchableOpacity 
                         onPress={() => setSelectedWinner(match.teamId)}
                         className={`flex-1 p-5 rounded-2xl border-2 items-center justify-center ${selectedWinner === match.teamId ? 'border-indigo-600 bg-indigo-50' : 'border-gray-100 bg-white'}`}
@@ -476,8 +492,10 @@ export default function MatchDetailScreen() {
                         <Text className="text-xs text-gray-400 mt-1 font-bold">HOME</Text>
                     </TouchableOpacity>
 
+                    {/* AWAY 버튼 (확정된 상대) */}
                     <TouchableOpacity 
                         onPress={() => setSelectedWinner(confirmedOpponentId!)}
+                        disabled={!confirmedOpponentId}
                         className={`flex-1 p-5 rounded-2xl border-2 items-center justify-center ${selectedWinner === confirmedOpponentId ? 'border-indigo-600 bg-indigo-50' : 'border-gray-100 bg-white'}`}
                     >
                         <Text className={`font-black text-lg ${selectedWinner === confirmedOpponentId ? 'text-indigo-600' : 'text-gray-400'}`} numberOfLines={1}>{match.opponentName || "상대팀"}</Text>
@@ -486,11 +504,11 @@ export default function MatchDetailScreen() {
                 </View>
 
                 <TouchableOpacity 
-                    onPress={submitResult}
-                    disabled={!selectedWinner || processing}
+                    onPress={handleResultSubmit}
+                    disabled={!selectedWinner || isProcessing}
                     className={`w-full py-4 rounded-xl items-center ${!selectedWinner ? 'bg-gray-200' : 'bg-indigo-600'}`}
                 >
-                    {processing ? <ActivityIndicator color="white" /> : <Text className={`font-bold text-lg ${!selectedWinner ? 'text-gray-400' : 'text-white'}`}>결과 확정하기</Text>}
+                    {isProcessing ? <ActivityIndicator color="white" /> : <Text className={`font-bold text-lg ${!selectedWinner ? 'text-gray-400' : 'text-white'}`}>승인 요청하기</Text>}
                 </TouchableOpacity>
                 
                 <TouchableOpacity 
