@@ -17,12 +17,16 @@ import {
     doc, 
     getDoc, 
     updateDoc, 
-    arrayUnion
+    deleteDoc,
+    arrayUnion,
+    addDoc,
+    collection
 } from 'firebase/firestore';
 import { db } from '../../configs/firebaseConfig';
 import { useUser } from '../../context/UserContext';
 import { shareLink } from '../../utils/share';
 import { useMatchResult } from '../../hooks/useMatchResult';
+import { sendPushNotification } from '../../utils/notificationHelper';
 
 // 타입 정의
 type MatchResult = {
@@ -46,7 +50,7 @@ type MatchData = {
   time: string;
   loc: string;
   description: string;
-  // [수정] waiting, waiting_verify 상태 추가 (Hooks 호환)
+  // waiting, waiting_verify 상태 추가
   status: 'recruiting' | 'scheduled' | 'finished' | 'matched' | 'waiting' | 'waiting_verify';
   
   applicants?: string[]; 
@@ -70,6 +74,7 @@ export default function MatchDetailScreen() {
   const [match, setMatch] = useState<MatchData | null>(null);
   const [loading, setLoading] = useState(true);
   const [applying, setApplying] = useState(false); 
+  const [deleting, setDeleting] = useState(false);
   
   const [showResultModal, setShowResultModal] = useState(false);
   const [selectedWinner, setSelectedWinner] = useState<string | null>(null);
@@ -79,7 +84,7 @@ export default function MatchDetailScreen() {
 
   useEffect(() => {
     if (matchId) fetchMatchInfo();
-  }, [matchId, isProcessing]); // isProcessing이 끝나면 데이터 갱신
+  }, [matchId, isProcessing]);
 
   const fetchMatchInfo = async () => {
     try {
@@ -126,6 +131,82 @@ export default function MatchDetailScreen() {
           message: shareMessage,
           url: shareUrl
       });
+  };
+
+  // ✅ [New] 매치 삭제 핸들러 (지원자 알림 포함)
+  const handleDeleteMatch = async () => {
+    if (!match || deleting) return;
+
+    // 1. 지원자 확인
+    const hasApplicants = match.applicants && match.applicants.length > 0;
+    
+    const executeDelete = async () => {
+        setDeleting(true);
+        try {
+            // 지원자가 있다면 알림 발송
+            if (hasApplicants) {
+                for (const applicantTeamId of match.applicants!) {
+                    // 팀장 정보 가져오기
+                    const teamSnap = await getDoc(doc(db, "teams", applicantTeamId));
+                    if (teamSnap.exists()) {
+                        const captainId = teamSnap.data().captainId;
+                        if (captainId) {
+                            // DB 알림
+                            await addDoc(collection(db, "notifications"), {
+                                userId: captainId,
+                                type: 'match_cancel',
+                                title: '매치 모집 취소 😥',
+                                message: `'${match.teamName}' 팀과의 매치 모집이 취소되었습니다.`,
+                                link: '/home/locker',
+                                createdAt: new Date().toISOString(),
+                                isRead: false
+                            });
+                            // 푸시 알림
+                            const userSnap = await getDoc(doc(db, "users", captainId));
+                            if (userSnap.exists() && userSnap.data().pushToken) {
+                                await sendPushNotification(
+                                    userSnap.data().pushToken,
+                                    '매치 모집 취소',
+                                    '신청하신 매치 모집이 취소되었습니다.',
+                                    { link: '/home/locker' }
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 매치 삭제
+            await deleteDoc(doc(db, "matches", match.id));
+            Alert.alert("삭제 완료", "매치 모집이 삭제되었습니다.");
+            router.replace('/home/locker');
+
+        } catch (e) {
+            console.error("Delete Error:", e);
+            Alert.alert("오류", "삭제 중 문제가 발생했습니다.");
+            setDeleting(false);
+        }
+    };
+
+    if (hasApplicants) {
+        Alert.alert(
+            "삭제 확인",
+            "현재 대기 중인 지원자가 있습니다.\n삭제 시 지원자들에게 취소 알림이 전송됩니다.\n정말 삭제하시겠습니까?",
+            [
+                { text: "취소", style: "cancel" },
+                { text: "삭제하기", style: "destructive", onPress: executeDelete }
+            ]
+        );
+    } else {
+        Alert.alert(
+            "삭제 확인",
+            "정말 이 매치 모집을 삭제하시겠습니까?",
+            [
+                { text: "취소", style: "cancel" },
+                { text: "삭제", style: "destructive", onPress: executeDelete }
+            ]
+        );
+    }
   };
 
   const applyMatch = async () => {
@@ -176,23 +257,20 @@ export default function MatchDetailScreen() {
     }
   };
 
-  // ✅ 결과 제출 핸들러 (보안 강화 + 자동 점수)
+  // 결과 제출 핸들러
   const handleResultSubmit = async () => {
     if (!selectedWinner || !match || !user?.teamId) return;
 
-    // 호스트 권한 2차 체크
     if (user.teamId !== match.teamId) {
         Alert.alert("권한 없음", "경기 결과 입력은 호스트(홈팀)만 가능합니다.");
         setShowResultModal(false); 
         return;
     }
 
-    // 승리 팀에 따른 자동 점수 계산 (3:0 / 0:3)
     const isMyWin = selectedWinner === match.teamId;
     const myScore = isMyWin ? 3 : 0;
     const opScore = isMyWin ? 0 : 3;
 
-    // Hooks 호환성을 위한 데이터 매핑
     const matchDataForHook = {
         ...match,
         hostId: match.teamId, 
@@ -203,7 +281,7 @@ export default function MatchDetailScreen() {
     
     if (success) {
         setShowResultModal(false);
-        fetchMatchInfo(); // 상태 업데이트 반영
+        fetchMatchInfo(); 
     }
   };
 
@@ -231,18 +309,15 @@ export default function MatchDetailScreen() {
   const confirmedOpponentId = match.guestId || match.opponentId;
   const isGuest = user?.teamId === confirmedOpponentId; 
   
-  const canManage = isWriter || user?.role === 'admin';
+  const canManage = isHost || isWriter || user?.role === 'admin';
   const isMatched = match.status === 'scheduled' || match.status === 'matched' || match.status === 'waiting' || match.status === 'waiting_verify';
   const iHaveApplied = user?.teamId ? match.applicants?.includes(user.teamId) : false;
 
   const hasResult = !!match.result || match.status === 'waiting' || match.status === 'waiting_verify';
   const isWaitingApproval = match.result?.status === 'waiting' || match.status === 'waiting' || match.status === 'waiting_verify';
-  
-  // 내가 제출했는지 여부 (내가 호스트라면, 내가 제출했을 확률이 높음)
   const resultSubmitterId = match.result?.submitterId;
   const iAmSubmitter = resultSubmitterId === user?.teamId;
 
-  // ✅ [수정] 상태 배지 매핑 (waiting 추가)
   const statusBadge = {
       recruiting: { text: '모집중', color: 'text-blue-600', bg: 'bg-blue-50', icon: 'bullhorn' },
       matched: { text: '매칭 확정', color: 'text-indigo-600', bg: 'bg-indigo-50', icon: 'handshake' }, 
@@ -382,21 +457,39 @@ export default function MatchDetailScreen() {
       <View className="absolute bottom-0 w-full bg-white border-t border-gray-100 p-5 pb-8 shadow-lg z-10">
         {canManage ? (
             <View className="gap-3">
+                {/* 1. 모집중 상태: 신청자 관리 / 수정 / 삭제 */}
                 {match.status === 'recruiting' && (
-                    <TouchableOpacity 
-                        onPress={() => router.push(`/match/applicants?id=${match.id}` as any)}
-                        className="w-full bg-indigo-600 py-4 rounded-xl items-center flex-row justify-center shadow-md shadow-indigo-200"
-                    >
-                        <FontAwesome5 name="users" size={16} color="white" style={{ marginRight: 8 }} />
-                        <Text className="text-white font-bold text-lg">
-                            신청자 관리 ({match.applicants?.length || 0})
-                        </Text>
-                    </TouchableOpacity>
+                    <>
+                        <TouchableOpacity 
+                            onPress={() => router.push(`/match/applicants?id=${match.id}` as any)}
+                            className="w-full bg-indigo-600 py-4 rounded-xl items-center flex-row justify-center shadow-md shadow-indigo-200"
+                        >
+                            <FontAwesome5 name="users" size={16} color="white" style={{ marginRight: 8 }} />
+                            <Text className="text-white font-bold text-lg">
+                                신청자 관리 ({match.applicants?.length || 0})
+                            </Text>
+                        </TouchableOpacity>
+                        
+                        <View className="flex-row gap-3">
+                            <TouchableOpacity 
+                                onPress={() => router.push(`/match/edit?id=${match.id}` as any)}
+                                className="flex-1 bg-gray-100 py-3 rounded-xl items-center"
+                            >
+                                <Text className="text-gray-600 font-bold">수정</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity 
+                                onPress={handleDeleteMatch}
+                                className="flex-1 bg-gray-100 py-3 rounded-xl items-center"
+                            >
+                                <Text className="text-red-500 font-bold">삭제</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </>
                 )}
                 
+                {/* 2. 매칭된 상태 (결과 처리) */}
                 {isMatched && match.status !== 'finished' && (
                     <>
-                        {/* 1. 결과 없음 & 호스트 -> 결과 입력 버튼 */}
                         {!hasResult && isHost && (
                             <TouchableOpacity 
                                 onPress={() => setShowResultModal(true)}
@@ -406,14 +499,12 @@ export default function MatchDetailScreen() {
                             </TouchableOpacity>
                         )}
 
-                        {/* 2. 결과 없음 & 게스트 -> 대기 안내 */}
                         {!hasResult && isGuest && (
                              <View className="w-full bg-gray-200 py-4 rounded-xl items-center">
                                 <Text className="text-gray-500 font-bold text-lg">호스트의 입력을 기다리는 중</Text>
                             </View>
                         )}
 
-                        {/* 3. 승인 대기 중 */}
                         {hasResult && isWaitingApproval && (
                             iAmSubmitter ? (
                                 <View className="w-full bg-indigo-100 py-4 rounded-xl items-center flex-row justify-center">
@@ -433,6 +524,7 @@ export default function MatchDetailScreen() {
                     </>
                 )}
 
+                {/* 3. 종료된 상태 */}
                 {match.status === 'finished' && (
                     <View className="w-full bg-gray-200 py-4 rounded-xl items-center">
                         <Text className="text-gray-500 font-bold text-lg">종료된 경기입니다</Text>
@@ -440,6 +532,7 @@ export default function MatchDetailScreen() {
                 )}
             </View>
         ) : (
+            // 게스트/일반 유저 뷰
             match.status === 'recruiting' ? (
                 iHaveApplied ? (
                     <View className="w-full bg-gray-300 py-4 rounded-xl items-center flex-row justify-center">
@@ -470,7 +563,7 @@ export default function MatchDetailScreen() {
         )}
       </View>
 
-      {/* ✅ 결과 입력 모달 - 호스트만 사용 */}
+      {/* 결과 입력 모달 */}
       {isHost && (
         <Modal visible={showResultModal} transparent animationType="fade">
             <View className="flex-1 bg-black/60 justify-center items-center p-6">

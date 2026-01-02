@@ -14,7 +14,7 @@ const toLocalISOString = (date: Date) => {
   return localISOTime;
 };
 
-// [Modified] 애니메이션 뷰: style과 className 분리 적용
+// [Modified] 애니메이션 뷰
 const FadeInView = ({ children, delay = 0 }: { children: React.ReactNode, delay?: number }) => {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const translateY = useRef(new Animated.Value(20)).current;
@@ -35,7 +35,7 @@ const FadeInView = ({ children, delay = 0 }: { children: React.ReactNode, delay?
   );
 };
 
-// [Modified] 선택 카드: className으로 조건부 스타일링 적용
+// [Modified] 선택 카드
 const SelectCard = ({ label, subLabel, icon, selected, onPress }: { label: string, subLabel?: string, icon: string, selected: boolean, onPress: () => void }) => (
   <TouchableOpacity 
     onPress={onPress} 
@@ -55,7 +55,6 @@ export default function EditMatchScreen() {
   const { id } = useLocalSearchParams();
   const scrollViewRef = useRef<ScrollView>(null);
   
-  const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
@@ -86,7 +85,6 @@ export default function EditMatchScreen() {
           if (dateStr) setDate(new Date(dateStr));
           else setDate(new Date());
           
-          setStep(5);
         } else {
           Alert.alert('오류', '존재하지 않는 게시물입니다.');
           router.back();
@@ -99,16 +97,24 @@ export default function EditMatchScreen() {
   const formatDateKr = (d: Date) => `${d.getMonth() + 1}월 ${d.getDate()}일`;
   const formatTimeKr = (d: Date) => `${d.getHours() >= 12 ? '오후' : '오전'} ${d.getHours() % 12 || 12}시 ${d.getMinutes() > 0 ? `${d.getMinutes()}분` : ''}`;
 
-  // [Mobile] 날짜 변경 핸들러
   const handleDateChange = (event: any, selectedDate?: Date) => {
     if (selectedDate) setTempDate(selectedDate);
   };
 
-  // [Web] 날짜 변경 핸들러
   const handleWebDateChange = (e: any) => {
       const val = e.target.value;
       if (val) setDate(new Date(val));
   };
+
+  // 잠금 알림 핸들러
+  const handleLockedPress = () => {
+      const msg = "지원자가 있어 시간과 장소는 수정할 수 없습니다.\n변경하려면 모집을 취소하고 다시 등록해주세요.";
+      if (Platform.OS === 'web') window.alert(msg);
+      else Alert.alert("수정 불가", msg);
+  };
+
+  // 지원자 유무 확인 (잠금 여부 결정)
+  const hasApplicants = existingApplicants.length > 0;
 
   const sendUpdateNotification = async (targetTeamIds: string[]) => {
       for (const teamId of targetTeamIds) {
@@ -119,7 +125,7 @@ export default function EditMatchScreen() {
                       userId: tSnap.data().captainId,
                       type: 'normal',
                       title: '경기 정보 변경',
-                      message: '신청하신 경기의 정보(시간/장소 등)가 변경되었습니다. 확인해주세요.',
+                      message: '신청하신 경기의 정보(내용 등)가 변경되었습니다. 확인해주세요.',
                       link: `/match/${id}`,
                       createdAt: new Date().toISOString(),
                       isRead: false
@@ -132,6 +138,7 @@ export default function EditMatchScreen() {
   const handleUpdate = async () => {
     if (!type || !gender || !place) return Alert.alert('알림', '필수 정보를 입력해주세요.');
     if (typeof id !== 'string') return;
+    
     setSubmitting(true);
     try {
       const dbTimeStr = date.toISOString();
@@ -164,6 +171,7 @@ export default function EditMatchScreen() {
 
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} className="flex-1">
         <ScrollView ref={scrollViewRef} contentContainerClassName="px-6 pt-2 pb-32" showsVerticalScrollIndicator={false}>
+          
           <FadeInView>
             <Text className="text-lg font-bold text-[#333D4B] mb-3">1. 경기 방식</Text>
             <View className="flex-row gap-3">
@@ -171,6 +179,7 @@ export default function EditMatchScreen() {
               <SelectCard label="9인제" subLabel="생활체육" icon="users" selected={type === '9man'} onPress={() => setType('9man')} />
             </View>
           </FadeInView>
+          
           <FadeInView delay={100}>
               <Text className="text-lg font-bold text-[#333D4B] mb-3">2. 참가 선수</Text>
               <View className="gap-3">
@@ -184,38 +193,64 @@ export default function EditMatchScreen() {
                 </View>
               </View>
           </FadeInView>
+          
+          {/* 3. 일시 (잠금 로직 적용) */}
           <FadeInView delay={100}>
-              <Text className="text-lg font-bold text-[#333D4B] mb-3">3. 일시</Text>
+              <View className="flex-row items-center mb-3">
+                  <Text className="text-lg font-bold text-[#333D4B]">3. 일시</Text>
+                  {hasApplicants && (
+                      <View className="flex-row items-center ml-2 bg-red-50 px-2 py-0.5 rounded">
+                          <FontAwesome5 name="lock" size={10} color="#EF4444" />
+                          <Text className="text-xs text-red-500 font-bold ml-1">수정 불가</Text>
+                      </View>
+                  )}
+              </View>
               
-              {/* [Web Fix] 날짜 선택 UI 분기 (input type="datetime-local" 사용) */}
-              {Platform.OS === 'web' ? (
-                   <View className="bg-white p-4 rounded-2xl border border-transparent shadow-sm">
-                       {React.createElement('input', {
-                           type: 'datetime-local',
-                           value: toLocalISOString(date),
-                           onChange: handleWebDateChange,
-                           style: {
-                               border: 'none',
-                               width: '100%',
-                               height: '40px',
-                               fontSize: '16px',
-                               color: '#191F28',
-                               backgroundColor: 'transparent',
-                               outline: 'none',
-                               cursor: 'pointer'
-                           }
-                       })}
-                   </View>
+              {hasApplicants ? (
+                   <TouchableOpacity onPress={handleLockedPress} activeOpacity={1} className="bg-gray-100 p-5 rounded-2xl border border-gray-200">
+                        <Text className="text-2xl font-bold text-gray-400">{formatDateKr(date)} {formatTimeKr(date)}</Text>
+                   </TouchableOpacity>
               ) : (
-                  <TouchableOpacity onPress={() => { setTempDate(date); setShowDateModal(true); }} className="bg-white p-5 rounded-2xl border border-transparent shadow-sm">
-                    <Text className="text-2xl font-bold text-[#3182F6]">{formatDateKr(date)} {formatTimeKr(date)}</Text>
-                  </TouchableOpacity>
+                  Platform.OS === 'web' ? (
+                       <View className="bg-white p-4 rounded-2xl border border-transparent shadow-sm">
+                           {React.createElement('input', {
+                               type: 'datetime-local',
+                               value: toLocalISOString(date),
+                               onChange: handleWebDateChange,
+                               style: { border: 'none', width: '100%', height: '40px', fontSize: '16px', color: '#191F28', backgroundColor: 'transparent', outline: 'none', cursor: 'pointer' }
+                           })}
+                       </View>
+                  ) : (
+                      <TouchableOpacity onPress={() => { setTempDate(date); setShowDateModal(true); }} className="bg-white p-5 rounded-2xl border border-transparent shadow-sm">
+                        <Text className="text-2xl font-bold text-[#3182F6]">{formatDateKr(date)} {formatTimeKr(date)}</Text>
+                      </TouchableOpacity>
+                  )
               )}
           </FadeInView>
+          
+          {/* 4. 장소 (잠금 로직 적용) */}
           <FadeInView delay={100}>
-              <Text className="text-lg font-bold text-[#333D4B] mb-3">4. 장소</Text>
-              <View className="bg-white rounded-2xl border border-transparent shadow-sm"><TextInput className="p-5 text-lg text-[#191F28]" value={place} onChangeText={setPlace} /></View>
+              <View className="flex-row items-center mb-3">
+                  <Text className="text-lg font-bold text-[#333D4B]">4. 장소</Text>
+                  {hasApplicants && (
+                      <View className="flex-row items-center ml-2 bg-red-50 px-2 py-0.5 rounded">
+                          <FontAwesome5 name="lock" size={10} color="#EF4444" />
+                          <Text className="text-xs text-red-500 font-bold ml-1">수정 불가</Text>
+                      </View>
+                  )}
+              </View>
+              
+              {hasApplicants ? (
+                  <TouchableOpacity onPress={handleLockedPress} activeOpacity={1} className="bg-gray-100 rounded-2xl border border-gray-200">
+                      <Text className="p-5 text-lg text-gray-400">{place}</Text>
+                  </TouchableOpacity>
+              ) : (
+                  <View className="bg-white rounded-2xl border border-transparent shadow-sm">
+                      <TextInput className="p-5 text-lg text-[#191F28]" value={place} onChangeText={setPlace} />
+                  </View>
+              )}
           </FadeInView>
+          
           <FadeInView delay={100}>
               <Text className="text-lg font-bold text-[#333D4B] mb-3">5. 추가 전달사항</Text>
               <View className="bg-white rounded-2xl border border-transparent shadow-sm mb-8"><TextInput className="p-5 text-lg text-[#191F28] min-h-[100px]" multiline textAlignVertical="top" value={note} onChangeText={setNote} /></View>

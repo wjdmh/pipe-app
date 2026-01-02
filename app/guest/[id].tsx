@@ -13,12 +13,13 @@ import {
   Linking
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, addDoc, collection } from 'firebase/firestore';
 import { auth, db } from '../../configs/firebaseConfig';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { shareLink } from '../../utils/share';
 import { useGuest } from '../../hooks/useGuest'; 
+import { sendPushNotification } from '../../utils/notificationHelper';
 
 const POSITIONS = ['세터', '레프트', '라이트', '센터', '리베로', '올라운더'];
 
@@ -48,6 +49,7 @@ type GuestPost = {
   recruitmentCount?: number;
   applicants: Applicant[] | string[]; // Object[] or String[]
   applicantIds?: string[];
+  fee?: string;
 };
 
 export default function GuestDetailScreen() {
@@ -68,6 +70,7 @@ export default function GuestDetailScreen() {
   const [message, setMessage] = useState('');
   const [myContact, setMyContact] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   // --- [Data Fetching] ---
   const fetchPost = async () => {
@@ -78,7 +81,6 @@ export default function GuestDetailScreen() {
         
         if (docSnap.exists()) {
           const rawData = docSnap.data();
-          // [Fix] Spread 순서 변경 및 타입 단언 위치 조정으로 중복 할당 오류 해결
           const postData = { ...rawData, id: docSnap.id } as GuestPost;
           setPost(postData);
           
@@ -90,7 +92,6 @@ export default function GuestDetailScreen() {
               ) as Applicant | undefined;
               
               if (myApp?.status === 'accepted') {
-                  // 호스트 정보 가져오기
                   const hostUserSnap = await getDoc(doc(db, "users", postData.hostCaptainId));
                   if (hostUserSnap.exists()) {
                       const hostData = hostUserSnap.data();
@@ -167,7 +168,7 @@ export default function GuestDetailScreen() {
         // @ts-ignore
         await applyForGuest(post, message, myContact);
         setShowApplyModal(false);
-        fetchPost(); // Refresh
+        fetchPost(); 
     } catch (e) {
         // useGuest handles alert
     } finally {
@@ -175,26 +176,73 @@ export default function GuestDetailScreen() {
     }
   };
 
+  // ✅ [New] 안전한 삭제 (지원자 알림 포함)
   const handleDelete = async () => {
-      // 1. 지원자 존재 여부 확인 (안전 장치)
-      if (post && post.applicants && post.applicants.length > 0) {
-          const msg = "이미 지원자가 있어 삭제할 수 없습니다.\n관리자에게 문의하거나, 지원자를 먼저 정리해주세요.";
-          return Platform.OS === 'web' ? window.alert(msg) : Alert.alert('삭제 불가', msg);
-      }
+      if (!post || deleting) return;
 
-      const confirmMsg = '정말 이 모집글을 삭제하시겠습니까?';
+      const hasApplicants = post.applicants && post.applicants.length > 0;
+
       const executeDelete = async () => {
-          await deletePost(id as string);
-          router.back();
+          setDeleting(true);
+          try {
+              // 1. 지원자들에게 알림 발송 (if any)
+              if (hasApplicants) {
+                  for (const applicant of post.applicants) {
+                      const uid = typeof applicant === 'string' ? applicant : applicant.uid;
+                      
+                      // DB 알림
+                      await addDoc(collection(db, "notifications"), {
+                          userId: uid,
+                          type: 'guest_cancel',
+                          title: '게스트 모집 취소 😥',
+                          message: `'${post.hostTeamName || post.teamName}' 팀의 모집이 취소되었습니다.`,
+                          link: '/home/locker',
+                          createdAt: new Date().toISOString(),
+                          isRead: false
+                      });
+
+                      // Push 알림
+                      const uSnap = await getDoc(doc(db, "users", uid));
+                      if (uSnap.exists() && uSnap.data().pushToken) {
+                          await sendPushNotification(
+                              uSnap.data().pushToken,
+                              '모집 취소 알림',
+                              '신청하신 게스트 모집이 취소되었습니다.',
+                              { link: '/home/locker' }
+                          );
+                      }
+                  }
+              }
+
+              // 2. 게시글 삭제
+              await deletePost(id as string);
+              router.replace('/home/locker?initialTab=guest');
+
+          } catch (e) {
+              console.error("Delete Error:", e);
+              Alert.alert('오류', '삭제 중 문제가 발생했습니다.');
+              setDeleting(false);
+          }
       };
 
-      if (Platform.OS === 'web') {
-          if (window.confirm(confirmMsg)) executeDelete();
+      if (hasApplicants) {
+          Alert.alert(
+              '삭제 확인',
+              '현재 대기 중인 지원자가 있습니다.\n삭제 시 지원자들에게 취소 알림이 전송됩니다.\n정말 삭제하시겠습니까?',
+              [
+                  { text: '취소', style: 'cancel' },
+                  { text: '삭제하기', style: 'destructive', onPress: executeDelete }
+              ]
+          );
       } else {
-          Alert.alert('삭제 확인', confirmMsg, [
-              { text: '취소', style: 'cancel' },
-              { text: '삭제', style: 'destructive', onPress: executeDelete }
-          ]);
+          Alert.alert(
+              '삭제 확인',
+              '정말 이 모집글을 삭제하시겠습니까?',
+              [
+                  { text: '취소', style: 'cancel' },
+                  { text: '삭제', style: 'destructive', onPress: executeDelete }
+              ]
+          );
       }
   };
 
@@ -205,7 +253,6 @@ export default function GuestDetailScreen() {
 
   const isHost = user?.uid === post.hostCaptainId;
   const safeApplicantIds = post.applicantIds || [];
-  // 내 신청 상태 확인
   const myApplication = (post.applicants || []).find((a: any) => 
       typeof a === 'object' ? a.uid === user?.uid : a === user?.uid
   ) as Applicant | undefined;
@@ -213,7 +260,6 @@ export default function GuestDetailScreen() {
   const isApplied = !!myApplication;
   const isAccepted = myApplication?.status === 'accepted';
 
-  // 확정된 인원 필터링 (호스트용)
   const acceptedApplicants = (post.applicants || []).filter((a: any) => 
       typeof a === 'object' && a.status === 'accepted'
   ) as Applicant[];
@@ -222,14 +268,12 @@ export default function GuestDetailScreen() {
   const displayLocation = post.location || post.loc || '';
   const teamNameDisplay = post.hostTeamName || post.teamName || '팀명 미정';
 
-  // 지난 경기 여부 (현재 시간과 비교)
   const matchTime = new Date(post.matchDate || post.time || '');
   const isPast = matchTime < new Date();
 
   return (
     <SafeAreaView className="flex-1 bg-white" edges={['bottom']}>
       <View className="flex-1">
-        {/* Header */}
         <View className="px-5 py-3 border-b border-gray-100 flex-row justify-between items-center bg-white">
             <TouchableOpacity onPress={() => router.back()} className="p-2 -ml-2">
                 <FontAwesome5 name="arrow-left" size={20} color="#111827" />
@@ -241,7 +285,6 @@ export default function GuestDetailScreen() {
         </View>
 
         <ScrollView contentContainerStyle={{ paddingBottom: 100 }}>
-            {/* Status Banner */}
             {isPast ? (
                 <View className="bg-gray-100 px-6 py-3 flex-row items-center">
                     <FontAwesome5 name="history" size={14} color="#6B7280" />
@@ -251,8 +294,6 @@ export default function GuestDetailScreen() {
                 <View className="bg-blue-50 px-6 py-4 border-b border-blue-100">
                     <Text className="text-blue-800 font-bold text-lg mb-1">🎉 참가가 확정되었습니다!</Text>
                     <Text className="text-blue-600 text-sm">경기 시간에 늦지 않게 도착해주세요.</Text>
-                    
-                    {/* 호스트 연락처 노출 (확정자 전용) */}
                     {hostContact && (
                         <TouchableOpacity 
                             onPress={() => handleCall(hostContact)}
@@ -265,7 +306,6 @@ export default function GuestDetailScreen() {
                 </View>
             ) : null}
 
-            {/* Main Info */}
             <View className="px-6 pt-8 pb-6 border-b border-gray-100">
                 <View className="flex-row items-center mb-3">
                     <View className="bg-orange-50 px-2.5 py-1 rounded-md mr-2">
@@ -276,7 +316,6 @@ export default function GuestDetailScreen() {
                 <Text className="text-[24px] font-extrabold text-gray-900 leading-tight mb-2">{teamNameDisplay}</Text>
                 <Text className="text-[15px] text-gray-600">{displayPositions} 포지션을 찾고 있어요.</Text>
                 
-                {/* 모집 현황 (호스트에게만 자세히 보임) */}
                 <View className="mt-4 flex-row items-center">
                     <View className="bg-gray-100 h-2 flex-1 rounded-full overflow-hidden">
                         <View 
@@ -290,7 +329,6 @@ export default function GuestDetailScreen() {
                 </View>
             </View>
 
-            {/* Time & Location */}
             <View className="px-6 py-6 border-b border-gray-100">
                 <View className="flex-row items-start mb-5">
                     <View className="w-6 mt-0.5"><FontAwesome5 name="clock" size={16} color="#9CA3AF" /></View>
@@ -306,16 +344,23 @@ export default function GuestDetailScreen() {
                         <Text className="text-gray-900 text-[16px] font-bold">{displayLocation}</Text>
                     </View>
                 </View>
+                {post.fee && (
+                    <View className="flex-row items-start mt-5">
+                        <View className="w-6 mt-0.5"><FontAwesome5 name="coins" size={16} color="#9CA3AF" /></View>
+                        <View className="flex-1">
+                            <Text className="text-gray-400 text-[12px] font-bold mb-0.5">참가비</Text>
+                            <Text className="text-gray-900 text-[16px] font-bold">{post.fee}</Text>
+                        </View>
+                    </View>
+                )}
             </View>
 
-            {/* Description */}
             <View className="px-6 py-6 border-b border-gray-100">
                 <Text className="text-gray-900 text-[16px] leading-relaxed">
                     {post.note || "상세 내용이 없습니다."}
                 </Text>
             </View>
 
-            {/* [Host Only] Confirmed Guest List */}
             {isHost && (
                 <View className="px-6 py-6 bg-gray-50">
                     <Text className="text-gray-900 font-bold text-lg mb-4">확정된 게스트 ({acceptedApplicants.length}명)</Text>
@@ -339,35 +384,38 @@ export default function GuestDetailScreen() {
                     ) : (
                         <Text className="text-gray-400 text-sm">아직 확정된 인원이 없습니다.</Text>
                     )}
-                    
-                    <TouchableOpacity 
-                        onPress={() => router.push(`/guest/applicants?id=${post.id}` as any)}
-                        className="mt-4 bg-white border border-gray-300 py-3 rounded-xl items-center"
-                    >
-                        <Text className="text-gray-700 font-bold">전체 신청자 관리하기</Text>
-                    </TouchableOpacity>
                 </View>
             )}
         </ScrollView>
       </View>
 
-      {/* Bottom Action Bar */}
+      {/* ✅ [Updated] Bottom Action Bar */}
       {!isPast && (
           <View className="px-5 py-5 border-t border-gray-100 bg-white">
               {isHost ? (
-                  <View className="flex-row gap-3">
+                  <View className="gap-3">
                       <TouchableOpacity 
-                        onPress={handleDelete}
-                        className="flex-1 bg-gray-100 h-[52px] rounded-xl items-center justify-center"
-                      >
-                          <Text className="text-gray-600 font-bold text-[16px]">삭제</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity 
-                        className="flex-1 bg-gray-900 h-[52px] rounded-xl items-center justify-center"
+                        className="w-full bg-indigo-600 h-[52px] rounded-xl items-center justify-center shadow-md shadow-indigo-200 flex-row"
                         onPress={() => router.push(`/guest/applicants?id=${post.id}` as any)}
                       >
+                          <FontAwesome5 name="users" size={16} color="white" style={{marginRight: 8}} />
                           <Text className="text-white font-bold text-[16px]">신청자 확인 ({post.applicants?.length || 0})</Text>
                       </TouchableOpacity>
+
+                      <View className="flex-row gap-3">
+                          <TouchableOpacity 
+                            onPress={() => router.push(`/guest/edit?id=${post.id}` as any)}
+                            className="flex-1 bg-gray-100 h-[48px] rounded-xl items-center justify-center"
+                          >
+                              <Text className="text-gray-600 font-bold text-[15px]">수정</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity 
+                            onPress={handleDelete}
+                            className="flex-1 bg-gray-100 h-[48px] rounded-xl items-center justify-center"
+                          >
+                              <Text className="text-red-500 font-bold text-[15px]">삭제</Text>
+                          </TouchableOpacity>
+                      </View>
                   </View>
               ) : (
                   <TouchableOpacity 

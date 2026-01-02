@@ -8,7 +8,7 @@ import { db, auth } from '../configs/firebaseConfig';
 import { Alert, Platform } from 'react-native';
 import { sendPushNotification } from '../utils/notificationHelper';
 
-// ✅ [Type Definition] 모든 케이스를 커버하는 타입 정의
+// ✅ [Type Definition]
 export type GuestPost = {
   id: string;
   hostTeamId: string;
@@ -51,9 +51,9 @@ export const useGuest = () => {
   const [posts, setPosts] = useState<GuestPost[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // 1. 모집글 목록 조회
+  // 1. 모집글 목록 조회 (24시간 지난 글 자동 숨김 적용)
   useEffect(() => {
-    // [Fix] 정렬 기준을 'matchDate'로 통일
+    // DB에서는 '모집중'인 글을 가져옴
     const q = query(
       collection(db, "guest_posts"),
       where("status", "==", "recruiting"),
@@ -62,16 +62,25 @@ export const useGuest = () => {
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const list: GuestPost[] = [];
+      const now = new Date();
+      // '현재 시간 - 24시간' 계산 (이 시간보다 경기 시간이 더 과거면 숨김)
+      const cutoffTime = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+
       snapshot.forEach((doc) => {
         const data = doc.data();
         
-        // [Fix] 데이터 표준화 (Legacy -> Standard)
-        // matchDate가 없으면 time을 사용하고, 그것도 없으면 현재 시간
+        // 데이터 표준화
         const standardizedTime = data.matchDate || data.time || new Date().toISOString();
         const standardizedLoc = data.location || data.loc || '';
         const standardizedTeamName = data.hostTeamName || data.teamName || '팀명 미정';
 
-        // [Fix] 포지션 데이터 타입 안전 변환 (String -> Array)
+        // ✅ [Logic] 24시간 경과 체크
+        const matchTime = new Date(standardizedTime);
+        if (matchTime < cutoffTime) {
+            return; // 경기 후 24시간이 지났으므로 리스트에 담지 않음 (숨김 처리)
+        }
+
+        // 포지션 데이터 타입 안전 변환
         let safePositions: string[] = [];
         if (Array.isArray(data.positions)) {
             safePositions = data.positions;
@@ -95,8 +104,6 @@ export const useGuest = () => {
       setLoading(false);
     }, (error) => {
       console.error("Guest Fetch Error:", error);
-      // 만약 matchDate 인덱스가 없어서 에러가 난다면, 일단 time으로 시도해볼 수도 있겠지만
-      // 원칙적으로 인덱스를 생성해야 함. (개발자 콘솔 링크 타고 가서 생성 필요)
       setLoading(false);
     });
 
@@ -142,11 +149,10 @@ export const useGuest = () => {
         const data = postDoc.data();
         if (data.status !== 'recruiting') throw "이미 마감된 모집입니다.";
 
-        // 신청자 목록 마이그레이션 (String[] -> Object[])
         let currentApplicants = data.applicants || [];
         let currentIds = data.applicantIds || [];
 
-        // Legacy 데이터(문자열 UID만 있는 경우) 처리
+        // Legacy 데이터 마이그레이션
         if (currentApplicants.length > 0 && typeof currentApplicants[0] === 'string') {
             currentIds = [...currentApplicants];
             currentApplicants = currentApplicants.map((uid: string) => ({

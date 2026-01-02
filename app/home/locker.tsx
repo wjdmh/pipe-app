@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { 
   View, Text, TouchableOpacity, ScrollView, Alert, ActivityIndicator, 
-  Modal, FlatList, Linking, TextInput, Platform, RefreshControl, Image
+  Modal, FlatList, Linking, TextInput, Platform, RefreshControl, Image, LayoutAnimation, UIManager
 } from 'react-native';
 import { 
   doc, updateDoc, arrayRemove, arrayUnion, runTransaction, 
@@ -16,6 +16,14 @@ import { shareLink } from '../../utils/share';
 import GuestCard from '../../components/GuestCard';
 import { useUser } from '../../context/UserContext';
 import { useMatchResult } from '../../hooks/useMatchResult';
+
+// 안드로이드에서 LayoutAnimation 활성화
+if (
+  Platform.OS === 'android' &&
+  UIManager.setLayoutAnimationEnabledExperimental
+) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 
 // --- [디자인 테마 상수] ---
 const THEME = {
@@ -149,6 +157,9 @@ export default function LockerScreen() {
   const [targetMatch, setTargetMatch] = useState<MatchData | null>(null);
   const [selectedWinner, setSelectedWinner] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+
+  // ✅ [New] 지난 경기 접기/펼치기 상태
+  const [isHistoryExpanded, setIsHistoryExpanded] = useState(false);
 
   // Hooks 연결: 비즈니스 로직 가져오기
   const { submitResult, approveResult: hookApproveResult, isProcessing } = useMatchResult();
@@ -305,6 +316,12 @@ export default function LockerScreen() {
   const onRefresh = () => {
       setRefreshing(true);
       setTimeout(() => setRefreshing(false), 1000);
+  };
+
+  // 지난 경기 더 보기 핸들러 (애니메이션 적용)
+  const toggleHistory = () => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setIsHistoryExpanded(!isHistoryExpanded);
   };
 
   const handleInvite = async () => {
@@ -661,6 +678,7 @@ export default function LockerScreen() {
                         <View className="pl-2">
                             <View className="absolute top-2 left-[19px] bottom-0 w-[2px] bg-gray-200" />
                             
+                            {/* 모집중 / 예정된 경기 (항상 보임) */}
                             {[...recruitingMatches, ...futureMatches].map((m, i) => (
                                 <View key={m.id} className="flex-row mb-6 relative">
                                     <View className="z-10 bg-indigo-100 w-3 h-3 rounded-full mt-1.5 ml-[14px] border-2 border-white mr-4" />
@@ -682,7 +700,8 @@ export default function LockerScreen() {
                                 </View>
                             ))}
                             
-                            {pastMatches.map((m, i) => (
+                            {/* ✅ [수정] 지난 경기: 3개만 보여주고 나머지는 '더 보기'로 처리 */}
+                            {(isHistoryExpanded ? pastMatches : pastMatches.slice(0, 3)).map((m, i) => (
                                 <View key={m.id} className="flex-row mb-6 relative opacity-60">
                                     <View className="z-10 bg-gray-300 w-3 h-3 rounded-full mt-1.5 ml-[14px] border-2 border-white mr-4" />
                                     <View className="flex-1 bg-white p-4 rounded-xl border border-gray-100">
@@ -701,6 +720,26 @@ export default function LockerScreen() {
                                     </View>
                                 </View>
                             ))}
+
+                            {/* ✅ [New] 더 보기 버튼 (3개 초과일 때만 노출) */}
+                            {pastMatches.length > 3 && (
+                                <View className="flex-row relative mb-6">
+                                     <View className="z-10 bg-gray-200 w-2 h-2 rounded-full mt-2 ml-[16px] border border-white mr-5" />
+                                     <TouchableOpacity 
+                                        onPress={toggleHistory}
+                                        className="flex-1 bg-gray-100 py-3 rounded-xl flex-row items-center justify-center active:bg-gray-200"
+                                     >
+                                         <Text className="text-gray-500 font-bold text-xs mr-2">
+                                             {isHistoryExpanded ? '접기' : `지난 경기 더 보기 (+${pastMatches.length - 3})`}
+                                         </Text>
+                                         <FontAwesome5 
+                                            name={isHistoryExpanded ? "chevron-up" : "chevron-down"} 
+                                            size={10} 
+                                            color="#6B7280" 
+                                         />
+                                     </TouchableOpacity>
+                                </View>
+                            )}
                         </View>
                      </View>
                  )
