@@ -10,7 +10,6 @@ import {
   Alert
 } from 'react-native';
 import { collection, query, orderBy, onSnapshot, limit } from 'firebase/firestore';
-// 👇 [Fix] 경로 재확인 (home 폴더 기준 2단계 상위)
 import { db } from '../../configs/firebaseConfig';
 import { useRouter } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
@@ -28,7 +27,6 @@ interface TeamRankInfo {
 }
 
 // --- [Data] KUSF 전체 데이터 ---
-// 다른 파일(register.tsx)에서 import해서 쓰므로 export 유지
 export const KUSF_TEAMS: TeamRankInfo[] = [
   // [남자부]
   { id: 'm1', name: '서울대학교 배구부', affiliation: '서울대학교', gender: 'male', stats: { wins: 8, losses: 1, points: 25, total: 9 } },
@@ -250,15 +248,22 @@ export default function RankingScreen() {
     });
 
     baseList.sort((a, b) => {
-        if (b.stats.points !== a.stats.points) return b.stats.points - a.stats.points;
-        if (b.stats.wins !== a.stats.wins) return b.stats.wins - a.stats.wins;
-        return b.stats.total - a.stats.total;
+        // 안전한 정렬을 위해 stats가 없을 경우 0으로 처리
+        const pointsA = a.stats?.points ?? 0;
+        const pointsB = b.stats?.points ?? 0;
+        const winsA = a.stats?.wins ?? 0;
+        const winsB = b.stats?.wins ?? 0;
+        const totalA = a.stats?.total ?? 0;
+        const totalB = b.stats?.total ?? 0;
+
+        if (pointsB !== pointsA) return pointsB - pointsA;
+        if (winsB !== winsA) return winsB - winsA;
+        return totalB - totalA;
     });
 
     setRankingList(baseList);
   };
 
-  // 상세 페이지 이동 핸들러 (안전장치 추가)
   const handleTeamPress = (teamId: string) => {
       // 1. ID 길이가 짧으면(예: 'm1', 'f1') 아직 앱에 등록되지 않은 KUSF 정적 데이터임
       // 2. Firestore ID는 보통 20자 이상의 난수 문자열임
@@ -286,6 +291,7 @@ export default function RankingScreen() {
     const style = rankColors[place];
     const height = place === 1 ? 160 : 130;
     const translateY = place === 1 ? 0 : 15; 
+    const pts = item.stats?.points ?? 0;
 
     return (
       <TouchableOpacity 
@@ -327,7 +333,7 @@ export default function RankingScreen() {
 
             <View className="mt-auto mb-3 bg-gray-50 px-2 py-0.5 rounded-md">
                 <Text className="text-gray-900 text-[12px] font-extrabold">
-                    {item.stats.points} <Text className="text-[10px] font-normal text-gray-500">pts</Text>
+                    {pts} <Text className="text-[10px] font-normal text-gray-500">pts</Text>
                 </Text>
             </View>
         </View>
@@ -338,8 +344,13 @@ export default function RankingScreen() {
   // [UI] 리스트 아이템
   const renderListItem = ({ item, index }: { item: TeamRankInfo, index: number }) => {
     const realRank = index + 4;
-    const winRate = item.stats.total > 0 
-        ? Math.round((item.stats.wins / item.stats.total) * 100) 
+    const wins = item.stats?.wins ?? 0;
+    const losses = item.stats?.losses ?? 0;
+    const points = item.stats?.points ?? 0;
+    const total = item.stats?.total ?? 0;
+    
+    const winRate = total > 0 
+        ? Math.round((wins / total) * 100) 
         : 0;
 
     return (
@@ -359,7 +370,7 @@ export default function RankingScreen() {
                 </Text>
             </View>
             <Text className="text-[12px] font-medium text-gray-500" numberOfLines={1}>
-                {item.affiliation} · <Text className="text-gray-700 font-bold">{item.stats.points}점</Text> ({item.stats.wins}승 {item.stats.losses}패)
+                {item.affiliation} · <Text className="text-gray-700 font-bold">{points}점</Text> ({wins}승 {losses}패)
             </Text>
         </View>
 
@@ -375,7 +386,6 @@ export default function RankingScreen() {
   };
 
   return (
-    // 👇 [Fix] Web 상단 패딩 추가
     <SafeAreaView 
         className="flex-1 bg-white" 
         edges={['top']}

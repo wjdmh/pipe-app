@@ -7,7 +7,7 @@ import { sendPushNotification } from '../utils/notificationHelper';
 export const useMatchResult = () => {
   const [isProcessing, setIsProcessing] = useState(false);
 
-  // [Web Fix] 웹 환경 호환성을 위한 Alert 래퍼
+  // Web compatibility wrapper
   const safeAlert = (title: string, msg: string) => {
     if (Platform.OS === 'web') {
         window.alert(`${title}\n${msg}`);
@@ -16,11 +16,14 @@ export const useMatchResult = () => {
     }
   };
 
-  // 1. 결과 제출 (Submit) - 호스트가 점수(또는 승패)를 입력하여 제출
+  /**
+   * 1. 결과 제출 (Submit)
+   * - 호스트가 점수(또는 승패)를 입력하여 제출합니다.
+   * - 매치 상태를 'waiting'으로 변경하여 승인 대기 목록에 노출되게 합니다.
+   */
   const submitResult = async (matchId: string, myScore: number, opScore: number, myTeamId: string, matchData: any) => {
     if (isProcessing) return false;
     
-    // 유효성 검사
     if (isNaN(myScore) || isNaN(opScore)) {
       safeAlert('점수 입력', '숫자만 입력할 수 있어요.');
       return false;
@@ -29,6 +32,7 @@ export const useMatchResult = () => {
       safeAlert('점수 입력', '0점 이상으로 입력해주세요.');
       return false;
     }
+    // Note: Locker ensures 3:0 or 0:3, so ties are handled there, but keep check for safety
     if (myScore === opScore) {
         safeAlert('점수 확인', '점수가 동점이에요. 승패를 가려주세요.');
         return false;
@@ -36,20 +40,20 @@ export const useMatchResult = () => {
 
     setIsProcessing(true);
     try {
-      // matchData는 UI에서 가공해서 넘겨준 데이터 (hostId가 보장됨)
+      // Determine Host/Guest scores based on submitter
+      // Locker ensures submitter is Host, but logic handles both just in case
       const amIHost = matchData.hostId === myTeamId;
       
-      // DB에 저장될 점수 (항상 호스트 점수 vs 게스트 점수 기준)
       const finalHostScore = amIHost ? myScore : opScore;
       const finalGuestScore = amIHost ? opScore : myScore;
       
-      // 알림 보낼 상대 팀 ID 찾기
       const targetTeamId = amIHost ? matchData.guestId : matchData.hostId;
 
       if (!targetTeamId) throw new Error("상대 팀 정보를 찾을 수 없습니다.");
 
-      // 결과 상태 'waiting'으로 업데이트
+      // ✅ [Fix] Update root 'status' to 'waiting' for easier filtering
       await updateDoc(doc(db, "matches", matchId), {
+        status: 'waiting', 
         result: {
           hostScore: finalHostScore,
           guestScore: finalGuestScore,
@@ -59,12 +63,11 @@ export const useMatchResult = () => {
         }
       });
 
-      // 상대 팀에게 알림 전송
+      // Send Notification
       const tSnap = await getDoc(doc(db, "teams", targetTeamId));
       if (tSnap.exists()) {
         const captainId = tSnap.data().captainId;
         if (captainId) {
-          // DB 알림
           await addDoc(collection(db, "notifications"), {
             userId: captainId,
             type: 'result_req',
@@ -75,7 +78,6 @@ export const useMatchResult = () => {
             isRead: false
           });
 
-          // 푸시 알림
           const capSnap = await getDoc(doc(db, "users", captainId));
           if (capSnap.exists() && capSnap.data().pushToken) {
              await sendPushNotification(
@@ -99,11 +101,14 @@ export const useMatchResult = () => {
     }
   };
 
-  // 2. 결과 승인 (Approve) - 상대방이 결과를 확인하고 승인
+  /**
+   * 2. 결과 승인 (Approve)
+   * - 상대방(게스트)이 결과를 승인하면 점수와 승패를 확정합니다.
+   * - Transaction을 사용하여 승점, 전적, 매치 상태를 동시에 업데이트합니다.
+   */
   const approveResult = async (matchData: any, myTeamId: string) => {
     if (isProcessing) return;
     
-    // 내가 제출한 건 내가 승인할 수 없음
     if (matchData.result.submitterId === myTeamId) {
       safeAlert('승인 대기', '상대 팀의 확인을 기다리고 있어요.');
       return;
@@ -120,7 +125,7 @@ export const useMatchResult = () => {
 
         if (currentMatch.status === 'finished') throw "이미 종료된 경기예요.";
         
-        // [중요] DB 스키마 호환성 처리: hostId가 없으면 teamId를 호스트로 간주
+        // Host/Guest ID resolution (Backward compatibility)
         const hostId = currentMatch.hostId || currentMatch.teamId;
         const guestId = currentMatch.guestId || currentMatch.opponentId;
 
@@ -136,14 +141,13 @@ export const useMatchResult = () => {
         const gScore = currentMatch.result.guestScore;
         
         const isHostWin = hScore > gScore;
-        // 승리한 팀의 ID 결정
         const finalWinnerId = isHostWin ? hostId : guestId;
         
-        // 승점 규칙: 승리 3점, 패배 1점
+        // Point calculation (Win: 3, Loss: 1)
         const hostPointsToAdd = isHostWin ? 3 : 1;
         const guestPointsToAdd = !isHostWin ? 3 : 1;
 
-        // 호스트 팀 업데이트 (존재 시)
+        // Update Host Stats
         if (hostDoc.exists()) {
             const hStats = hostDoc.data().stats || { wins: 0, losses: 0, points: 0, total: 0 };
             transaction.update(hostRef, {
@@ -154,7 +158,7 @@ export const useMatchResult = () => {
             });
         }
 
-        // 게스트 팀 업데이트 (존재 시)
+        // Update Guest Stats
         if (guestDoc.exists()) {
             const gStats = guestDoc.data().stats || { wins: 0, losses: 0, points: 0, total: 0 };
             transaction.update(guestRef, {
@@ -165,16 +169,16 @@ export const useMatchResult = () => {
             });
         }
 
-        // 매치 상태 최종 완료 처리 (winnerId 추가)
+        // Finalize Match Status
         transaction.update(matchRef, {
           status: 'finished',
-          winnerId: finalWinnerId, // 승리팀 ID 저장
+          winnerId: finalWinnerId,
           "result.status": 'verified',
           finishedAt: new Date().toISOString()
         });
       });
 
-      // 결과 제출자(요청자)에게 승인 알림 발송
+      // Notification to submitter
       try {
         const targetTeamId = matchData.result.submitterId;
         const targetTeamDoc = await getDoc(doc(db, "teams", targetTeamId));
@@ -211,13 +215,15 @@ export const useMatchResult = () => {
     }
   };
 
-  // 3. 이의 제기 (Dispute) - 점수가 이상하면 신고
+  /**
+   * 3. 이의 제기 (Dispute)
+   */
   const disputeResult = async (matchId: string) => {
     if (isProcessing) return;
     setIsProcessing(true);
     try {
       await updateDoc(doc(db, "matches", matchId), {
-        status: 'dispute', // 매치 상태를 분쟁으로 변경
+        status: 'dispute',
         "result.status": 'dispute',
         disputedAt: new Date().toISOString()
       });
