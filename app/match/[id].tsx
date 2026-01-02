@@ -165,8 +165,14 @@ export default function MatchDetailScreen() {
   };
 
   const submitResult = async () => {
+    // 상대팀 ID 확인 (opponentId 혹은 guestId)
     const opponentTeamId = match?.opponentId || match?.guestId;
-    if (!selectedWinner || !match || !opponentTeamId) return;
+    
+    if (!selectedWinner || !match) return;
+    if (!opponentTeamId) {
+        Alert.alert("오류", "상대 팀 정보를 찾을 수 없습니다.");
+        return;
+    }
     
     setProcessing(true);
     try {
@@ -184,23 +190,34 @@ export default function MatchDetailScreen() {
 
             if (!homeDoc.exists() || !awayDoc.exists()) throw "팀 정보를 찾을 수 없습니다.";
 
+            // 기존 스탯 가져오기 (없으면 초기화)
             const homeStats = homeDoc.data().stats || { wins: 0, losses: 0, points: 0, total: 0 };
             const awayStats = awayDoc.data().stats || { wins: 0, losses: 0, points: 0, total: 0 };
 
+            // 승패에 따른 승점 계산 (승리: +3점, 패배: +1점)
             if (selectedWinner === match.teamId) {
-                homeStats.wins += 1;
-                homeStats.points += 3;
-                awayStats.losses += 1;
-                awayStats.points += 1;
+                // 홈팀 승리
+                homeStats.wins = (homeStats.wins || 0) + 1;
+                homeStats.points = (homeStats.points || 0) + 3;
+                
+                // 어웨이팀 패배
+                awayStats.losses = (awayStats.losses || 0) + 1;
+                awayStats.points = (awayStats.points || 0) + 1;
             } else {
-                awayStats.wins += 1;
-                awayStats.points += 3;
-                homeStats.losses += 1;
-                homeStats.points += 1;
+                // 어웨이팀 승리
+                awayStats.wins = (awayStats.wins || 0) + 1;
+                awayStats.points = (awayStats.points || 0) + 3;
+                
+                // 홈팀 패배
+                homeStats.losses = (homeStats.losses || 0) + 1;
+                homeStats.points = (homeStats.points || 0) + 1;
             }
-            homeStats.total += 1;
-            awayStats.total += 1;
+            
+            // 경기 수 증가
+            homeStats.total = (homeStats.total || 0) + 1;
+            awayStats.total = (awayStats.total || 0) + 1;
 
+            // 트랜잭션 업데이트 실행
             transaction.update(matchRef, {
                 status: 'finished',
                 winnerId: selectedWinner,
